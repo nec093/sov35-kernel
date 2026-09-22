@@ -440,7 +440,7 @@ static int setup_bd_list_xfr(struct bdc *bdc, struct bdc_req *req, int num_bds)
 	bd_xfr->start_bdi = bd_list->eqp_bdi;
 	bd = bdi_to_bd(ep, bd_list->eqp_bdi);
 	req_len = req->usb_req.length;
-	maxp = usb_endpoint_maxp(ep->desc);
+	maxp = usb_endpoint_maxp(ep->desc) & 0x7ff;
 	tfs = roundup(req->usb_req.length, maxp);
 	tfs = tfs/maxp;
 	dev_vdbg(bdc->dev, "%s ep:%s num_bds:%d tfs:%d r_len:%d bd:%p\n",
@@ -615,6 +615,7 @@ int bdc_ep_enable(struct bdc_ep *ep)
 	}
 	bdc_dbg_bd_list(bdc, ep);
 	/* only for ep0: config ep is called for ep0 from connect event */
+	ep->flags |= BDC_EP_ENABLED;
 	if (ep->ep_num == 1)
 		return ret;
 
@@ -758,13 +759,10 @@ static int ep_dequeue(struct bdc_ep *ep, struct bdc_req *req)
 					__func__, ep->name, start_bdi, end_bdi);
 	dev_dbg(bdc->dev, "ep_dequeue ep=%p ep->desc=%p\n",
 						ep, (void *)ep->usb_ep.desc);
-	/* if still connected, stop the ep to see where the HW is ? */
-	if (!(bdc_readl(bdc->regs, BDC_USPC) & BDC_PST_MASK)) {
-		ret = bdc_stop_ep(bdc, ep->ep_num);
-		/* if there is an issue, then no need to go further */
-		if (ret)
-			return 0;
-	} else
+	/* Stop the ep to see where the HW is ? */
+	ret = bdc_stop_ep(bdc, ep->ep_num);
+	/* if there is an issue with stopping ep, then no need to go further */
+	if (ret)
 		return 0;
 
 	/*
@@ -773,9 +771,9 @@ static int ep_dequeue(struct bdc_ep *ep, struct bdc_req *req)
 	 */
 
 	/* The current hw dequeue pointer */
-	tmp_32 = bdc_readl(bdc->regs, BDC_EPSTS0);
+	tmp_32 = bdc_readl(bdc->regs, BDC_EPSTS0(0));
 	deq_ptr_64 = tmp_32;
-	tmp_32 = bdc_readl(bdc->regs, BDC_EPSTS1);
+	tmp_32 = bdc_readl(bdc->regs, BDC_EPSTS1(0));
 	deq_ptr_64 |= ((u64)tmp_32 << 32);
 
 	/* we have the dma addr of next bd that will be fetched by hardware */
@@ -1913,9 +1911,7 @@ static int bdc_gadget_ep_disable(struct usb_ep *_ep)
 		__func__, ep->name, ep->flags);
 
 	if (!(ep->flags & BDC_EP_ENABLED)) {
-		if (bdc->gadget.speed != USB_SPEED_UNKNOWN)
-			dev_warn(bdc->dev, "%s is already disabled\n",
-				 ep->name);
+		dev_warn(bdc->dev, "%s is already disabled\n", ep->name);
 		return 0;
 	}
 	spin_lock_irqsave(&bdc->lock, flags);

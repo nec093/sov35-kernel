@@ -59,6 +59,7 @@
 #define ARPHRD_HDLC	ARPHRD_CISCO
 #define ARPHRD_LAPB	516		/* LAPB				*/
 #define ARPHRD_DDCMP    517		/* Digital's DDCMP protocol     */
+#define ARPHRD_RAWIP	530		/* Raw IP			*/
 #define ARPHRD_RAWHDLC	518		/* Raw HDLC			*/
 #define ARPHRD_RAWIP    519		/* Raw IP                       */
 

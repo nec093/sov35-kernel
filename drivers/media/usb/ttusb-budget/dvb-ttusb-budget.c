@@ -762,7 +762,8 @@ static void ttusb_iso_irq(struct urb *urb)
 		for (i = 0; i < urb->number_of_packets; ++i) {
 			numpkt++;
 			if (time_after_eq(jiffies, lastj + HZ)) {
-				dprintk("frames/s: %lu (ts: %d, stuff %d, sec: %d, invalid: %d, all: %d)\n",
+				dprintk("frames/s: %lu (ts: %d, stuff %d, "
+					"sec: %d, invalid: %d, all: %d)\n",
 					numpkt * HZ / (jiffies - lastj),
 					numts, numstuff, numsec, numinvalid,
 					numts + numstuff + numsec + numinvalid);
@@ -1626,7 +1627,7 @@ static void frontend_init(struct ttusb* ttusb)
 
 
 
-static const struct i2c_algorithm ttusb_dec_algo = {
+static struct i2c_algorithm ttusb_dec_algo = {
 	.master_xfer	= master_xfer,
 	.functionality	= functionality,
 };
@@ -1781,7 +1782,7 @@ static void ttusb_disconnect(struct usb_interface *intf)
 	dprintk("%s: TTUSB DVB disconnected\n", __func__);
 }
 
-static const struct usb_device_id ttusb_table[] = {
+static struct usb_device_id ttusb_table[] = {
 	{USB_DEVICE(0xb48, 0x1003)},
 	{USB_DEVICE(0xb48, 0x1004)},
 	{USB_DEVICE(0xb48, 0x1005)},

@@ -64,7 +64,8 @@ static int sp887x_writereg (struct sp887x_state* state, u16 reg, u16 data)
 		if (!(reg == 0xf1a && data == 0x000 &&
 			(ret == -EREMOTEIO || ret == -EFAULT)))
 		{
-			printk("%s: writereg error (reg %03x, data %03x, ret == %i)\n",
+			printk("%s: writereg error "
+			       "(reg %03x, data %03x, ret == %i)\n",
 			       __func__, reg & 0xffff, data & 0xffff, ret);
 			return ret;
 		}
@@ -562,7 +563,7 @@ static void sp887x_release(struct dvb_frontend* fe)
 	kfree(state);
 }
 
-static const struct dvb_frontend_ops sp887x_ops;
+static struct dvb_frontend_ops sp887x_ops;
 
 struct dvb_frontend* sp887x_attach(const struct sp887x_config* config,
 				   struct i2c_adapter* i2c)
@@ -591,7 +592,7 @@ error:
 	return NULL;
 }
 
-static const struct dvb_frontend_ops sp887x_ops = {
+static struct dvb_frontend_ops sp887x_ops = {
 	.delsys = { SYS_DVBT },
 	.info = {
 		.name = "Spase SP887x DVB-T",
@@ -626,4 +627,4 @@ MODULE_PARM_DESC(debug, "Turn on/off frontend debugging (default:off).");
 MODULE_DESCRIPTION("Spase sp887x DVB-T demodulator driver");
 MODULE_LICENSE("GPL");
 
-EXPORT_SYMBOL_GPL(sp887x_attach);
+EXPORT_SYMBOL(sp887x_attach);

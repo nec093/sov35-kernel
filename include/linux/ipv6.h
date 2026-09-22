@@ -42,6 +42,7 @@ struct ipv6_devconf {
 	__s32		accept_ra_rt_info_max_plen;
 #endif
 #endif
+	__s32		accept_ra_rt_table;
 	__s32		proxy_ndp;
 	__s32		accept_source_route;
 	__s32		accept_ra_from_local;
@@ -66,6 +67,7 @@ struct ipv6_devconf {
 	} stable_secret;
 	__s32		use_oif_addrs_only;
 	__s32		keep_addr_on_down;
+	__s32		accept_ra_prefix_route;
 	__s32		seg6_enabled;
 #ifdef CONFIG_IPV6_SEG6_HMAC
 	__s32		seg6_require_hmac;

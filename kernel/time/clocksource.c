@@ -748,11 +748,14 @@ static inline void clocksource_update_max_deferment(struct clocksource *cs)
 
 #ifndef CONFIG_ARCH_USES_GETTIMEOFFSET
 
+static bool clocksource_force_select;
+
 static struct clocksource *clocksource_find_best(bool oneshot, bool skipcur)
 {
 	struct clocksource *cs;
 
-	if (!finished_booting || list_empty(&clocksource_list))
+	if ((!finished_booting && !clocksource_force_select) ||
+	    list_empty(&clocksource_list))
 		return NULL;
 
 	/*
@@ -844,6 +847,24 @@ static inline void clocksource_select(void) { }
 static inline void clocksource_select_fallback(void) { }
 
 #endif
+
+/**
+ * clocksource_select_force - Force re-selection of the best clocksource
+ *				among registered clocksources
+ *
+ * clocksource_select() can't select the best clocksource before
+ * calling clocksource_done_booting(); provide an API that other files
+ * can call to select the best clocksource irrespective of the
+ * finished_booting flag.
+ */
+void clocksource_select_force(void)
+{
+	mutex_lock(&clocksource_mutex);
+	clocksource_force_select = true;
+	clocksource_select();
+	clocksource_force_select = false;
+	mutex_unlock(&clocksource_mutex);
+}
 
 /*
  * clocksource_done_booting - Called near the end of core bootup

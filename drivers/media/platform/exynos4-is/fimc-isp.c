@@ -305,10 +305,8 @@ static int fimc_isp_subdev_s_power(struct v4l2_subdev *sd, int on)
 
 	if (on) {
 		ret = pm_runtime_get_sync(&is->pdev->dev);
-		if (ret < 0) {
-			pm_runtime_put(&is->pdev->dev);
+		if (ret < 0)
 			return ret;
-		}
 		set_bit(IS_ST_PWR_ON, &is->state);
 
 		ret = fimc_is_start_firmware(is);
@@ -429,7 +427,7 @@ static const struct v4l2_subdev_core_ops fimc_is_core_ops = {
 	.s_power = fimc_isp_subdev_s_power,
 };
 
-static const struct v4l2_subdev_ops fimc_is_subdev_ops = {
+static struct v4l2_subdev_ops fimc_is_subdev_ops = {
 	.core = &fimc_is_core_ops,
 	.video = &fimc_is_subdev_video_ops,
 	.pad = &fimc_is_subdev_pad_ops,

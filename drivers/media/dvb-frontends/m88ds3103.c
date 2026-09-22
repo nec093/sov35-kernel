@@ -7,7 +7,7 @@
 
 #include "m88ds3103_priv.h"
 
-static const struct dvb_frontend_ops m88ds3103_ops;
+static struct dvb_frontend_ops m88ds3103_ops;
 
 /* write single register with mask */
 static int m88ds3103_update_bits(struct m88ds3103_dev *dev,
@@ -1284,9 +1284,9 @@ struct dvb_frontend *m88ds3103_attach(const struct m88ds3103_config *cfg,
 	*tuner_i2c_adapter = pdata.get_i2c_adapter(client);
 	return pdata.get_dvb_frontend(client);
 }
-EXPORT_SYMBOL_GPL(m88ds3103_attach);
+EXPORT_SYMBOL(m88ds3103_attach);
 
-static const struct dvb_frontend_ops m88ds3103_ops = {
+static struct dvb_frontend_ops m88ds3103_ops = {
 	.delsys = {SYS_DVBS, SYS_DVBS2},
 	.info = {
 		.name = "Montage Technology M88DS3103",

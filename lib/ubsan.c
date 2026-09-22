@@ -321,6 +321,20 @@ void __ubsan_handle_type_mismatch(struct type_mismatch_data *data,
 }
 EXPORT_SYMBOL(__ubsan_handle_type_mismatch);
 
+void __ubsan_handle_type_mismatch(struct type_mismatch_data *data,
+				void *ptr)
+{
+	struct type_mismatch_data_common common_data = {
+		.location = &data->location,
+		.type = data->type,
+		.alignment = data->alignment,
+		.type_check_kind = data->type_check_kind
+	};
+
+	ubsan_type_mismatch_common(&common_data, (unsigned long)ptr);
+}
+EXPORT_SYMBOL(__ubsan_handle_type_mismatch);
+
 void __ubsan_handle_type_mismatch_v1(struct type_mismatch_data_v1 *data,
 				void *ptr)
 {

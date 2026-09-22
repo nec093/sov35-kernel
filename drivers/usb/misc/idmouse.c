@@ -13,14 +13,13 @@
 */
 
 #include <linux/kernel.h>
-#include <linux/sched/signal.h>
 #include <linux/errno.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/completion.h>
 #include <linux/mutex.h>
-#include <linux/uaccess.h>
+#include <asm/uaccess.h>
 #include <linux/usb.h>
 
 /* image constants */
@@ -29,6 +28,8 @@
 #define HEADER "P5 225 289 255 "
 #define IMGSIZE ((WIDTH * HEIGHT) + sizeof(HEADER)-1)
 
+/* version information */
+#define DRIVER_VERSION "0.6"
 #define DRIVER_SHORT   "idmouse"
 #define DRIVER_AUTHOR  "Florian 'Floe' Echtler <echtler@fs.tum.de>"
 #define DRIVER_DESC    "Siemens ID Mouse FingerTIP Sensor Driver"
@@ -178,6 +179,10 @@ static int idmouse_create_image(struct usb_idmouse *dev)
 		bytes_read += bulk_read;
 	}
 
+	/* reset the device */
+reset:
+	ftip_command(dev, FTIP_RELEASE, 0, 0);
+
 	/* check for valid image */
 	/* right border should be black (0x00) */
 	for (bytes_read = sizeof(HEADER)-1 + WIDTH-1; bytes_read < IMGSIZE; bytes_read += WIDTH)
@@ -188,10 +193,6 @@ static int idmouse_create_image(struct usb_idmouse *dev)
 	for (bytes_read = IMGSIZE-WIDTH; bytes_read < IMGSIZE-1; bytes_read++)
 		if (dev->bulk_in_buffer[bytes_read] != 0xFF)
 			return -EAGAIN;
-
-	/* reset the device */
-reset:
-	ftip_command(dev, FTIP_RELEASE, 0, 0);
 
 	/* should be IMGSIZE == 65040 */
 	dev_dbg(&dev->interface->dev, "read %d bytes fingerprint data\n",
@@ -354,22 +355,26 @@ static int idmouse_probe(struct usb_interface *interface,
 	dev->interface = interface;
 
 	/* set up the endpoint information - use only the first bulk-in endpoint */
-	result = usb_find_bulk_in_endpoint(iface_desc, &endpoint);
-	if (result) {
+	endpoint = &iface_desc->endpoint[0].desc;
+	if (!dev->bulk_in_endpointAddr && usb_endpoint_is_bulk_in(endpoint)) {
+		/* we found a bulk in endpoint */
+		dev->orig_bi_size = usb_endpoint_maxp(endpoint);
+		dev->bulk_in_size = 0x200; /* works _much_ faster */
+		dev->bulk_in_endpointAddr = endpoint->bEndpointAddress;
+		dev->bulk_in_buffer =
+			kmalloc(IMGSIZE + dev->bulk_in_size, GFP_KERNEL);
+
+		if (!dev->bulk_in_buffer) {
+			idmouse_delete(dev);
+			return -ENOMEM;
+		}
+	}
+
+	if (!(dev->bulk_in_endpointAddr)) {
 		dev_err(&interface->dev, "Unable to find bulk-in endpoint.\n");
 		idmouse_delete(dev);
-		return result;
+		return -ENODEV;
 	}
-
-	dev->orig_bi_size = usb_endpoint_maxp(endpoint);
-	dev->bulk_in_size = 0x200; /* works _much_ faster */
-	dev->bulk_in_endpointAddr = endpoint->bEndpointAddress;
-	dev->bulk_in_buffer = kmalloc(IMGSIZE + dev->bulk_in_size, GFP_KERNEL);
-	if (!dev->bulk_in_buffer) {
-		idmouse_delete(dev);
-		return -ENOMEM;
-	}
-
 	/* allow device read, write and ioctl */
 	dev->present = 1;
 

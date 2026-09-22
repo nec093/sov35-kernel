@@ -15,6 +15,7 @@
  */
 
 #include <linux/kvm_host.h>
+#include <linux/nospec.h>
 #include <asm/mtrr.h>
 
 #include "cpuid.h"

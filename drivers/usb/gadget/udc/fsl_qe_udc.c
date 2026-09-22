@@ -58,7 +58,7 @@ static const char *const ep_name[] = {
 	"ep3",
 };
 
-static const struct usb_endpoint_descriptor qe_ep0_desc = {
+static struct usb_endpoint_descriptor qe_ep0_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
@@ -1843,7 +1843,7 @@ out:
 	return status;
 }
 
-static const struct usb_ep_ops qe_ep_ops = {
+static struct usb_ep_ops qe_ep_ops = {
 	.enable = qe_ep_enable,
 	.disable = qe_ep_disable,
 
@@ -1950,12 +1950,8 @@ static void ch9getstatus(struct qe_udc *udc, u8 request_type, u16 value,
 	} else if ((request_type & USB_RECIP_MASK) == USB_RECIP_ENDPOINT) {
 		/* Get endpoint status */
 		int pipe = index & USB_ENDPOINT_NUMBER_MASK;
-		struct qe_ep *target_ep;
+		struct qe_ep *target_ep = &udc->eps[pipe];
 		u16 usep;
-
-		if (pipe >= USB_MAX_ENDPOINTS)
-			goto stall;
-		target_ep = &udc->eps[pipe];
 
 		/* stall if endpoint doesn't exist */
 		if (!target_ep->ep.desc)

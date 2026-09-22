@@ -364,12 +364,8 @@ static ssize_t mode_store(struct device *dev,
 	mode = ETM_MODE_QELEM(config->mode);
 	/* start by clearing QE bits */
 	config->cfg &= ~(BIT(13) | BIT(14));
-	/*
-	 * if supported, Q elements with instruction counts are enabled.
-	 * Always set the low bit for any requested mode. Valid combos are
-	 * 0b00, 0b01 and 0b11.
-	 */
-	if (mode && drvdata->q_support)
+	/* if supported, Q elements with instruction counts are enabled */
+	if ((mode & BIT(0)) && (drvdata->q_support & BIT(0)))
 		config->cfg |= BIT(13);
 	/*
 	 * if supported, Q elements with and without instruction
@@ -2088,23 +2084,23 @@ static u32 etmv4_cross_read(const struct device *dev, u32 offset)
 	return reg.data;
 }
 
-#define coresight_etm4x_reg(name, offset)			\
-	coresight_simple_reg32(struct etmv4_drvdata, name, offset)
+#define coresight_etm4x_simple_func(name, offset)			\
+	coresight_simple_func(struct etmv4_drvdata, NULL, name, offset)
 
 #define coresight_etm4x_cross_read(name, offset)			\
 	coresight_simple_func(struct etmv4_drvdata, etmv4_cross_read,	\
 			      name, offset)
 
-coresight_etm4x_reg(trcpdcr, TRCPDCR);
-coresight_etm4x_reg(trcpdsr, TRCPDSR);
-coresight_etm4x_reg(trclsr, TRCLSR);
-coresight_etm4x_reg(trcauthstatus, TRCAUTHSTATUS);
-coresight_etm4x_reg(trcdevid, TRCDEVID);
-coresight_etm4x_reg(trcdevtype, TRCDEVTYPE);
-coresight_etm4x_reg(trcpidr0, TRCPIDR0);
-coresight_etm4x_reg(trcpidr1, TRCPIDR1);
-coresight_etm4x_reg(trcpidr2, TRCPIDR2);
-coresight_etm4x_reg(trcpidr3, TRCPIDR3);
+coresight_etm4x_simple_func(trcpdcr, TRCPDCR);
+coresight_etm4x_simple_func(trcpdsr, TRCPDSR);
+coresight_etm4x_simple_func(trclsr, TRCLSR);
+coresight_etm4x_simple_func(trcauthstatus, TRCAUTHSTATUS);
+coresight_etm4x_simple_func(trcdevid, TRCDEVID);
+coresight_etm4x_simple_func(trcdevtype, TRCDEVTYPE);
+coresight_etm4x_simple_func(trcpidr0, TRCPIDR0);
+coresight_etm4x_simple_func(trcpidr1, TRCPIDR1);
+coresight_etm4x_simple_func(trcpidr2, TRCPIDR2);
+coresight_etm4x_simple_func(trcpidr3, TRCPIDR3);
 coresight_etm4x_cross_read(trcoslsr, TRCOSLSR);
 coresight_etm4x_cross_read(trcconfig, TRCCONFIGR);
 coresight_etm4x_cross_read(trctraceid, TRCTRACEIDR);

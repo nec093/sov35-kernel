@@ -56,7 +56,7 @@ extern unsigned vivid_debug;
 
 struct vivid_fmt {
 	u32	fourcc;          /* v4l2 format id */
-	enum	tgp_color_enc color_enc;
+	bool	is_yuv;
 	bool	can_do_overlay;
 	u8	vdownsampling[TPG_MAX_PLANES];
 	u32	alpha_mask;
@@ -344,7 +344,6 @@ struct vivid_dev {
 	struct v4l2_dv_timings		dv_timings_out;
 	u32				colorspace_out;
 	u32				ycbcr_enc_out;
-	u32				hsv_enc_out;
 	u32				quantization_out;
 	u32				xfer_func_out;
 	u32				service_set_out;
@@ -563,7 +562,5 @@ static inline bool vivid_is_hdmi_out(const struct vivid_dev *dev)
 {
 	return dev->output_type[dev->output] == HDMI;
 }
-
-bool vivid_validate_fb(const struct v4l2_framebuffer *a);
 
 #endif

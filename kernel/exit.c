@@ -535,6 +535,7 @@ static void exit_mm(void)
 	task_unlock(current);
 	mm_update_next_owner(mm);
 	mmput(mm);
+	set_thread_flag(TIF_MM_RELEASED);
 	if (test_thread_flag(TIF_MEMDIE))
 		exit_oom_victim();
 }
@@ -814,6 +815,8 @@ void __noreturn do_exit(long code)
 	}
 
 	exit_signals(tsk);  /* sets PF_EXITING */
+
+	sched_exit(tsk);
 
 	/* sync mm's RSS info before statistics gathering */
 	if (tsk->mm)

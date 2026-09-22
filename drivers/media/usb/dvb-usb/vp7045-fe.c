@@ -136,7 +136,7 @@ static void vp7045_fe_release(struct dvb_frontend* fe)
 	kfree(state);
 }
 
-static const struct dvb_frontend_ops vp7045_fe_ops;
+static struct dvb_frontend_ops vp7045_fe_ops;
 
 struct dvb_frontend * vp7045_fe_attach(struct dvb_usb_device *d)
 {
@@ -154,7 +154,7 @@ error:
 }
 
 
-static const struct dvb_frontend_ops vp7045_fe_ops = {
+static struct dvb_frontend_ops vp7045_fe_ops = {
 	.delsys = { SYS_DVBT },
 	.info = {
 		.name			= "Twinhan VP7045/46 USB DVB-T",

@@ -173,7 +173,7 @@ static int qcom_dma_setup(struct mmci_host *host)
 	writel_relaxed(producer_id | (consumer_id << CONSUMER_PIPE_ID_SHFT),
 		       base + DML_PIPE_ID);
 
-	/* Make sure dml initialization is finished */
+	/* Make sure dml intialization is finished */
 	mb();
 
 	return 0;

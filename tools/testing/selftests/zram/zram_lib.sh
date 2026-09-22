@@ -17,6 +17,9 @@ kernel_version=`uname -r | cut -d'.' -f1,2`
 kernel_major=${kernel_version%.*}
 kernel_minor=${kernel_version#*.}
 
+# Kselftest framework requirement - SKIP code is 4.
+ksft_skip=4
+
 trap INT
 
 check_prereqs()

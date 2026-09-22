@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/of.h>
 #include <linux/slab.h>
 
@@ -44,7 +43,7 @@ static const char *safe_name(struct kobject *kobj, const char *orig_name)
 	int i = 0;
 
 	/* don't be a hero. After 16 tries give up */
-	while (i < 16 && (kn = sysfs_get_dirent(kobj->sd, name))) {
+	while (i < 16 && name && (kn = sysfs_get_dirent(kobj->sd, name))) {
 		sysfs_put(kn);
 		if (name != orig_name)
 			kfree(name);
@@ -80,7 +79,8 @@ int __of_add_property_sysfs(struct device_node *np, struct property *pp)
 	pp->attr.read = of_node_property_read;
 
 	rc = sysfs_create_bin_file(&np->kobj, &pp->attr);
-	WARN(rc, "error adding attribute %s to node %pOF\n", pp->name, np);
+	WARN(rc, "error adding attribute %s to node %s\n", pp->name,
+		np->full_name);
 	return rc;
 }
 
@@ -119,7 +119,7 @@ int __of_attach_node_sysfs(struct device_node *np)
 	struct property *pp;
 	int rc;
 
-	if (!IS_ENABLED(CONFIG_SYSFS) || !of_kset)
+	if (!of_kset)
 		return 0;
 
 	np->kobj.kset = of_kset;
@@ -133,7 +133,6 @@ int __of_attach_node_sysfs(struct device_node *np)
 	}
 	if (!name)
 		return -ENOMEM;
-
 	rc = kobject_add(&np->kobj, parent, "%s", name);
 	kfree(name);
 	if (rc)
@@ -142,7 +141,6 @@ int __of_attach_node_sysfs(struct device_node *np)
 	for_each_property_of_node(np, pp)
 		__of_add_property_sysfs(np, pp);
 
-	of_node_get(np);
 	return 0;
 }
 
@@ -161,5 +159,7 @@ void __of_detach_node_sysfs(struct device_node *np)
 		kobject_del(&np->kobj);
 	}
 
+	/* finally remove the kobj_init ref */
 	of_node_put(np);
 }
+

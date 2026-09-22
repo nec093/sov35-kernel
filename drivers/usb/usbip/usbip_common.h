@@ -17,8 +17,9 @@
 #include <linux/types.h>
 #include <linux/usb.h>
 #include <linux/wait.h>
-#include <linux/sched/task.h>
 #include <uapi/linux/usbip.h>
+
+#define USBIP_VERSION "1.0.0"
 
 #undef pr_fmt
 
@@ -262,9 +263,6 @@ struct usbip_device {
 
 	/* lock for status */
 	spinlock_t lock;
-
-	/* mutex for synchronizing sysfs store paths */
-	struct mutex sysfs_lock;
 
 	int sockfd;
 	struct socket *tcp_socket;

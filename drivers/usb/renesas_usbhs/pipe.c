@@ -407,7 +407,7 @@ static int usbhsp_setup_pipecfg(struct usbhs_pipe *pipe, int is_host,
 	u16 dir = 0;
 	u16 epnum = 0;
 	u16 shtnak = 0;
-	static const u16 type_array[] = {
+	u16 type_array[] = {
 		[USB_ENDPOINT_XFER_BULK] = TYPE_BULK,
 		[USB_ENDPOINT_XFER_INT]  = TYPE_INT,
 		[USB_ENDPOINT_XFER_ISOC] = TYPE_ISO,
@@ -746,8 +746,6 @@ struct usbhs_pipe *usbhs_pipe_malloc(struct usbhs_priv *priv,
 
 void usbhs_pipe_free(struct usbhs_pipe *pipe)
 {
-	usbhsp_pipe_select(pipe);
-	usbhsp_pipe_cfg_set(pipe, 0xFFFF, 0);
 	usbhsp_put_pipe(pipe);
 }
 

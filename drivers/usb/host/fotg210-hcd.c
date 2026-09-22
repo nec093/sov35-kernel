@@ -1054,7 +1054,8 @@ static void fotg210_enable_event(struct fotg210_hcd *fotg210, unsigned event,
 	ktime_t *timeout = &fotg210->hr_timeouts[event];
 
 	if (resched)
-		*timeout = ktime_add(ktime_get(), event_delays_ns[event]);
+		*timeout = ktime_add(ktime_get(),
+				ktime_set(0, event_delays_ns[event]));
 	fotg210->enabled_hrtimer_events |= (1 << event);
 
 	/* Track only the lowest-numbered pending event */
@@ -1354,7 +1355,7 @@ static enum hrtimer_restart fotg210_hrtimer_func(struct hrtimer *t)
 	 */
 	now = ktime_get();
 	for_each_set_bit(e, &events, FOTG210_HRTIMER_NUM_EVENTS) {
-		if (ktime_compare(now, fotg210->hr_timeouts[e]) >= 0)
+		if (now.tv64 >= fotg210->hr_timeouts[e].tv64)
 			event_handlers[e](fotg210);
 		else
 			fotg210_enable_event(fotg210, e, false);
@@ -2508,6 +2509,11 @@ retry_xacterr:
 	return count;
 }
 
+/* high bandwidth multiplier, as encoded in highspeed endpoint descriptors */
+#define hb_mult(wMaxPacketSize) (1 + (((wMaxPacketSize) >> 11) & 0x03))
+/* ... and packet size, for any kind of endpoint descriptor */
+#define max_packet(wMaxPacketSize) ((wMaxPacketSize) & 0x07ff)
+
 /* reverse of qh_urb_transaction:  free a list of TDs.
  * used for cleanup after errors, before HC sees an URB's TDs.
  */
@@ -2593,7 +2599,7 @@ static struct list_head *qh_urb_transaction(struct fotg210_hcd *fotg210,
 		token |= (1 /* "in" */ << 8);
 	/* else it's already initted to "out" pid (0 << 8) */
 
-	maxpacket = usb_maxpacket(urb->dev, urb->pipe, !is_input);
+	maxpacket = max_packet(usb_maxpacket(urb->dev, urb->pipe, !is_input));
 
 	/*
 	 * buffer gets wrapped in one or more qtds;
@@ -2707,11 +2713,9 @@ static struct fotg210_qh *qh_make(struct fotg210_hcd *fotg210, struct urb *urb,
 		gfp_t flags)
 {
 	struct fotg210_qh *qh = fotg210_qh_alloc(fotg210, flags);
-	struct usb_host_endpoint *ep;
 	u32 info1 = 0, info2 = 0;
 	int is_input, type;
 	int maxp = 0;
-	int mult;
 	struct usb_tt *tt = urb->dev->tt;
 	struct fotg210_qh_hw *hw;
 
@@ -2726,15 +2730,14 @@ static struct fotg210_qh *qh_make(struct fotg210_hcd *fotg210, struct urb *urb,
 
 	is_input = usb_pipein(urb->pipe);
 	type = usb_pipetype(urb->pipe);
-	ep = usb_pipe_endpoint(urb->dev, urb->pipe);
-	maxp = usb_endpoint_maxp(&ep->desc);
-	mult = usb_endpoint_maxp_mult(&ep->desc);
+	maxp = usb_maxpacket(urb->dev, urb->pipe, !is_input);
 
 	/* 1024 byte maxpacket is a hardware ceiling.  High bandwidth
 	 * acts like up to 3KB, but is built from smaller packets.
 	 */
-	if (maxp > 1024) {
-		fotg210_dbg(fotg210, "bogus qh maxpacket %d\n", maxp);
+	if (max_packet(maxp) > 1024) {
+		fotg210_dbg(fotg210, "bogus qh maxpacket %d\n",
+				max_packet(maxp));
 		goto done;
 	}
 
@@ -2748,7 +2751,8 @@ static struct fotg210_qh *qh_make(struct fotg210_hcd *fotg210, struct urb *urb,
 	 */
 	if (type == PIPE_INTERRUPT) {
 		qh->usecs = NS_TO_US(usb_calc_bus_time(USB_SPEED_HIGH,
-				is_input, 0, mult * maxp));
+				is_input, 0,
+				hb_mult(maxp) * max_packet(maxp)));
 		qh->start = NO_FRAME;
 
 		if (urb->dev->speed == USB_SPEED_HIGH) {
@@ -2785,7 +2789,7 @@ static struct fotg210_qh *qh_make(struct fotg210_hcd *fotg210, struct urb *urb,
 			think_time = tt ? tt->think_time : 0;
 			qh->tt_usecs = NS_TO_US(think_time +
 					usb_calc_bus_time(urb->dev->speed,
-					is_input, 0, maxp));
+					is_input, 0, max_packet(maxp)));
 			qh->period = urb->interval;
 			if (qh->period > fotg210->periodic_size) {
 				qh->period = fotg210->periodic_size;
@@ -2848,11 +2852,11 @@ static struct fotg210_qh *qh_make(struct fotg210_hcd *fotg210, struct urb *urb,
 			 * to help them do so.  So now people expect to use
 			 * such nonconformant devices with Linux too; sigh.
 			 */
-			info1 |= maxp << 16;
+			info1 |= max_packet(maxp) << 16;
 			info2 |= (FOTG210_TUNE_MULT_HS << 30);
 		} else {		/* PIPE_INTERRUPT */
-			info1 |= maxp << 16;
-			info2 |= mult << 30;
+			info1 |= max_packet(maxp) << 16;
+			info2 |= hb_mult(maxp) << 30;
 		}
 		break;
 	default:
@@ -3922,7 +3926,6 @@ static void iso_stream_init(struct fotg210_hcd *fotg210,
 	int is_input;
 	long bandwidth;
 	unsigned multi;
-	struct usb_host_endpoint *ep;
 
 	/*
 	 * this might be a "high bandwidth" highspeed endpoint,
@@ -3930,14 +3933,14 @@ static void iso_stream_init(struct fotg210_hcd *fotg210,
 	 */
 	epnum = usb_pipeendpoint(pipe);
 	is_input = usb_pipein(pipe) ? USB_DIR_IN : 0;
-	ep = usb_pipe_endpoint(dev, pipe);
-	maxp = usb_endpoint_maxp(&ep->desc);
+	maxp = usb_maxpacket(dev, pipe, !is_input);
 	if (is_input)
 		buf1 = (1 << 11);
 	else
 		buf1 = 0;
 
-	multi = usb_endpoint_maxp_mult(&ep->desc);
+	maxp = max_packet(maxp);
+	multi = hb_mult(maxp);
 	buf1 |= maxp;
 	maxp *= multi;
 
@@ -4458,12 +4461,13 @@ static bool itd_complete(struct fotg210_hcd *fotg210, struct fotg210_itd *itd)
 
 			/* HC need not update length with this error */
 			if (!(t & FOTG210_ISOC_BABBLE)) {
-				desc->actual_length = FOTG210_ITD_LENGTH(t);
+				desc->actual_length =
+					fotg210_itdlen(urb, desc, t);
 				urb->actual_length += desc->actual_length;
 			}
 		} else if (likely((t & FOTG210_ISOC_ACTIVE) == 0)) {
 			desc->status = 0;
-			desc->actual_length = FOTG210_ITD_LENGTH(t);
+			desc->actual_length = fotg210_itdlen(urb, desc, t);
 			urb->actual_length += desc->actual_length;
 		} else {
 			/* URB was too late */
@@ -5018,7 +5022,7 @@ static int fotg210_run(struct usb_hcd *hcd)
 	/*
 	 * hcc_params controls whether fotg210->regs->segment must (!!!)
 	 * be used; it constrains QH/ITD/SITD and QTD locations.
-	 * dma_pool consistent memory always uses segment zero.
+	 * pci_pool consistent memory always uses segment zero.
 	 * streaming mappings for I/O buffers, like pci_map_single(),
 	 * can return segments above 4GB, if the device allows.
 	 *
@@ -5565,7 +5569,7 @@ static int fotg210_hcd_probe(struct platform_device *pdev)
 	struct usb_hcd *hcd;
 	struct resource *res;
 	int irq;
-	int retval;
+	int retval = -ENODEV;
 	struct fotg210_hcd *fotg210;
 
 	if (usb_disabled())
@@ -5585,7 +5589,7 @@ static int fotg210_hcd_probe(struct platform_device *pdev)
 	hcd = usb_create_hcd(&fotg210_fotg210_hc_driver, dev,
 			dev_name(dev));
 	if (!hcd) {
-		dev_err(dev, "failed to create hcd\n");
+		dev_err(dev, "failed to create hcd with err %d\n", retval);
 		retval = -ENOMEM;
 		goto fail_create_hcd;
 	}
@@ -5698,7 +5702,7 @@ static int __init fotg210_hcd_init(void)
 			test_bit(USB_OHCI_LOADED, &usb_hcds_loaded))
 		pr_warn("Warning! fotg210_hcd should always be loaded before uhci_hcd and ohci_hcd, not after\n");
 
-	pr_debug("%s: block sizes: qh %zd qtd %zd itd %zd\n",
+	pr_debug("%s: block sizes: qh %Zd qtd %Zd itd %Zd\n",
 			hcd_name, sizeof(struct fotg210_qh),
 			sizeof(struct fotg210_qtd),
 			sizeof(struct fotg210_itd));

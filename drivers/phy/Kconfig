@@ -71,3 +71,11 @@ source "drivers/phy/tegra/Kconfig"
 source "drivers/phy/ti/Kconfig"
 
 endmenu
+config PHY_QCOM_QMP
+	tristate "Qualcomm QMP PHY Driver"
+	depends on OF && COMMON_CLK && (ARCH_QCOM || COMPILE_TEST)
+	select GENERIC_PHY
+	help
+	  Enable this to support the QMP PHY transceiver that is used
+	  with controllers such as PCIe, UFS, and USB on Qualcomm chips.
+

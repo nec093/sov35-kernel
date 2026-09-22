@@ -13,21 +13,18 @@
 #include <linux/spinlock.h>
 #include <linux/syscore_ops.h>
 
-static ATOMIC_NOTIFIER_HEAD(cpu_pm_notifier_chain);
+bool from_suspend;
 
-static int cpu_pm_notify(enum cpu_pm_event event, int nr_to_call, int *nr_calls)
+static DEFINE_RWLOCK(cpu_pm_notifier_lock);
+static RAW_NOTIFIER_HEAD(cpu_pm_notifier_chain);
+
+static int cpu_pm_notify(enum cpu_pm_event event, int nr_to_call, int *nr_calls,
+		void *data)
 {
 	int ret;
 
-	/*
-	 * __atomic_notifier_call_chain has a RCU read critical section, which
-	 * could be disfunctional in cpu idle. Copy RCU_NONIDLE code to let
-	 * RCU know this.
-	 */
-	rcu_irq_enter_irqson();
-	ret = __atomic_notifier_call_chain(&cpu_pm_notifier_chain, event, NULL,
+	ret = __raw_notifier_call_chain(&cpu_pm_notifier_chain, event, data,
 		nr_to_call, nr_calls);
-	rcu_irq_exit_irqson();
 
 	return notifier_to_errno(ret);
 }
@@ -44,7 +41,14 @@ static int cpu_pm_notify(enum cpu_pm_event event, int nr_to_call, int *nr_calls)
  */
 int cpu_pm_register_notifier(struct notifier_block *nb)
 {
-	return atomic_notifier_chain_register(&cpu_pm_notifier_chain, nb);
+	unsigned long flags;
+	int ret;
+
+	write_lock_irqsave(&cpu_pm_notifier_lock, flags);
+	ret = raw_notifier_chain_register(&cpu_pm_notifier_chain, nb);
+	write_unlock_irqrestore(&cpu_pm_notifier_lock, flags);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(cpu_pm_register_notifier);
 
@@ -59,7 +63,14 @@ EXPORT_SYMBOL_GPL(cpu_pm_register_notifier);
  */
 int cpu_pm_unregister_notifier(struct notifier_block *nb)
 {
-	return atomic_notifier_chain_unregister(&cpu_pm_notifier_chain, nb);
+	unsigned long flags;
+	int ret;
+
+	write_lock_irqsave(&cpu_pm_notifier_lock, flags);
+	ret = raw_notifier_chain_unregister(&cpu_pm_notifier_chain, nb);
+	write_unlock_irqrestore(&cpu_pm_notifier_lock, flags);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(cpu_pm_unregister_notifier);
 
@@ -83,13 +94,15 @@ int cpu_pm_enter(void)
 	int nr_calls = 0;
 	int ret = 0;
 
-	ret = cpu_pm_notify(CPU_PM_ENTER, -1, &nr_calls);
+	read_lock(&cpu_pm_notifier_lock);
+	ret = cpu_pm_notify(CPU_PM_ENTER, -1, &nr_calls, NULL);
 	if (ret)
 		/*
 		 * Inform listeners (nr_calls - 1) about failure of CPU PM
 		 * PM entry who are notified earlier to prepare for it.
 		 */
-		cpu_pm_notify(CPU_PM_ENTER_FAILED, nr_calls - 1, NULL);
+		cpu_pm_notify(CPU_PM_ENTER_FAILED, nr_calls - 1, NULL, NULL);
+	read_unlock(&cpu_pm_notifier_lock);
 
 	return ret;
 }
@@ -109,7 +122,13 @@ EXPORT_SYMBOL_GPL(cpu_pm_enter);
  */
 int cpu_pm_exit(void)
 {
-	return cpu_pm_notify(CPU_PM_EXIT, -1, NULL);
+	int ret;
+
+	read_lock(&cpu_pm_notifier_lock);
+	ret = cpu_pm_notify(CPU_PM_EXIT, -1, NULL, NULL);
+	read_unlock(&cpu_pm_notifier_lock);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(cpu_pm_exit);
 
@@ -129,18 +148,22 @@ EXPORT_SYMBOL_GPL(cpu_pm_exit);
  *
  * Return conditions are same as __raw_notifier_call_chain.
  */
-int cpu_cluster_pm_enter(void)
+int cpu_cluster_pm_enter(unsigned long aff_level)
 {
 	int nr_calls = 0;
 	int ret = 0;
 
-	ret = cpu_pm_notify(CPU_CLUSTER_PM_ENTER, -1, &nr_calls);
+	read_lock(&cpu_pm_notifier_lock);
+	ret = cpu_pm_notify(CPU_CLUSTER_PM_ENTER, -1, &nr_calls,
+			(void *) aff_level);
 	if (ret)
 		/*
 		 * Inform listeners (nr_calls - 1) about failure of CPU cluster
 		 * PM entry who are notified earlier to prepare for it.
 		 */
-		cpu_pm_notify(CPU_CLUSTER_PM_ENTER_FAILED, nr_calls - 1, NULL);
+		cpu_pm_notify(CPU_CLUSTER_PM_ENTER_FAILED, nr_calls - 1, NULL,
+				(void *) aff_level);
+	read_unlock(&cpu_pm_notifier_lock);
 
 	return ret;
 }
@@ -161,9 +184,15 @@ EXPORT_SYMBOL_GPL(cpu_cluster_pm_enter);
  *
  * Return conditions are same as __raw_notifier_call_chain.
  */
-int cpu_cluster_pm_exit(void)
+int cpu_cluster_pm_exit(unsigned long aff_level)
 {
-	return cpu_pm_notify(CPU_CLUSTER_PM_EXIT, -1, NULL);
+	int ret;
+
+	read_lock(&cpu_pm_notifier_lock);
+	ret = cpu_pm_notify(CPU_CLUSTER_PM_EXIT, -1, NULL, (void *) aff_level);
+	read_unlock(&cpu_pm_notifier_lock);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(cpu_cluster_pm_exit);
 
@@ -172,17 +201,19 @@ static int cpu_pm_suspend(void)
 {
 	int ret;
 
+	from_suspend = true;
 	ret = cpu_pm_enter();
 	if (ret)
 		return ret;
 
-	ret = cpu_cluster_pm_enter();
+	ret = cpu_cluster_pm_enter(0);
 	return ret;
 }
 
 static void cpu_pm_resume(void)
 {
-	cpu_cluster_pm_exit();
+	from_suspend = false;
+	cpu_cluster_pm_exit(0);
 	cpu_pm_exit();
 }
 

@@ -14,6 +14,7 @@
  */
 
 /*-------------------------------------------------------------------------*/
+#include <linux/usb/otg.h>
 
 #define	PORT_WAKE_BITS	(PORT_WKOC_E|PORT_WKDISC_E|PORT_WKCONN_E)
 
@@ -296,14 +297,6 @@ static int ehci_bus_suspend (struct usb_hcd *hcd)
 	}
 	spin_unlock_irq(&ehci->lock);
 
-	if (changed && ehci_has_fsl_susp_errata(ehci))
-		/*
-		 * Wait for at least 10 millisecondes to ensure the controller
-		 * enter the suspend status before initiating a port resume
-		 * using the Force Port Resume bit (Not-EHCI compatible).
-		 */
-		usleep_range(10000, 20000);
-
 	if ((changed && ehci->has_tdi_phy_lpm) || fs_idle_delay) {
 		/*
 		 * Wait for HCD to enter low-power mode or for the bus
@@ -344,9 +337,6 @@ static int ehci_bus_suspend (struct usb_hcd *hcd)
 	ehci->rh_state = EHCI_RH_SUSPENDED;
 
 	unlink_empty_async_suspended(ehci);
-
-	/* Some Synopsys controllers mistakenly leave IAA turned on */
-	ehci_writel(ehci, STS_IAA, &ehci->regs->status);
 
 	/* Any IAA cycle that started before the suspend is now invalid */
 	end_iaa_cycle(ehci);
@@ -784,12 +774,12 @@ static struct urb *request_single_step_set_feature_urb(
 	atomic_inc(&urb->use_count);
 	atomic_inc(&urb->dev->urbnum);
 	urb->setup_dma = dma_map_single(
-			hcd->self.sysdev,
+			hcd->self.controller,
 			urb->setup_packet,
 			sizeof(struct usb_ctrlrequest),
 			DMA_TO_DEVICE);
 	urb->transfer_dma = dma_map_single(
-			hcd->self.sysdev,
+			hcd->self.controller,
 			urb->transfer_buffer,
 			urb->transfer_buffer_length,
 			DMA_FROM_DEVICE);
@@ -1205,12 +1195,6 @@ int ehci_hub_control(
 					wIndex, (temp1 & HOSTPC_PHCD) ?
 					"succeeded" : "failed");
 			}
-			if (ehci_has_fsl_susp_errata(ehci)) {
-				/* 10ms for HCD enter suspend */
-				spin_unlock_irqrestore(&ehci->lock, flags);
-				usleep_range(10000, 20000);
-				spin_lock_irqsave(&ehci->lock, flags);
-			}
 			set_bit(wIndex, &ehci->suspended_ports);
 			break;
 		case USB_PORT_FEAT_POWER:
@@ -1278,7 +1262,7 @@ int ehci_hub_control(
 			spin_lock_irqsave(&ehci->lock, flags);
 
 			/* Put all enabled ports into suspend */
-			while (ports--) {
+			while (!ehci->no_testmode_suspend && ports--) {
 				u32 __iomem *sreg =
 						&ehci->regs->port_status[ports];
 

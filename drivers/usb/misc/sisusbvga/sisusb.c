@@ -611,11 +611,13 @@ static int sisusb_write_memio_byte(struct sisusb_usb_data *sisusb, int type,
 		u32 addr, u8 data)
 {
 	struct sisusb_packet packet;
+	int ret;
 
 	packet.header  = (1 << (addr & 3)) | (type << 6);
 	packet.address = addr & ~3;
 	packet.data    = data << ((addr & 3) << 3);
-	return sisusb_send_packet(sisusb, 10, &packet);
+	ret = sisusb_send_packet(sisusb, 10, &packet);
+	return ret;
 }
 
 static int sisusb_write_memio_word(struct sisusb_usb_data *sisusb, int type,
@@ -761,7 +763,7 @@ static int sisusb_write_mem_bulk(struct sisusb_usb_data *sisusb, u32 addr,
 	u8   swap8, fromkern = kernbuffer ? 1 : 0;
 	u16  swap16;
 	u32  swap32, flag = (length >> 28) & 1;
-	u8 buf[4];
+	char buf[4];
 
 	/* if neither kernbuffer not userbuffer are given, assume
 	 * data in obuf
@@ -1332,11 +1334,13 @@ static int sisusb_write_pci_config(struct sisusb_usb_data *sisusb,
 		int regnum, u32 data)
 {
 	struct sisusb_packet packet;
+	int ret;
 
 	packet.header = 0x008f;
 	packet.address = regnum | 0x10000;
 	packet.data = data;
-	return sisusb_send_packet(sisusb, 10, &packet);
+	ret = sisusb_send_packet(sisusb, 10, &packet);
+	return ret;
 }
 
 static int sisusb_read_pci_config(struct sisusb_usb_data *sisusb,
@@ -1828,10 +1832,16 @@ static void sisusb_set_default_mode(struct sisusb_usb_data *sisusb,
 	SETIREGANDOR(SISCR, 0x09, 0x5f, ((crtcdata[16] & 0x01) << 5));
 	SETIREG(SISCR, 0x14, 0x4f);
 	du = (modex / 16) * (bpp * 2);	/* offset/pitch */
+	if (modex % 16)
+		du += bpp;
+
 	SETIREGANDOR(SISSR, 0x0e, 0xf0, ((du >> 8) & 0x0f));
 	SETIREG(SISCR, 0x13, (du & 0xff));
 	du <<= 5;
 	tmp8 = du >> 8;
+	if (du & 0xff)
+		tmp8++;
+
 	SETIREG(SISSR, 0x10, tmp8);
 	SETIREG(SISSR, 0x31, 0x00);	/* VCLK */
 	SETIREG(SISSR, 0x2b, 0x1b);
@@ -2977,11 +2987,14 @@ err_out:
 static long sisusb_compat_ioctl(struct file *f, unsigned int cmd,
 		unsigned long arg)
 {
+	long retval;
+
 	switch (cmd) {
 	case SISUSB_GET_CONFIG_SIZE:
 	case SISUSB_GET_CONFIG:
 	case SISUSB_COMMAND:
-		return sisusb_ioctl(f, cmd, arg);
+		retval = sisusb_ioctl(f, cmd, arg);
+		return retval;
 
 	default:
 		return -ENOIOCTLCMD;
@@ -3014,20 +3027,6 @@ static int sisusb_probe(struct usb_interface *intf,
 	struct usb_device *dev = interface_to_usbdev(intf);
 	struct sisusb_usb_data *sisusb;
 	int retval = 0, i;
-	static const u8 ep_addresses[] = {
-		SISUSB_EP_GFX_IN | USB_DIR_IN,
-		SISUSB_EP_GFX_OUT | USB_DIR_OUT,
-		SISUSB_EP_GFX_BULK_OUT | USB_DIR_OUT,
-		SISUSB_EP_GFX_LBULK_OUT | USB_DIR_OUT,
-		SISUSB_EP_BRIDGE_IN | USB_DIR_IN,
-		SISUSB_EP_BRIDGE_OUT | USB_DIR_OUT,
-		0};
-
-	/* Are the expected endpoints present? */
-	if (!usb_check_bulk_endpoints(intf, ep_addresses)) {
-		dev_err(&intf->dev, "Invalid USB2VGA device\n");
-		return -EINVAL;
-	}
 
 	dev_info(&dev->dev, "USB2VGA dongle found at address %d\n",
 			dev->devnum);

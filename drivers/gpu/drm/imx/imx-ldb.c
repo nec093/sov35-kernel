@@ -661,6 +661,9 @@ static int imx_ldb_bind(struct device *dev, struct device *master, void *data)
 		if (!of_device_is_available(child))
 			continue;
 
+		if (!of_device_is_available(child))
+			continue;
+
 		if (dual && i > 0) {
 			dev_warn(dev, "dual-channel mode, ignoring second output\n");
 			continue;

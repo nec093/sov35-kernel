@@ -2084,7 +2084,7 @@ imx_uart_console_setup(struct console *co, char *options)
 
 	retval = clk_prepare_enable(sport->clk_per);
 	if (retval)
-		clk_disable_unprepare(sport->clk_ipg);
+		clk_unprepare(sport->clk_ipg);
 
 error_console:
 	return retval;

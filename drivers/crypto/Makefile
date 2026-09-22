@@ -28,6 +28,7 @@ obj-$(CONFIG_CRYPTO_DEV_OMAP_AES) += omap-aes-driver.o
 omap-aes-driver-objs := omap-aes.o omap-aes-gcm.o
 obj-$(CONFIG_CRYPTO_DEV_OMAP_DES) += omap-des.o
 obj-$(CONFIG_CRYPTO_DEV_OMAP_SHAM) += omap-sham.o
+obj-$(CONFIG_CRYPTO_DEV_QCOM_MSM_QCE) += msm/
 obj-$(CONFIG_CRYPTO_DEV_PADLOCK_AES) += padlock-aes.o
 obj-$(CONFIG_CRYPTO_DEV_PADLOCK_SHA) += padlock-sha.o
 obj-$(CONFIG_CRYPTO_DEV_PICOXCELL) += picoxcell_crypto.o

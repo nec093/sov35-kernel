@@ -141,6 +141,7 @@ struct dentry_operations {
 	int (*d_delete)(const struct dentry *);
 	int (*d_init)(struct dentry *);
 	void (*d_release)(struct dentry *);
+	void (*d_canonical_path)(const struct path *, struct path *);
 	void (*d_prune)(struct dentry *);
 	void (*d_iput)(struct dentry *, struct inode *);
 	char *(*d_dname)(struct dentry *, char *, int);

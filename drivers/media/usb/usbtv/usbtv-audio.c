@@ -43,7 +43,7 @@
 
 #include "usbtv.h"
 
-static const struct snd_pcm_hardware snd_usbtv_digital_hw = {
+static struct snd_pcm_hardware snd_usbtv_digital_hw = {
 	.info = SNDRV_PCM_INFO_BATCH |
 		SNDRV_PCM_INFO_MMAP |
 		SNDRV_PCM_INFO_INTERLEAVED |
@@ -399,7 +399,7 @@ void usbtv_audio_free(struct usbtv *usbtv)
 	cancel_work_sync(&usbtv->snd_trigger);
 
 	if (usbtv->snd && usbtv->udev) {
-		snd_card_free_when_closed(usbtv->snd);
+		snd_card_free(usbtv->snd);
 		usbtv->snd = NULL;
 	}
 }

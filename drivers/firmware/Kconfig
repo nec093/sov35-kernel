@@ -244,6 +244,7 @@ config QCOM_SCM_32
 	def_bool y
 	depends on QCOM_SCM && ARM
 
+source "drivers/firmware/qcom/Kconfig"
 config QCOM_SCM_64
 	def_bool y
 	depends on QCOM_SCM && ARM64

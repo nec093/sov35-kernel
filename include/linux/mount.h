@@ -68,6 +68,7 @@ struct fs_context;
 struct vfsmount {
 	struct dentry *mnt_root;	/* root of the mounted tree */
 	struct super_block *mnt_sb;	/* pointer to superblock */
+	void *data;
 	int mnt_flags;
 } __randomize_layout;
 

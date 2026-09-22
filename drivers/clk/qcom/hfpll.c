@@ -1,5 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0
-// Copyright (c) 2018, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -72,14 +82,14 @@ static int qcom_hfpll_probe(struct platform_device *pdev)
 		return PTR_ERR(regmap);
 
 	if (of_property_read_string_index(dev->of_node, "clock-output-names",
-					  0, &init.name))
+						  0, &init.name))
 		return -ENODEV;
 
 	h->d = &hdata;
 	h->clkr.hw.init = &init;
 	spin_lock_init(&h->lock);
 
-	return devm_clk_register_regmap(&pdev->dev, &h->clkr);
+	return devm_clk_register_regmap(dev, &h->clkr);
 }
 
 static struct platform_driver qcom_hfpll_driver = {

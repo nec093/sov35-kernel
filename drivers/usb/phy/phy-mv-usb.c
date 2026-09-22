@@ -25,8 +25,10 @@
 #include "phy-mv-usb.h"
 
 #define	DRIVER_DESC	"Marvell USB OTG transceiver driver"
+#define	DRIVER_VERSION	"Jan 20, 2010"
 
 MODULE_DESCRIPTION(DRIVER_DESC);
+MODULE_VERSION(DRIVER_VERSION);
 MODULE_LICENSE("GPL");
 
 static const char driver_name[] = "mv-otg";
@@ -636,7 +638,7 @@ static struct attribute *inputs_attrs[] = {
 	NULL,
 };
 
-static const struct attribute_group inputs_attr_group = {
+static struct attribute_group inputs_attr_group = {
 	.name = "inputs",
 	.attrs = inputs_attrs,
 };

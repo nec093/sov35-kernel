@@ -82,3 +82,9 @@ static inline __must_check bool check_data_corruption(bool v) { return v; }
 	}))
 
 #endif	/* _LINUX_BUG_H */
+
+#ifdef CONFIG_PANIC_ON_DATA_CORRUPTION
+#define PANIC_CORRUPTION 1
+#else
+#define PANIC_CORRUPTION 0
+#endif  /* CONFIG_PANIC_ON_DATA_CORRUPTION */

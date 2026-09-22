@@ -642,10 +642,6 @@ static bool need_bw_sch(struct usb_host_endpoint *ep,
 	if (is_fs_or_ls(speed) && !has_tt)
 		return false;
 
-	/* skip endpoint with zero maxpkt */
-	if (usb_endpoint_maxp(&ep->desc) == 0)
-		return false;
-
 	return true;
 }
 
@@ -699,7 +695,7 @@ int xhci_mtk_add_ep_quirk(struct usb_hcd *hcd, struct usb_device *udev,
 
 	xhci_dbg(xhci, "%s() type:%d, speed:%d, mpkt:%d, dir:%d, ep:%p\n",
 		__func__, usb_endpoint_type(&ep->desc), udev->speed,
-		usb_endpoint_maxp(&ep->desc),
+		GET_MAX_PACKET(usb_endpoint_maxp(&ep->desc)),
 		usb_endpoint_dir_in(&ep->desc), ep);
 
 	if (!need_bw_sch(ep, udev->speed, slot_ctx->tt_info & TT_SLOT)) {
@@ -745,7 +741,7 @@ void xhci_mtk_drop_ep_quirk(struct usb_hcd *hcd, struct usb_device *udev,
 
 	xhci_dbg(xhci, "%s() type:%d, speed:%d, mpks:%d, dir:%d, ep:%p\n",
 		__func__, usb_endpoint_type(&ep->desc), udev->speed,
-		usb_endpoint_maxp(&ep->desc),
+		GET_MAX_PACKET(usb_endpoint_maxp(&ep->desc)),
 		usb_endpoint_dir_in(&ep->desc), ep);
 
 	if (!need_bw_sch(ep, udev->speed, slot_ctx->tt_info & TT_SLOT))

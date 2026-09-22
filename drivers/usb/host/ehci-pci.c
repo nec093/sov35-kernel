@@ -261,8 +261,9 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 	/* These workarounds need to be applied after ehci_setup() */
 	switch (pdev->vendor) {
 	case PCI_VENDOR_ID_NEC:
+		ehci->need_io_watchdog = 0;
+		break;
 	case PCI_VENDOR_ID_INTEL:
-	case PCI_VENDOR_ID_AMD:
 		ehci->need_io_watchdog = 0;
 		break;
 	case PCI_VENDOR_ID_NVIDIA:
@@ -307,9 +308,6 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 	if (pdev->vendor == PCI_VENDOR_ID_STMICRO
 	    && pdev->device == PCI_DEVICE_ID_STMICRO_USB_HOST)
 		;	/* ConneXT has no sbrn register */
-	else if (pdev->vendor == PCI_VENDOR_ID_HUAWEI
-			 && pdev->device == 0xa239)
-		;	/* HUAWEI Kunpeng920 USB EHCI has no sbrn register */
 	else
 		pci_read_config_byte(pdev, 0x60, &ehci->sbrn);
 

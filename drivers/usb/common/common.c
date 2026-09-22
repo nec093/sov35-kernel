@@ -48,6 +48,7 @@ const char *usb_otg_state_string(enum usb_otg_state state)
 		[OTG_STATE_B_IDLE] = "b_idle",
 		[OTG_STATE_B_SRP_INIT] = "b_srp_init",
 		[OTG_STATE_B_PERIPHERAL] = "b_peripheral",
+		[OTG_STATE_B_CHARGER] = "b_charger",
 		[OTG_STATE_B_WAIT_ACON] = "b_wait_acon",
 		[OTG_STATE_B_HOST] = "b_host",
 	};
@@ -207,7 +208,10 @@ EXPORT_SYMBOL_GPL(of_usb_get_dr_mode_by_phy);
  */
 bool of_usb_host_tpl_support(struct device_node *np)
 {
-	return of_property_read_bool(np, "tpl-support");
+	if (of_find_property(np, "tpl-support", NULL))
+		return true;
+
+	return false;
 }
 EXPORT_SYMBOL_GPL(of_usb_host_tpl_support);
 
@@ -241,8 +245,8 @@ int of_usb_update_otg_caps(struct device_node *np,
 				otg_caps->otg_rev = otg_rev;
 			break;
 		default:
-			pr_err("%pOF: unsupported otg-rev: 0x%x\n",
-						np, otg_rev);
+			pr_err("%s: unsupported otg-rev: 0x%x\n",
+						np->full_name, otg_rev);
 			return -EINVAL;
 		}
 	} else {
@@ -254,11 +258,11 @@ int of_usb_update_otg_caps(struct device_node *np,
 		otg_caps->otg_rev = 0;
 	}
 
-	if (of_property_read_bool(np, "hnp-disable"))
+	if (of_find_property(np, "hnp-disable", NULL))
 		otg_caps->hnp_support = false;
-	if (of_property_read_bool(np, "srp-disable"))
+	if (of_find_property(np, "srp-disable", NULL))
 		otg_caps->srp_support = false;
-	if (of_property_read_bool(np, "adp-disable") ||
+	if (of_find_property(np, "adp-disable", NULL) ||
 				(otg_caps->otg_rev < 0x0200))
 		otg_caps->adp_support = false;
 

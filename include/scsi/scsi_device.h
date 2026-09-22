@@ -187,6 +187,12 @@ struct scsi_device {
 	unsigned fix_capacity:1;	/* READ_CAPACITY is too high by 1 */
 	unsigned guess_capacity:1;	/* READ_CAPACITY might be too high by 1 */
 	unsigned retry_hwerror:1;	/* Retry HARDWARE_ERROR */
+	unsigned use_rpm_auto:1; /* Enable runtime PM auto suspend */
+
+#define SCSI_DEFAULT_AUTOSUSPEND_DELAY  -1
+	int autosuspend_delay;
+	/* If non-zero, use timeout (in jiffies) for all commands */
+	unsigned int timeout_override;
 	unsigned last_sector_bug:1;	/* do not use multisector accesses on
 					   SD_LAST_BUGGY_SECTORS */
 	unsigned no_read_disc_info:1;	/* Avoid READ_DISC_INFO cmds */
@@ -455,6 +461,8 @@ extern void sdev_disable_disk_events(struct scsi_device *sdev);
 extern void sdev_enable_disk_events(struct scsi_device *sdev);
 extern int scsi_vpd_lun_id(struct scsi_device *, char *, size_t);
 extern int scsi_vpd_tpg_id(struct scsi_device *, int *);
+extern void scsi_set_cmd_timeout_override(struct scsi_device *sdev,
+					  unsigned int timeout);
 
 #ifdef CONFIG_PM
 extern int scsi_autopm_get_device(struct scsi_device *);

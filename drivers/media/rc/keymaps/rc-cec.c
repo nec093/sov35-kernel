@@ -166,7 +166,7 @@ struct rc_map_list cec_map = {
 	.map = {
 		.scan		= cec,
 		.size		= ARRAY_SIZE(cec),
-		.rc_proto	= RC_PROTO_CEC,
+		.rc_type	= RC_TYPE_CEC,
 		.name		= RC_MAP_CEC,
 	}
 };

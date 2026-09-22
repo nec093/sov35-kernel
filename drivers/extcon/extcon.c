@@ -179,6 +179,13 @@ static const struct __extcon_info {
 		.id = EXTCON_JIG,
 		.name = "JIG",
 	},
+#ifdef CONFIG_EXTCON_SOMC_EXTENSION
+	[EXTCON_VBUS_DROP] = {
+		.type = EXTCON_TYPE_MISC,
+		.id = EXTCON_VBUS_DROP,
+		.name = "VBUS-DROP",
+	},
+#endif
 	[EXTCON_MECHANICAL] = {
 		.type = EXTCON_TYPE_MISC,
 		.id = EXTCON_MECHANICAL,
@@ -227,6 +234,9 @@ struct extcon_cable {
 };
 
 static struct class *extcon_class;
+#if defined(CONFIG_ANDROID) && !IS_ENABLED(CONFIG_SWITCH)
+static struct class_compat *switch_class;
+#endif /* CONFIG_ANDROID */
 
 static LIST_HEAD(extcon_dev_list);
 static DEFINE_MUTEX(extcon_dev_list_lock);
@@ -486,6 +496,21 @@ int extcon_sync(struct extcon_dev *edev, unsigned int id)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(extcon_sync);
+
+int extcon_blocking_sync(struct extcon_dev *edev, unsigned int id, bool val)
+{
+	int index;
+
+	if (!edev)
+		return -EINVAL;
+
+	index = find_cable_index_by_id(edev, id);
+	if (index < 0)
+		return index;
+
+	return blocking_notifier_call_chain(&edev->bnh[index], val, edev);
+}
+EXPORT_SYMBOL(extcon_blocking_sync);
 
 /**
  * extcon_get_state() - Get the state of an external connector.
@@ -925,6 +950,38 @@ int extcon_register_notifier(struct extcon_dev *edev, unsigned int id,
 }
 EXPORT_SYMBOL_GPL(extcon_register_notifier);
 
+int extcon_register_blocking_notifier(struct extcon_dev *edev, unsigned int id,
+			struct notifier_block *nb)
+{
+	int idx = -EINVAL;
+
+	if (!edev || !nb)
+		return -EINVAL;
+
+	idx = find_cable_index_by_id(edev, id);
+	if (idx < 0)
+		return idx;
+
+	return blocking_notifier_chain_register(&edev->bnh[idx], nb);
+}
+EXPORT_SYMBOL(extcon_register_blocking_notifier);
+
+int extcon_unregister_blocking_notifier(struct extcon_dev *edev,
+			unsigned int id, struct notifier_block *nb)
+{
+	int idx;
+
+	if (!edev || !nb)
+		return -EINVAL;
+
+	idx = find_cable_index_by_id(edev, id);
+	if (idx < 0)
+		return idx;
+
+	return blocking_notifier_chain_unregister(&edev->bnh[idx], nb);
+}
+EXPORT_SYMBOL(extcon_unregister_blocking_notifier);
+
 /**
  * extcon_unregister_notifier() - Unregister a notifier block from the extcon.
  * @edev:	the extcon device
@@ -1021,6 +1078,12 @@ static int create_extcon_class(void)
 		if (IS_ERR(extcon_class))
 			return PTR_ERR(extcon_class);
 		extcon_class->dev_groups = extcon_groups;
+
+#if defined(CONFIG_ANDROID) && !IS_ENABLED(CONFIG_SWITCH)
+		switch_class = class_compat_register("switch");
+		if (WARN(!switch_class, "cannot allocate"))
+			return -ENOMEM;
+#endif /* CONFIG_ANDROID */
 	}
 
 	return 0;
@@ -1248,8 +1311,23 @@ int extcon_dev_register(struct extcon_dev *edev)
 		}
 	}
 
-	for (index = 0; index < edev->max_supported; index++)
+	/*
+	 * Not devm_*(): edev->dev is not initialized until device_register()
+	 * below, and devres_add() on an uninitialized device oopses.
+	 */
+	if (edev->max_supported) {
+		edev->bnh = kcalloc(edev->max_supported, sizeof(*edev->bnh),
+				    GFP_KERNEL);
+		if (!edev->bnh) {
+			ret = -ENOMEM;
+			goto err_dev;
+		}
+	}
+
+	for (index = 0; index < edev->max_supported; index++) {
 		RAW_INIT_NOTIFIER_HEAD(&edev->nh[index]);
+		BLOCKING_INIT_NOTIFIER_HEAD(&edev->bnh[index]);
+	}
 
 	RAW_INIT_NOTIFIER_HEAD(&edev->nh_all);
 
@@ -1261,6 +1339,10 @@ int extcon_dev_register(struct extcon_dev *edev)
 		put_device(&edev->dev);
 		goto err_dev;
 	}
+#if defined(CONFIG_ANDROID) && !IS_ENABLED(CONFIG_SWITCH)
+	if (switch_class)
+		ret = class_compat_create_link(switch_class, &edev->dev, NULL);
+#endif /* CONFIG_ANDROID */
 
 	mutex_lock(&extcon_dev_list_lock);
 	list_add(&edev->entry, &extcon_dev_list);
@@ -1269,8 +1351,10 @@ int extcon_dev_register(struct extcon_dev *edev)
 	return 0;
 
 err_dev:
-	if (edev->max_supported)
+	if (edev->max_supported) {
+		kfree(edev->bnh);
 		kfree(edev->nh);
+	}
 err_alloc_nh:
 	if (edev->max_supported)
 		kfree(edev->extcon_dev_type.groups);
@@ -1332,9 +1416,14 @@ void extcon_dev_unregister(struct extcon_dev *edev)
 	if (edev->max_supported) {
 		kfree(edev->extcon_dev_type.groups);
 		kfree(edev->cables);
+		kfree(edev->bnh);
 		kfree(edev->nh);
 	}
 
+#if defined(CONFIG_ANDROID) && !IS_ENABLED(CONFIG_SWITCH)
+	if (switch_class)
+		class_compat_remove_link(switch_class, &edev->dev, NULL);
+#endif
 	put_device(&edev->dev);
 }
 EXPORT_SYMBOL_GPL(extcon_dev_unregister);
@@ -1429,6 +1518,9 @@ module_init(extcon_class_init);
 
 static void __exit extcon_class_exit(void)
 {
+#if defined(CONFIG_ANDROID) && !IS_ENABLED(CONFIG_SWITCH)
+	class_compat_unregister(switch_class);
+#endif
 	class_destroy(extcon_class);
 }
 module_exit(extcon_class_exit);

@@ -717,6 +717,7 @@ static void spidev_probe_acpi(struct spi_device *spi)
 
 	if (!has_acpi_companion(&spi->dev))
 		return;
+	{ .compatible = "qcom,spi-msm-slave" },
 
 	id = acpi_match_device(spidev_acpi_ids, &spi->dev);
 	if (WARN_ON(!id))

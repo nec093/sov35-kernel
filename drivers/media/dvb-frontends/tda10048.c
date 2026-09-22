@@ -490,7 +490,7 @@ static int tda10048_firmware_upload(struct dvb_frontend *fe)
 			__func__);
 		return -EIO;
 	} else {
-		printk(KERN_INFO "%s: firmware read %zu bytes.\n",
+		printk(KERN_INFO "%s: firmware read %Zu bytes.\n",
 			__func__,
 			fw->size);
 		ret = 0;
@@ -1054,34 +1054,38 @@ static void tda10048_establish_defaults(struct dvb_frontend *fe)
 	/* Validate/default the config */
 	if (config->dtv6_if_freq_khz == 0) {
 		config->dtv6_if_freq_khz = TDA10048_IF_4300;
-		printk(KERN_WARNING "%s() tda10048_config.dtv6_if_freq_khz is not set (defaulting to %d)\n",
+		printk(KERN_WARNING "%s() tda10048_config.dtv6_if_freq_khz "
+			"is not set (defaulting to %d)\n",
 			__func__,
 			config->dtv6_if_freq_khz);
 	}
 
 	if (config->dtv7_if_freq_khz == 0) {
 		config->dtv7_if_freq_khz = TDA10048_IF_4300;
-		printk(KERN_WARNING "%s() tda10048_config.dtv7_if_freq_khz is not set (defaulting to %d)\n",
+		printk(KERN_WARNING "%s() tda10048_config.dtv7_if_freq_khz "
+			"is not set (defaulting to %d)\n",
 			__func__,
 			config->dtv7_if_freq_khz);
 	}
 
 	if (config->dtv8_if_freq_khz == 0) {
 		config->dtv8_if_freq_khz = TDA10048_IF_4300;
-		printk(KERN_WARNING "%s() tda10048_config.dtv8_if_freq_khz is not set (defaulting to %d)\n",
+		printk(KERN_WARNING "%s() tda10048_config.dtv8_if_freq_khz "
+			"is not set (defaulting to %d)\n",
 			__func__,
 			config->dtv8_if_freq_khz);
 	}
 
 	if (config->clk_freq_khz == 0) {
 		config->clk_freq_khz = TDA10048_CLK_16000;
-		printk(KERN_WARNING "%s() tda10048_config.clk_freq_khz is not set (defaulting to %d)\n",
+		printk(KERN_WARNING "%s() tda10048_config.clk_freq_khz "
+			"is not set (defaulting to %d)\n",
 			__func__,
 			config->clk_freq_khz);
 	}
 }
 
-static const struct dvb_frontend_ops tda10048_ops;
+static struct dvb_frontend_ops tda10048_ops;
 
 struct dvb_frontend *tda10048_attach(const struct tda10048_config *config,
 	struct i2c_adapter *i2c)
@@ -1141,9 +1145,9 @@ error:
 	kfree(state);
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(tda10048_attach);
+EXPORT_SYMBOL(tda10048_attach);
 
-static const struct dvb_frontend_ops tda10048_ops = {
+static struct dvb_frontend_ops tda10048_ops = {
 	.delsys = { SYS_DVBT },
 	.info = {
 		.name			= "NXP TDA10048HN DVB-T",

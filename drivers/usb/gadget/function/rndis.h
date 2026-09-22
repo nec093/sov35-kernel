@@ -19,7 +19,8 @@
 #define RNDIS_MAXIMUM_FRAME_SIZE	1518
 #define RNDIS_MAX_TOTAL_SIZE		1558
 
-typedef struct rndis_init_msg_type {
+typedef struct rndis_init_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
@@ -28,7 +29,8 @@ typedef struct rndis_init_msg_type {
 	__le32	MaxTransferSize;
 } rndis_init_msg_type;
 
-typedef struct rndis_init_cmplt_type {
+typedef struct rndis_init_cmplt_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
@@ -44,13 +46,15 @@ typedef struct rndis_init_cmplt_type {
 	__le32	AFListSize;
 } rndis_init_cmplt_type;
 
-typedef struct rndis_halt_msg_type {
+typedef struct rndis_halt_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
 } rndis_halt_msg_type;
 
-typedef struct rndis_query_msg_type {
+typedef struct rndis_query_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
@@ -60,7 +64,8 @@ typedef struct rndis_query_msg_type {
 	__le32	DeviceVcHandle;
 } rndis_query_msg_type;
 
-typedef struct rndis_query_cmplt_type {
+typedef struct rndis_query_cmplt_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
@@ -69,7 +74,8 @@ typedef struct rndis_query_cmplt_type {
 	__le32	InformationBufferOffset;
 } rndis_query_cmplt_type;
 
-typedef struct rndis_set_msg_type {
+typedef struct rndis_set_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
@@ -79,27 +85,31 @@ typedef struct rndis_set_msg_type {
 	__le32	DeviceVcHandle;
 } rndis_set_msg_type;
 
-typedef struct rndis_set_cmplt_type {
+typedef struct rndis_set_cmplt_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
 	__le32	Status;
 } rndis_set_cmplt_type;
 
-typedef struct rndis_reset_msg_type {
+typedef struct rndis_reset_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	Reserved;
 } rndis_reset_msg_type;
 
-typedef struct rndis_reset_cmplt_type {
+typedef struct rndis_reset_cmplt_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	Status;
 	__le32	AddressingReset;
 } rndis_reset_cmplt_type;
 
-typedef struct rndis_indicate_status_msg_type {
+typedef struct rndis_indicate_status_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	Status;
@@ -107,20 +117,23 @@ typedef struct rndis_indicate_status_msg_type {
 	__le32	StatusBufferOffset;
 } rndis_indicate_status_msg_type;
 
-typedef struct rndis_keepalive_msg_type {
+typedef struct rndis_keepalive_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
 } rndis_keepalive_msg_type;
 
-typedef struct rndis_keepalive_cmplt_type {
+typedef struct rndis_keepalive_cmplt_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	RequestID;
 	__le32	Status;
 } rndis_keepalive_cmplt_type;
 
-struct rndis_packet_msg_type {
+struct rndis_packet_msg_type
+{
 	__le32	MessageType;
 	__le32	MessageLength;
 	__le32	DataOffset;
@@ -134,7 +147,8 @@ struct rndis_packet_msg_type {
 	__le32	Reserved;
 } __attribute__ ((packed));
 
-struct rndis_config_parameter {
+struct rndis_config_parameter
+{
 	__le32	ParameterNameOffset;
 	__le32	ParameterNameLength;
 	__le32	ParameterType;
@@ -143,20 +157,23 @@ struct rndis_config_parameter {
 };
 
 /* implementation specific */
-enum rndis_state {
+enum rndis_state
+{
 	RNDIS_UNINITIALIZED,
 	RNDIS_INITIALIZED,
 	RNDIS_DATA_INITIALIZED,
 };
 
-typedef struct rndis_resp_t {
+typedef struct rndis_resp_t
+{
 	struct list_head	list;
 	u8			*buf;
 	u32			length;
 	int			send;
 } rndis_resp_t;
 
-typedef struct rndis_params {
+typedef struct rndis_params
+{
 	int			confignr;
 	u8			used;
 	u16			saved_filter;
@@ -170,16 +187,26 @@ typedef struct rndis_params {
 	struct net_device	*dev;
 
 	u32			vendorID;
+	u8			max_pkt_per_xfer;
+	u32			host_rndis_major_ver;
+	u32			host_rndis_minor_ver;
+	u32			dl_max_xfer_size;
+	u32			ul_max_xfer_size;
 	const char		*vendorDescr;
+	u8			pkt_alignment_factor;
 	void			(*resp_avail)(void *v);
+	void			(*flow_ctrl_enable)(bool enable,
+			struct rndis_params *params);
+
 	void			*v;
 	struct list_head	resp_queue;
-	spinlock_t		resp_lock;
+	spinlock_t		lock;
 } rndis_params;
 
 /* RNDIS Message parser and other useless functions */
 int  rndis_msg_parser(struct rndis_params *params, u8 *buf);
-struct rndis_params *rndis_register(void (*resp_avail)(void *v), void *v);
+struct rndis_params *rndis_register(void (*resp_avail)(void *v), void *v,
+	void (*flow_ctrl_enable)(bool enable, struct rndis_params *params));
 void rndis_deregister(struct rndis_params *params);
 int  rndis_set_param_dev(struct rndis_params *params, struct net_device *dev,
 			 u16 *cdc_filter);
@@ -187,6 +214,9 @@ int  rndis_set_param_vendor(struct rndis_params *params, u32 vendorID,
 			    const char *vendorDescr);
 int  rndis_set_param_medium(struct rndis_params *params, u32 medium,
 			     u32 speed);
+void rndis_set_max_pkt_xfer(struct rndis_params *params, u8 max_pkt_per_xfer);
+u32  rndis_get_ul_max_xfer_size(struct rndis_params *params);
+u32  rndis_get_dl_max_xfer_size(struct rndis_params *params);
 void rndis_add_hdr(struct sk_buff *skb);
 int rndis_rm_hdr(struct gether *port, struct sk_buff *skb,
 			struct sk_buff_head *list);
@@ -198,5 +228,8 @@ int  rndis_signal_connect(struct rndis_params *params);
 int  rndis_signal_disconnect(struct rndis_params *params);
 int  rndis_state(struct rndis_params *params);
 extern void rndis_set_host_mac(struct rndis_params *params, const u8 *addr);
+void rndis_flow_control(struct rndis_params *params, bool enable_flow_control);
+void rndis_set_pkt_alignment_factor(struct rndis_params *params,
+		u8 pkt_alignment_factor);
 
 #endif  /* _LINUX_RNDIS_H */

@@ -108,7 +108,6 @@ static const struct of_device_id tango_sensor_ids[] = {
 	},
 	{ /* sentinel */ }
 };
-MODULE_DEVICE_TABLE(of, tango_sensor_ids);
 
 static struct platform_driver tango_thermal_driver = {
 	.probe	= tango_thermal_probe,

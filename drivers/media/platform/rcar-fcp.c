@@ -52,7 +52,14 @@ struct rcar_fcp_device *rcar_fcp_get(const struct device_node *np)
 		if (fcp->dev->of_node != np)
 			continue;
 
-		get_device(fcp->dev);
+		/*
+		 * Make sure the module won't be unloaded behind our back. This
+		 * is a poor man's safety net, the module should really not be
+		 * unloaded while FCP users can be active.
+		 */
+		if (!try_module_get(fcp->dev->driver->owner))
+			fcp = NULL;
+
 		goto done;
 	}
 
@@ -73,15 +80,9 @@ EXPORT_SYMBOL_GPL(rcar_fcp_get);
 void rcar_fcp_put(struct rcar_fcp_device *fcp)
 {
 	if (fcp)
-		put_device(fcp->dev);
+		module_put(fcp->dev->driver->owner);
 }
 EXPORT_SYMBOL_GPL(rcar_fcp_put);
-
-struct device *rcar_fcp_get_device(struct rcar_fcp_device *fcp)
-{
-	return fcp->dev;
-}
-EXPORT_SYMBOL_GPL(rcar_fcp_get_device);
 
 /**
  * rcar_fcp_enable - Enable an FCP
@@ -103,10 +104,8 @@ int rcar_fcp_enable(struct rcar_fcp_device *fcp)
 		return 0;
 
 	ret = pm_runtime_get_sync(fcp->dev);
-	if (ret < 0) {
-		pm_runtime_put_noidle(fcp->dev);
+	if (ret < 0)
 		return ret;
-	}
 
 	return 0;
 }
@@ -172,7 +171,6 @@ static const struct of_device_id rcar_fcp_of_match[] = {
 	{ .compatible = "renesas,fcpv" },
 	{ },
 };
-MODULE_DEVICE_TABLE(of, rcar_fcp_of_match);
 
 static struct platform_driver rcar_fcp_platform_driver = {
 	.probe		= rcar_fcp_probe,

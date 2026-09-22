@@ -18,13 +18,6 @@
 #include <linux/usb/otg.h>
 #include <linux/usb/otg-fsm.h>
 
-#ifdef VERBOSE
-#define VDBG(fmt, args...) pr_debug("[%s]  " fmt, \
-				 __func__, ## args)
-#else
-#define VDBG(stuff...)	do {} while (0)
-#endif
-
 /* Change USB protocol when there is a protocol change */
 static int otg_set_protocol(struct otg_fsm *fsm, int protocol)
 {
@@ -193,11 +186,7 @@ static void otg_start_hnp_polling(struct otg_fsm *fsm)
 	if (!fsm->host_req_flag)
 		return;
 
-	if (!fsm->hnp_work_inited) {
-		INIT_DELAYED_WORK(&fsm->hnp_polling_work, otg_hnp_polling_work);
-		fsm->hnp_work_inited = true;
-	}
-
+	INIT_DELAYED_WORK(&fsm->hnp_polling_work, otg_hnp_polling_work);
 	schedule_delayed_work(&fsm->hnp_polling_work,
 					msecs_to_jiffies(T_HOST_REQ_POLL));
 }

@@ -2577,6 +2577,8 @@ static void set_pool_mode(struct pool *pool, enum pool_mode new_mode)
 
 	case PM_OUT_OF_METADATA_SPACE:
 	case PM_READ_ONLY:
+		if (!is_read_only_pool_mode(old_mode))
+			notify_of_pool_mode_change(pool, "read-only");
 		dm_pool_metadata_read_only(pool->pmd);
 		pool->process_bio = process_bio_read_only;
 		pool->process_discard = process_bio_success;

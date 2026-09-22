@@ -2136,6 +2136,9 @@ static void dasd_eckd_uncheck_device(struct dasd_device *device)
 	if (!private)
 		return;
 
+	if (!private)
+		return;
+
 	dasd_alias_disconnect_device_from_lcu(device);
 	private->ned = NULL;
 	private->sneq = NULL;

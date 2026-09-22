@@ -25,6 +25,7 @@
 #define _UAPI__SOUND_ASOUND_H
 
 #if defined(__KERNEL__) || defined(__linux__)
+#include <linux/time.h>
 #include <linux/types.h>
 #else
 #include <sys/ioctl.h>
@@ -109,6 +110,8 @@ enum {
 	SNDRV_HWDEP_IFACE_FW_DIGI00X,	/* Digidesign Digi 002/003 family */
 	SNDRV_HWDEP_IFACE_FW_TASCAM,	/* TASCAM FireWire series */
 	SNDRV_HWDEP_IFACE_LINE6,	/* Line6 USB processors */
+	SNDRV_HWDEP_IFACE_AUDIO_BE,	/* Backend Audio Control */
+	SNDRV_HWDEP_IFACE_AUDIO_CODEC,  /* codec Audio Control */
 	SNDRV_HWDEP_IFACE_FW_MOTU,	/* MOTU FireWire series */
 	SNDRV_HWDEP_IFACE_FW_FIREFACE,	/* RME Fireface series */
 

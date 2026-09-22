@@ -27,10 +27,6 @@ struct f_rndis_opts {
 	struct usb_os_desc		rndis_os_desc;
 	char				rndis_ext_compat_id[16];
 
-	u8				class;
-	u8				subclass;
-	u8				protocol;
-
 	/*
 	 * Read/write access to configfs attributes is handled by configfs.
 	 *
@@ -39,6 +35,9 @@ struct f_rndis_opts {
 	 */
 	struct mutex			lock;
 	int				refcnt;
+
+	/* "Wireless" RNDIS; auto-detected by Windows */
+	bool	wceis;
 };
 
 void rndis_borrow_net(struct usb_function_instance *f, struct net_device *net);

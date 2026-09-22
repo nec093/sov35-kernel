@@ -269,6 +269,15 @@ static inline u64 __gic_readq_nonatomic(const volatile void __iomem *addr)
 {
 	u64 val;
 
+static inline u64 gic_read_irouter(const volatile void __iomem *addr)
+{
+	u64 val;
+
+	val = readl_relaxed(addr);
+	val |= (u64)readl_relaxed(addr + 4) << 32;
+	return val;
+}
+
 	val = readl_relaxed(addr);
 	val |= (u64)readl_relaxed(addr + 4) << 32;
 	return val;

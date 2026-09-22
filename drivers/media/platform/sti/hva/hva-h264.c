@@ -615,7 +615,6 @@ static int hva_h264_prepare_task(struct hva_ctx *pctx,
 			"%s   width(%d) or height(%d) exceeds limits (%dx%d)\n",
 			pctx->name, frame_width, frame_height,
 			H264_MAX_SIZE_W, H264_MAX_SIZE_H);
-		pctx->frame_errors++;
 		return -EINVAL;
 	}
 
@@ -726,7 +725,6 @@ static int hva_h264_prepare_task(struct hva_ctx *pctx,
 	default:
 		dev_err(dev, "%s   invalid source pixel format\n",
 			pctx->name);
-		pctx->frame_errors++;
 		return -EINVAL;
 	}
 
@@ -751,7 +749,6 @@ static int hva_h264_prepare_task(struct hva_ctx *pctx,
 
 	if (td->framerate_den == 0) {
 		dev_err(dev, "%s   invalid framerate\n", pctx->name);
-		pctx->frame_errors++;
 		return -EINVAL;
 	}
 
@@ -842,7 +839,6 @@ static int hva_h264_prepare_task(struct hva_ctx *pctx,
 	    (payload > MAX_SPS_PPS_SIZE)) {
 		dev_err(dev, "%s   invalid sps/pps size %d\n", pctx->name,
 			payload);
-		pctx->frame_errors++;
 		return -EINVAL;
 	}
 
@@ -854,7 +850,6 @@ static int hva_h264_prepare_task(struct hva_ctx *pctx,
 						   (u8 *)stream->vaddr,
 						   &payload)) {
 		dev_err(dev, "%s   fail to get SEI nal\n", pctx->name);
-		pctx->frame_errors++;
 		return -EINVAL;
 	}
 
@@ -976,7 +971,6 @@ err_seq_info:
 err_ctx:
 	devm_kfree(dev, ctx);
 err:
-	pctx->sys_errors++;
 	return ret;
 }
 

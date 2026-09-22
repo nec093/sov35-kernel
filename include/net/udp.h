@@ -263,6 +263,7 @@ static inline bool udp_sk_bound_dev_eq(struct net *net, int bound_dev_if,
 /* net/ipv4/udp.c */
 void udp_destruct_common(struct sock *sk);
 void skb_consume_udp(struct sock *sk, struct sk_buff *skb, int len);
+bool udp_sk_rx_dst_set(struct sock *sk, struct dst_entry *dst);
 int __udp_enqueue_schedule_skb(struct sock *sk, struct sk_buff *skb);
 void udp_skb_destructor(struct sock *sk, struct sk_buff *skb);
 struct sk_buff *__skb_recv_udp(struct sock *sk, unsigned int flags,

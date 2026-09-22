@@ -18,4 +18,6 @@
 
 #include <asm-generic/socket.h>
 
+#define SO_COOKIE		57
+
 #endif	/* _ASM_POWERPC_SOCKET_H */

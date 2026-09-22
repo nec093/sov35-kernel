@@ -177,7 +177,8 @@ static int usb_extcon_probe(struct platform_device *pdev)
 		ret = devm_request_threaded_irq(dev, info->vbus_irq, NULL,
 						usb_irq_handler,
 						IRQF_TRIGGER_RISING |
-						IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+						IRQF_TRIGGER_FALLING |
+						IRQF_ONESHOT,
 						pdev->name, info);
 		if (ret < 0) {
 			dev_err(dev, "failed to request handler for VBUS IRQ\n");

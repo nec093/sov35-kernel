@@ -190,7 +190,6 @@ tusb_fifo_write_unaligned(void __iomem *fifo, const u8 *buf, u16 len)
 	}
 	if (len > 0) {
 		/* Write the rest 1 - 3 bytes to FIFO */
-		val = 0;
 		memcpy(&val, buf, len);
 		musb_writel(fifo, 0, val);
 	}
@@ -877,14 +876,26 @@ static irqreturn_t tusb_musb_interrupt(int irq, void *__hci)
 				| TUSB_INT_SRC_ID_STATUS_CHNG))
 		idle_timeout = tusb_otg_ints(musb, int_src, tbase);
 
-	/*
-	 * Just clear the DMA interrupt if it comes as the completion for both
-	 * TX and RX is handled by the DMA callback in tusb6010_omap
+	/* TX dma callback must be handled here, RX dma callback is
+	 * handled in tusb_omap_dma_cb.
 	 */
 	if ((int_src & TUSB_INT_SRC_TXRX_DMA_DONE)) {
 		u32	dma_src = musb_readl(tbase, TUSB_DMA_INT_SRC);
+		u32	real_dma_src = musb_readl(tbase, TUSB_DMA_INT_MASK);
 
 		dev_dbg(musb->controller, "DMA IRQ %08x\n", dma_src);
+		real_dma_src = ~real_dma_src & dma_src;
+		if (tusb_dma_omap(musb) && real_dma_src) {
+			int	tx_source = (real_dma_src & 0xffff);
+			int	i;
+
+			for (i = 1; i <= 15; i++) {
+				if (tx_source & (1 << i)) {
+					dev_dbg(musb->controller, "completing ep%i %s\n", i, "tx");
+					musb_dma_completion(musb, i, 1);
+				}
+			}
+		}
 		musb_writel(tbase, TUSB_DMA_INT_CLEAR, dma_src);
 	}
 
@@ -1103,11 +1114,6 @@ static int tusb_musb_init(struct musb *musb)
 
 	/* dma address for async dma */
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!mem) {
-		pr_debug("no async dma resource?\n");
-		ret = -ENODEV;
-		goto done;
-	}
 	musb->async = mem->start;
 
 	/* dma address for sync dma */
@@ -1170,8 +1176,7 @@ static int tusb_musb_exit(struct musb *musb)
 }
 
 static const struct musb_platform_ops tusb_ops = {
-	.quirks		= MUSB_DMA_TUSB_OMAP | MUSB_IN_TUSB |
-			  MUSB_G_NO_SKB_RESERVE,
+	.quirks		= MUSB_DMA_TUSB_OMAP | MUSB_IN_TUSB,
 	.init		= tusb_musb_init,
 	.exit		= tusb_musb_exit,
 

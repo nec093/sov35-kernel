@@ -339,16 +339,10 @@ static void musb_advance_schedule(struct musb *musb, struct urb *urb,
 	musb_giveback(musb, urb, status);
 	qh->is_ready = ready;
 
-	/*
-	 * musb->lock had been unlocked in musb_giveback, so qh may
-	 * be freed, need to get it again
-	 */
-	qh = musb_ep_get_qh(hw_ep, is_in);
-
 	/* reclaim resources (and bandwidth) ASAP; deschedule it, and
 	 * invalidate qh as soon as list_empty(&hep->urb_list)
 	 */
-	if (qh && list_empty(&qh->hep->urb_list)) {
+	if (list_empty(&qh->hep->urb_list)) {
 		struct list_head	*head;
 		struct dma_controller	*dma = musb->dma_controller;
 
@@ -1502,7 +1496,7 @@ static int musb_rx_dma_iso_cppi41(struct dma_controller *dma,
 	struct dma_channel *channel = hw_ep->rx_channel;
 	void __iomem *epio = hw_ep->regs;
 	dma_addr_t *buf;
-	u32 length;
+	u32 length, res;
 	u16 val;
 
 	buf = (void *)urb->iso_frame_desc[qh->iso_idx].offset +
@@ -1514,8 +1508,10 @@ static int musb_rx_dma_iso_cppi41(struct dma_controller *dma,
 	val |= MUSB_RXCSR_DMAENAB;
 	musb_writew(hw_ep->regs, MUSB_RXCSR, val);
 
-	return dma->channel_program(channel, qh->maxpacket, 0,
+	res = dma->channel_program(channel, qh->maxpacket, 0,
 				   (u32)buf, length);
+
+	return res;
 }
 #else
 static inline int musb_rx_dma_iso_cppi41(struct dma_controller *dma,
@@ -2112,10 +2108,6 @@ static int musb_schedule(
 				(USB_SPEED_HIGH == qh->dev->speed) ? 8 : 4;
 		goto success;
 	} else if (best_end < 0) {
-		dev_err(musb->controller,
-				"%s hwep alloc failed for %dx%d\n",
-				musb_ep_xfertype_string(qh->type),
-				qh->hb_mult, qh->maxpacket);
 		return -ENOSPC;
 	}
 
@@ -2200,7 +2192,7 @@ static int musb_urb_enqueue(
 	 * Some musb cores don't support high bandwidth ISO transfers; and
 	 * we don't (yet!) support high bandwidth interrupt transfers.
 	 */
-	qh->hb_mult = usb_endpoint_maxp_mult(epd);
+	qh->hb_mult = 1 + ((qh->maxpacket >> 11) & 0x03);
 	if (qh->hb_mult > 1) {
 		int ok = (qh->type == USB_ENDPOINT_XFER_ISOC);
 
@@ -2208,10 +2200,6 @@ static int musb_urb_enqueue(
 			ok = (usb_pipein(urb->pipe) && musb->hb_iso_rx)
 				|| (usb_pipeout(urb->pipe) && musb->hb_iso_tx);
 		if (!ok) {
-			dev_err(musb->controller,
-				"high bandwidth %s (%dx%d) not supported\n",
-				musb_ep_xfertype_string(qh->type),
-				qh->hb_mult, qh->maxpacket & 0x7ff);
 			ret = -EMSGSIZE;
 			goto done;
 		}
@@ -2430,7 +2418,6 @@ static int musb_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 		 * and its URB list has emptied, recycle this qh.
 		 */
 		if (ready && list_empty(&qh->hep->urb_list)) {
-			musb_ep_set_qh(qh->hw_ep, is_in, NULL);
 			qh->hep->hcpriv = NULL;
 			list_del(&qh->ring);
 			kfree(qh);

@@ -219,6 +219,21 @@ static int ovl_set_opaque_xerr(struct dentry *dentry, struct dentry *upper,
 
 static int ovl_set_opaque(struct dentry *dentry, struct dentry *upperdentry)
 {
+	int err;
+	enum ovl_path_type type;
+	struct path realpath;
+	const struct cred *old_cred;
+
+	type = ovl_path_real(dentry, &realpath);
+	old_cred = ovl_override_creds(dentry->d_sb);
+	err = vfs_getattr(&realpath, stat, request_mask, flags);
+	revert_creds(old_cred);
+	if (err)
+		return err;
+
+	stat->dev = dentry->d_sb->s_dev;
+	stat->ino = dentry->d_inode->i_ino;
+
 	/*
 	 * Fail with -EIO when trying to create opaque dir and upper doesn't
 	 * support xattrs. ovl_rename() calls ovl_set_opaque_xerr(-EXDEV) to

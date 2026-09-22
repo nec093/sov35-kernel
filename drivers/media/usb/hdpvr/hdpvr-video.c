@@ -308,6 +308,7 @@ static int hdpvr_start_streaming(struct hdpvr_device *dev)
 
 	dev->status = STATUS_STREAMING;
 
+	INIT_WORK(&dev->worker, hdpvr_transmit_buffers);
 	schedule_work(&dev->worker);
 
 	v4l2_dbg(MSG_BUFFER, hdpvr_debug, &dev->v4l2_dev,
@@ -331,7 +332,9 @@ static int hdpvr_stop_streaming(struct hdpvr_device *dev)
 
 	buf = kmalloc(dev->bulk_in_size, GFP_KERNEL);
 	if (!buf)
-		v4l2_err(&dev->v4l2_dev, "failed to allocate temporary buffer for emptying the internal device buffer. Next capture start will be slow\n");
+		v4l2_err(&dev->v4l2_dev, "failed to allocate temporary buffer "
+			 "for emptying the internal device buffer. "
+			 "Next capture start will be slow\n");
 
 	dev->status = STATUS_SHUTTING_DOWN;
 	hdpvr_config_call(dev, CTRL_STOP_STREAMING_VALUE, 0x00);
@@ -409,7 +412,7 @@ static ssize_t hdpvr_read(struct file *file, char __user *buffer, size_t count,
 	struct hdpvr_device *dev = video_drvdata(file);
 	struct hdpvr_buffer *buf = NULL;
 	struct urb *urb;
-	int ret = 0;
+	unsigned int ret = 0;
 	int rem, cnt;
 
 	if (*pos)
@@ -434,7 +437,7 @@ static ssize_t hdpvr_read(struct file *file, char __user *buffer, size_t count,
 	/* wait for the first buffer */
 	if (!(file->f_flags & O_NONBLOCK)) {
 		if (wait_event_interruptible(dev->wait_data,
-					     !list_empty_careful(&dev->rec_buff_list)))
+					     hdpvr_get_next_buffer(dev)))
 			return -ERESTARTSYS;
 	}
 
@@ -444,7 +447,6 @@ static ssize_t hdpvr_read(struct file *file, char __user *buffer, size_t count,
 
 		if (buf->status != BUFSTAT_READY &&
 		    dev->status != STATUS_DISCONNECTED) {
-			int err;
 			/* return nonblocking */
 			if (file->f_flags & O_NONBLOCK) {
 				if (!ret)
@@ -452,31 +454,9 @@ static ssize_t hdpvr_read(struct file *file, char __user *buffer, size_t count,
 				goto err;
 			}
 
-			err = wait_event_interruptible_timeout(dev->wait_data,
-				buf->status == BUFSTAT_READY,
-				msecs_to_jiffies(1000));
-			if (err < 0) {
-				ret = err;
-				goto err;
-			}
-			if (!err) {
-				v4l2_info(&dev->v4l2_dev,
-					  "timeout: restart streaming\n");
-				mutex_lock(&dev->io_mutex);
-				hdpvr_stop_streaming(dev);
-				mutex_unlock(&dev->io_mutex);
-				/*
-				 * The FW needs about 4 seconds after streaming
-				 * stopped before it is ready to restart
-				 * streaming.
-				 */
-				msleep(4000);
-				err = hdpvr_start_streaming(dev);
-				if (err) {
-					ret = err;
-					goto err;
-				}
-			}
+			if (wait_event_interruptible(dev->wait_data,
+					      buf->status == BUFSTAT_READY))
+				return -ERESTARTSYS;
 		}
 
 		if (buf->status != BUFSTAT_READY)
@@ -1127,7 +1107,9 @@ static void hdpvr_device_release(struct video_device *vdev)
 	struct hdpvr_device *dev = video_get_drvdata(vdev);
 
 	hdpvr_delete(dev);
+	mutex_lock(&dev->io_mutex);
 	flush_work(&dev->worker);
+	mutex_unlock(&dev->io_mutex);
 
 	v4l2_device_unregister(&dev->v4l2_dev);
 	v4l2_ctrl_handler_free(&dev->hdl);
@@ -1163,9 +1145,6 @@ int hdpvr_register_videodev(struct hdpvr_device *dev, struct device *parent,
 	struct v4l2_ctrl_handler *hdl = &dev->hdl;
 	bool ac3 = dev->flags & HDPVR_FLAG_AC3_CAP;
 	int res;
-
-	// initialize dev->worker
-	INIT_WORK(&dev->worker, hdpvr_transmit_buffers);
 
 	dev->cur_std = V4L2_STD_525_60;
 	dev->width = 720;

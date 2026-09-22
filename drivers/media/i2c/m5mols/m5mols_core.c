@@ -166,7 +166,7 @@ static int m5mols_read(struct v4l2_subdev *sd, u32 size, u32 reg, u32 *val)
 	msg[1].buf = rbuf;
 
 	/* minimum stabilization time */
-	usleep_range(200, 300);
+	usleep_range(200, 200);
 
 	ret = i2c_transfer(client->adapter, msg, 2);
 
@@ -267,8 +267,7 @@ int m5mols_write(struct v4l2_subdev *sd, u32 reg, u32 val)
 
 	*buf = m5mols_swap_byte((u8 *)&val, size);
 
-	/* minimum stabilization time */
-	usleep_range(200, 300);
+	usleep_range(200, 200);
 
 	ret = i2c_transfer(client->adapter, msg, 1);
 	if (ret == 1)
@@ -463,7 +462,7 @@ static int m5mols_get_version(struct v4l2_subdev *sd)
 
 	v4l2_info(sd, "Manufacturer\t[%s]\n",
 			is_manufacturer(info, REG_SAMSUNG_ELECTRO) ?
-			"Samsung Electro-Mechanics" :
+			"Samsung Electro-Machanics" :
 			is_manufacturer(info, REG_SAMSUNG_OPTICS) ?
 			"Samsung Fiber-Optics" :
 			is_manufacturer(info, REG_SAMSUNG_TECHWIN) ?
@@ -488,7 +487,7 @@ static enum m5mols_restype __find_restype(u32 code)
 	do {
 		if (code == m5mols_default_ffmt[type].code)
 			return type;
-	} while (++type != SIZE_DEFAULT_FFMT);
+	} while (type++ != SIZE_DEFAULT_FFMT);
 
 	return 0;
 }
@@ -659,7 +658,7 @@ static int m5mols_enum_mbus_code(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static const struct v4l2_subdev_pad_ops m5mols_pad_ops = {
+static struct v4l2_subdev_pad_ops m5mols_pad_ops = {
 	.enum_mbus_code	= m5mols_enum_mbus_code,
 	.get_fmt	= m5mols_get_fmt,
 	.set_fmt	= m5mols_set_fmt,
@@ -764,8 +763,7 @@ static int m5mols_sensor_power(struct m5mols_info *info, bool enable)
 
 		ret = regulator_bulk_enable(ARRAY_SIZE(supplies), supplies);
 		if (ret) {
-			if (info->set_power)
-				info->set_power(&client->dev, 0);
+			info->set_power(&client->dev, 0);
 			return ret;
 		}
 

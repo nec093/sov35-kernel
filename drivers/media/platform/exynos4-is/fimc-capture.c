@@ -534,7 +534,7 @@ static int fimc_capture_release(struct file *file)
 	mutex_lock(&fimc->lock);
 
 	if (close && vc->streaming) {
-		media_pipeline_stop(&vc->ve.vdev.entity);
+		media_entity_pipeline_stop(&vc->ve.vdev.entity);
 		vc->streaming = false;
 	}
 
@@ -1194,7 +1194,7 @@ static int fimc_cap_streamon(struct file *file, void *priv,
 	if (fimc_capture_active(fimc))
 		return -EBUSY;
 
-	ret = media_pipeline_start(entity, &vc->ve.pipe->mp);
+	ret = media_entity_pipeline_start(entity, &vc->ve.pipe->mp);
 	if (ret < 0)
 		return ret;
 
@@ -1228,7 +1228,7 @@ static int fimc_cap_streamon(struct file *file, void *priv,
 	}
 
 err_p_stop:
-	media_pipeline_stop(entity);
+	media_entity_pipeline_stop(entity);
 	return ret;
 }
 
@@ -1243,7 +1243,7 @@ static int fimc_cap_streamoff(struct file *file, void *priv,
 	if (ret < 0)
 		return ret;
 
-	media_pipeline_stop(&vc->ve.vdev.entity);
+	media_entity_pipeline_stop(&vc->ve.vdev.entity);
 	vc->streaming = false;
 	return 0;
 }
@@ -1269,14 +1269,13 @@ static int fimc_cap_g_selection(struct file *file, void *fh,
 	struct fimc_ctx *ctx = fimc->vid_cap.ctx;
 	struct fimc_frame *f = &ctx->s_frame;
 
-	if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+	if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
 		return -EINVAL;
 
 	switch (s->target) {
 	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
 		f = &ctx->d_frame;
-		/* fall through */
 	case V4L2_SEL_TGT_CROP_BOUNDS:
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 		s->r.left = 0;
@@ -1287,7 +1286,6 @@ static int fimc_cap_g_selection(struct file *file, void *fh,
 
 	case V4L2_SEL_TGT_COMPOSE:
 		f = &ctx->d_frame;
-		/* fall through */
 	case V4L2_SEL_TGT_CROP:
 		s->r.left = f->offs_h;
 		s->r.top = f->offs_v;
@@ -1321,7 +1319,7 @@ static int fimc_cap_s_selection(struct file *file, void *fh,
 	struct fimc_frame *f;
 	unsigned long flags;
 
-	if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+	if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
 		return -EINVAL;
 
 	if (s->target == V4L2_SEL_TGT_COMPOSE)
@@ -1611,7 +1609,6 @@ static int fimc_subdev_get_selection(struct v4l2_subdev *sd,
 	switch (sel->target) {
 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
 		f = &ctx->d_frame;
-		/* fall through */
 	case V4L2_SEL_TGT_CROP_BOUNDS:
 		r->width = f->o_width;
 		r->height = f->o_height;
@@ -1697,7 +1694,7 @@ static int fimc_subdev_set_selection(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static const struct v4l2_subdev_pad_ops fimc_subdev_pad_ops = {
+static struct v4l2_subdev_pad_ops fimc_subdev_pad_ops = {
 	.enum_mbus_code = fimc_subdev_enum_mbus_code,
 	.get_selection = fimc_subdev_get_selection,
 	.set_selection = fimc_subdev_set_selection,
@@ -1705,7 +1702,7 @@ static const struct v4l2_subdev_pad_ops fimc_subdev_pad_ops = {
 	.set_fmt = fimc_subdev_set_fmt,
 };
 
-static const struct v4l2_subdev_ops fimc_subdev_ops = {
+static struct v4l2_subdev_ops fimc_subdev_ops = {
 	.pad = &fimc_subdev_pad_ops,
 };
 
