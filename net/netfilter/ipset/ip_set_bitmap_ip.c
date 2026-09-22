@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (C) 2000-2002 Joakim Axelsson <gozem@linux.nu>
  *                         Patrick Schaaf <bof@bof.de>
- * Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@netfilter.org>
+ * Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 /* Kernel module implementing an IP set type: the bitmap:ip type */
@@ -28,7 +31,7 @@
 #define IPSET_TYPE_REV_MAX	3	/* skbinfo support added */
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@netfilter.org>");
+MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
 IP_SET_MODULE_DESC("bitmap:ip", IPSET_TYPE_REV_MIN, IPSET_TYPE_REV_MAX);
 MODULE_ALIAS("ip_set_bitmap:ip");
 
@@ -45,8 +48,7 @@ struct bitmap_ip {
 	size_t memsize;		/* members size */
 	u8 netmask;		/* subnet netmask */
 	struct timer_list gc;	/* garbage collection */
-	struct ip_set *set;	/* attached to this ip_set */
-	unsigned char extensions[]	/* data extensions */
+	unsigned char extensions[0]	/* data extensions */
 		__aligned(__alignof__(u64));
 };
 
@@ -163,8 +165,11 @@ bitmap_ip_uadt(struct ip_set *set, struct nlattr *tb[],
 		ret = ip_set_get_hostipaddr4(tb[IPSET_ATTR_IP_TO], &ip_to);
 		if (ret)
 			return ret;
-		if (ip > ip_to)
+		if (ip > ip_to) {
 			swap(ip, ip_to);
+			if (ip < map->first_ip)
+				return -IPSET_ERR_BITMAP_RANGE;
+		}
 	} else if (tb[IPSET_ATTR_CIDR]) {
 		u8 cidr = nla_get_u8(tb[IPSET_ATTR_CIDR]);
 
@@ -175,7 +180,7 @@ bitmap_ip_uadt(struct ip_set *set, struct nlattr *tb[],
 		ip_to = ip;
 	}
 
-	if (ip < map->first_ip || ip_to > map->last_ip)
+	if (ip_to > map->last_ip)
 		return -IPSET_ERR_BITMAP_RANGE;
 
 	for (; !before(ip_to, ip); ip += map->hosts) {
@@ -227,7 +232,6 @@ init_map_ip(struct ip_set *set, struct bitmap_ip *map,
 	map->netmask = netmask;
 	set->timeout = IPSET_NO_TIMEOUT;
 
-	map->set = set;
 	set->data = map;
 	set->family = NFPROTO_IPV4;
 
@@ -257,8 +261,12 @@ bitmap_ip_create(struct net *net, struct ip_set *set, struct nlattr *tb[],
 		ret = ip_set_get_hostipaddr4(tb[IPSET_ATTR_IP_TO], &last_ip);
 		if (ret)
 			return ret;
-		if (first_ip > last_ip)
-			swap(first_ip, last_ip);
+		if (first_ip > last_ip) {
+			u32 tmp = first_ip;
+
+			first_ip = last_ip;
+			last_ip = tmp;
+		}
 	} else if (tb[IPSET_ATTR_CIDR]) {
 		u8 cidr = nla_get_u8(tb[IPSET_ATTR_CIDR]);
 
@@ -311,7 +319,7 @@ bitmap_ip_create(struct net *net, struct ip_set *set, struct nlattr *tb[],
 	set->variant = &bitmap_ip;
 	if (!init_map_ip(set, map, first_ip, last_ip,
 			 elements, hosts, netmask)) {
-		ip_set_free(map);
+		kfree(map);
 		return -ENOMEM;
 	}
 	if (tb[IPSET_ATTR_TIMEOUT]) {

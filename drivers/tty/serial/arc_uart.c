@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * ARC On-Chip(fpga) UART Driver
  *
  * Copyright (C) 2010-2012 Synopsys, Inc. (www.synopsys.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * vineetg: July 10th 2012
  *  -Decoupled the driver from arch/arc
@@ -613,11 +616,10 @@ static int arc_serial_probe(struct platform_device *pdev)
 	}
 	uart->baud = val;
 
-	port->membase = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(port->membase)) {
+	port->membase = of_iomap(np, 0);
+	if (!port->membase)
 		/* No point of dev_err since UART itself is hosed here */
-		return PTR_ERR(port->membase);
-	}
+		return -ENXIO;
 
 	port->irq = irq_of_parse_and_map(np, 0);
 

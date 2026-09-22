@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  * n_tty.c --- implements the N_TTY line discipline.
  *
@@ -15,6 +14,9 @@
  *
  * This file also contains code originally written by Linus Torvalds,
  * Copyright 1991, 1992, 1993, and by Julian Cowley, Copyright 1994.
+ *
+ * This file may be redistributed under the terms of the GNU General Public
+ * License.
  *
  * Reduced memory usage for older ARM systems  - Russell King.
  *
@@ -50,10 +52,8 @@
 #include <linux/ratelimit.h>
 #include <linux/vmalloc.h>
 
-/*
- * Until this number of characters is queued in the xmit buffer, select will
- * return "we have room for writes".
- */
+
+/* number of characters left in xmit buffer before select has we have room */
 #define WAKEUP_CHARS 256
 
 /*
@@ -554,9 +554,9 @@ static ssize_t process_output_block(struct tty_struct *tty,
 	mutex_lock(&ldata->output_lock);
 
 	space = tty_write_room(tty);
-	if (space <= 0) {
+	if (!space) {
 		mutex_unlock(&ldata->output_lock);
-		return space;
+		return 0;
 	}
 	if (nr > space)
 		nr = space;
@@ -1405,7 +1405,7 @@ handle_newline:
 			put_tty_queue(c, ldata);
 			smp_store_release(&ldata->canon_head, ldata->read_head);
 			kill_fasync(&tty->fasync, SIGIO, POLL_IN);
-			wake_up_interruptible_poll(&tty->read_wait, EPOLLIN | EPOLLRDNORM);
+			wake_up_interruptible_poll(&tty->read_wait, POLLIN | POLLRDNORM);
 			return 0;
 		}
 	}
@@ -1686,7 +1686,7 @@ static void __receive_buf(struct tty_struct *tty, const unsigned char *cp,
 
 	if (read_cnt(ldata)) {
 		kill_fasync(&tty->fasync, SIGIO, POLL_IN);
-		wake_up_interruptible_poll(&tty->read_wait, EPOLLIN | EPOLLRDNORM);
+		wake_up_interruptible_poll(&tty->read_wait, POLLIN | POLLRDNORM);
 	}
 }
 
@@ -2427,30 +2427,30 @@ break_out:
  *	Called without the kernel lock held - fine
  */
 
-static __poll_t n_tty_poll(struct tty_struct *tty, struct file *file,
+static unsigned int n_tty_poll(struct tty_struct *tty, struct file *file,
 							poll_table *wait)
 {
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	poll_wait(file, &tty->read_wait, wait);
 	poll_wait(file, &tty->write_wait, wait);
 	if (input_available_p(tty, 1))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 	else {
 		tty_buffer_flush_work(tty->port);
 		if (input_available_p(tty, 1))
-			mask |= EPOLLIN | EPOLLRDNORM;
+			mask |= POLLIN | POLLRDNORM;
 	}
 	if (tty->packet && tty->link->ctrl_status)
-		mask |= EPOLLPRI | EPOLLIN | EPOLLRDNORM;
+		mask |= POLLPRI | POLLIN | POLLRDNORM;
 	if (test_bit(TTY_OTHER_CLOSED, &tty->flags))
-		mask |= EPOLLHUP;
+		mask |= POLLHUP;
 	if (tty_hung_up_p(file))
-		mask |= EPOLLHUP;
+		mask |= POLLHUP;
 	if (tty->ops->write && !tty_is_writelocked(tty) &&
 			tty_chars_in_buffer(tty) < WAKEUP_CHARS &&
 			tty_write_room(tty) > 0)
-		mask |= EPOLLOUT | EPOLLWRNORM;
+		mask |= POLLOUT | POLLWRNORM;
 	return mask;
 }
 

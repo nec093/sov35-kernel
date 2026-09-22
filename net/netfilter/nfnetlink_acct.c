@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * (C) 2011 Pablo Neira Ayuso <pablo@netfilter.org>
  * (C) 2011 Intra2net AG <http://www.intra2net.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation (or any later at your option).
  */
 #include <linux/init.h>
 #include <linux/module.h>
@@ -33,7 +36,7 @@ struct nf_acct {
 	refcount_t		refcnt;
 	char			name[NFACCT_NAME_MAX];
 	struct rcu_head		rcu_head;
-	char			data[];
+	char			data[0];
 };
 
 struct nfacct_filter {
@@ -112,7 +115,7 @@ static int nfnl_acct_new(struct net *net, struct sock *nfnl,
 		nfacct->flags = flags;
 	}
 
-	nla_strlcpy(nfacct->name, tb[NFACCT_NAME], NFACCT_NAME_MAX);
+	strncpy(nfacct->name, nla_data(tb[NFACCT_NAME]), NFACCT_NAME_MAX);
 
 	if (tb[NFACCT_BYTES]) {
 		atomic64_set(&nfacct->bytes,
@@ -132,15 +135,20 @@ nfnl_acct_fill_info(struct sk_buff *skb, u32 portid, u32 seq, u32 type,
 		   int event, struct nf_acct *acct)
 {
 	struct nlmsghdr *nlh;
+	struct nfgenmsg *nfmsg;
 	unsigned int flags = portid ? NLM_F_MULTI : 0;
 	u64 pkts, bytes;
 	u32 old_flags;
 
 	event = nfnl_msg_type(NFNL_SUBSYS_ACCT, event);
-	nlh = nfnl_msg_put(skb, portid, seq, event, flags, AF_UNSPEC,
-			   NFNETLINK_V0, 0);
-	if (!nlh)
+	nlh = nlmsg_put(skb, portid, seq, event, sizeof(*nfmsg), flags);
+	if (nlh == NULL)
 		goto nlmsg_failure;
+
+	nfmsg = nlmsg_data(nlh);
+	nfmsg->nfgen_family = AF_UNSPEC;
+	nfmsg->version = NFNETLINK_V0;
+	nfmsg->res_id = 0;
 
 	if (nla_put_string(skb, NFACCT_NAME, acct->name))
 		goto nla_put_failure;
@@ -240,8 +248,8 @@ static int nfnl_acct_start(struct netlink_callback *cb)
 	if (!attr)
 		return 0;
 
-	err = nla_parse_nested_deprecated(tb, NFACCT_FILTER_MAX, attr,
-					  filter_policy, NULL);
+	err = nla_parse_nested(tb, NFACCT_FILTER_MAX, attr, filter_policy,
+			       NULL);
 	if (err < 0)
 		return err;
 
@@ -456,7 +464,8 @@ static void nfnl_overquota_report(struct net *net, struct nf_acct *nfacct)
 			  GFP_ATOMIC);
 }
 
-int nfnl_acct_overquota(struct net *net, struct nf_acct *nfacct)
+int nfnl_acct_overquota(struct net *net, const struct sk_buff *skb,
+			struct nf_acct *nfacct)
 {
 	u64 now;
 	u64 *quota;
@@ -515,6 +524,7 @@ static int __init nfnl_acct_init(void)
 		goto err_out;
 	}
 
+	pr_info("nfnl_acct: registering with nfnetlink.\n");
 	ret = nfnetlink_subsys_register(&nfnl_acct_subsys);
 	if (ret < 0) {
 		pr_err("nfnl_acct_init: cannot register with nfnetlink.\n");
@@ -530,6 +540,7 @@ err_out:
 
 static void __exit nfnl_acct_exit(void)
 {
+	pr_info("nfnl_acct: unregistering from nfnetlink.\n");
 	nfnetlink_subsys_unregister(&nfnl_acct_subsys);
 	unregister_pernet_subsys(&nfnl_acct_ops);
 }

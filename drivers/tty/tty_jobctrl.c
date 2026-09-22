@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
@@ -44,7 +43,7 @@ int __tty_check_change(struct tty_struct *tty, int sig)
 	tty_pgrp = tty->pgrp;
 	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
 
-	if (tty_pgrp && pgrp != tty_pgrp) {
+	if (tty_pgrp && pgrp != tty->pgrp) {
 		if (is_ignored(sig)) {
 			if (sig == SIGTTIN)
 				ret = -EIO;
@@ -321,7 +320,7 @@ void disassociate_ctty(int on_exit)
 	read_unlock(&tasklist_lock);
 }
 
-/*
+/**
  *
  *	no_tty	- Ensure the current process does not have a controlling tty
  */

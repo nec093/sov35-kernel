@@ -135,10 +135,17 @@ static struct sysrq_key_op sysrq_unraw_op = {
 
 static void sysrq_handle_crash(int key)
 {
-	/* release the RCU read lock before crashing */
-	rcu_read_unlock();
+	char *killer = NULL;
 
-	panic("sysrq triggered crash\n");
+	/* we need to release the RCU read lock here,
+	 * otherwise we get an annoying
+	 * 'BUG: sleeping function called from invalid context'
+	 * complaint from the kernel before the panic.
+	 */
+	rcu_read_unlock();
+	panic_on_oops = 1;	/* force panic */
+	wmb();
+	*killer = 1;
 }
 static struct sysrq_key_op sysrq_crash_op = {
 	.handler	= sysrq_handle_crash,
@@ -209,7 +216,7 @@ static struct sysrq_key_op sysrq_showlocks_op = {
 #endif
 
 #ifdef CONFIG_SMP
-static DEFINE_RAW_SPINLOCK(show_lock);
+static DEFINE_SPINLOCK(show_lock);
 
 static void showacpu(void *dummy)
 {
@@ -219,10 +226,10 @@ static void showacpu(void *dummy)
 	if (idle_cpu(smp_processor_id()))
 		return;
 
-	raw_spin_lock_irqsave(&show_lock, flags);
+	spin_lock_irqsave(&show_lock, flags);
 	pr_info("CPU%d:\n", smp_processor_id());
 	show_stack(NULL, NULL);
-	raw_spin_unlock_irqrestore(&show_lock, flags);
+	spin_unlock_irqrestore(&show_lock, flags);
 }
 
 static void sysrq_showregs_othercpus(struct work_struct *dummy)
@@ -342,7 +349,7 @@ static void send_sig_all(int sig)
 		if (is_global_init(p))
 			continue;
 
-		do_send_sig_info(sig, SEND_SIG_PRIV, p, PIDTYPE_MAX);
+		do_send_sig_info(sig, SEND_SIG_FORCED, p, true);
 	}
 	read_unlock(&tasklist_lock);
 }
@@ -528,11 +535,7 @@ void __handle_sysrq(int key, bool check_mask)
 {
 	struct sysrq_key_op *op_p;
 	int orig_log_level;
-	int orig_suppress_printk;
 	int i;
-
-	orig_suppress_printk = suppress_printk;
-	suppress_printk = 0;
 
 	rcu_sysrq_start();
 	rcu_read_lock();
@@ -579,8 +582,6 @@ void __handle_sysrq(int key, bool check_mask)
 	}
 	rcu_read_unlock();
 	rcu_sysrq_end();
-
-	suppress_printk = orig_suppress_printk;
 }
 
 void handle_sysrq(int key)
@@ -654,13 +655,14 @@ static void sysrq_parse_reset_sequence(struct sysrq_state *state)
 	state->reset_seq_version = sysrq_reset_seq_version;
 }
 
-static void sysrq_do_reset(struct timer_list *t)
+static void sysrq_do_reset(unsigned long _state)
 {
-	struct sysrq_state *state = from_timer(state, t, keyreset_timer);
+	struct sysrq_state *state = (struct sysrq_state *) _state;
 
 	state->reset_requested = true;
 
-	orderly_reboot();
+	sys_sync();
+	kernel_restart(NULL);
 }
 
 static void sysrq_handle_reset_request(struct sysrq_state *state)
@@ -672,7 +674,7 @@ static void sysrq_handle_reset_request(struct sysrq_state *state)
 		mod_timer(&state->keyreset_timer,
 			jiffies + msecs_to_jiffies(sysrq_reset_downtime_ms));
 	else
-		sysrq_do_reset(&state->keyreset_timer);
+		sysrq_do_reset((unsigned long)state);
 }
 
 static void sysrq_detect_reset_sequence(struct sysrq_state *state,
@@ -735,8 +737,6 @@ static void sysrq_of_get_keyreset_config(void)
 
 	/* Get reset timeout if any. */
 	of_property_read_u32(np, "timeout-ms", &sysrq_reset_downtime_ms);
-
-	of_node_put(np);
 }
 #else
 static void sysrq_of_get_keyreset_config(void)
@@ -910,7 +910,8 @@ static int sysrq_connect(struct input_handler *handler,
 	sysrq->handle.handler = handler;
 	sysrq->handle.name = "sysrq";
 	sysrq->handle.private = sysrq;
-	timer_setup(&sysrq->keyreset_timer, sysrq_do_reset, 0);
+	setup_timer(&sysrq->keyreset_timer,
+		    sysrq_do_reset, (unsigned long)sysrq);
 
 	error = input_register_handle(&sysrq->handle);
 	if (error) {

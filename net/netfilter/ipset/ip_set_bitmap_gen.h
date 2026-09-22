@@ -1,5 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2013 Jozsef Kadlecsik <kadlec@netfilter.org> */
+/* Copyright (C) 2013 Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #ifndef __IP_SET_BITMAP_IP_GEN_H
 #define __IP_SET_BITMAP_IP_GEN_H
@@ -28,17 +32,16 @@
 #define mtype_del		IPSET_TOKEN(MTYPE, _del)
 #define mtype_list		IPSET_TOKEN(MTYPE, _list)
 #define mtype_gc		IPSET_TOKEN(MTYPE, _gc)
-#define mtype_cancel_gc		IPSET_TOKEN(MTYPE, _cancel_gc)
 #define mtype			MTYPE
 
 #define get_ext(set, map, id)	((map)->extensions + ((set)->dsize * (id)))
 
 static void
-mtype_gc_init(struct ip_set *set, void (*gc)(struct timer_list *t))
+mtype_gc_init(struct ip_set *set, void (*gc)(unsigned long ul_set))
 {
 	struct mtype *map = set->data;
 
-	timer_setup(&map->gc, gc, 0);
+	setup_timer(&map->gc, gc, (unsigned long)set);
 	mod_timer(&map->gc, jiffies + IPSET_GC_PERIOD(set->timeout) * HZ);
 }
 
@@ -57,6 +60,9 @@ static void
 mtype_destroy(struct ip_set *set)
 {
 	struct mtype *map = set->data;
+
+	if (SET_WITH_TIMEOUT(set))
+		del_timer_sync(&map->gc);
 
 	if (set->dsize && set->extensions & IPSET_EXT_DESTROY)
 		mtype_ext_cleanup(set);
@@ -93,7 +99,7 @@ mtype_head(struct ip_set *set, struct sk_buff *skb)
 	struct nlattr *nested;
 	size_t memsize = mtype_memsize(map, set->dsize) + set->ext_size;
 
-	nested = nla_nest_start(skb, IPSET_ATTR_DATA);
+	nested = ipset_nest_start(skb, IPSET_ATTR_DATA);
 	if (!nested)
 		goto nla_put_failure;
 	if (mtype_do_head(skb, map) ||
@@ -103,7 +109,7 @@ mtype_head(struct ip_set *set, struct sk_buff *skb)
 		goto nla_put_failure;
 	if (unlikely(ip_set_put_flags(skb, set)))
 		goto nla_put_failure;
-	nla_nest_end(skb, nested);
+	ipset_nest_end(skb, nested);
 
 	return 0;
 nla_put_failure:
@@ -121,7 +127,14 @@ mtype_test(struct ip_set *set, void *value, const struct ip_set_ext *ext,
 
 	if (ret <= 0)
 		return ret;
-	return ip_set_match_extensions(set, ext, mext, flags, x);
+	if (SET_WITH_TIMEOUT(set) &&
+	    ip_set_timeout_expired(ext_timeout(x, set)))
+		return 0;
+	if (SET_WITH_COUNTER(set))
+		ip_set_update_counter(ext_counter(x, set), ext, mext, flags);
+	if (SET_WITH_SKBINFO(set))
+		ip_set_get_skbinfo(ext_skbinfo(x, set), ext, mext, flags);
+	return 1;
 }
 
 static int
@@ -207,14 +220,13 @@ mtype_list(const struct ip_set *set,
 	u32 id, first = cb->args[IPSET_CB_ARG0];
 	int ret = 0;
 
-	adt = nla_nest_start(skb, IPSET_ATTR_ADT);
+	adt = ipset_nest_start(skb, IPSET_ATTR_ADT);
 	if (!adt)
 		return -EMSGSIZE;
 	/* Extensions may be replaced */
 	rcu_read_lock();
 	for (; cb->args[IPSET_CB_ARG0] < map->elements;
 	     cb->args[IPSET_CB_ARG0]++) {
-		cond_resched_rcu();
 		id = cb->args[IPSET_CB_ARG0];
 		x = get_ext(set, map, id);
 		if (!test_bit(id, map->members) ||
@@ -224,7 +236,7 @@ mtype_list(const struct ip_set *set,
 #endif
 		     ip_set_timeout_expired(ext_timeout(x, set))))
 			continue;
-		nested = nla_nest_start(skb, IPSET_ATTR_DATA);
+		nested = ipset_nest_start(skb, IPSET_ATTR_DATA);
 		if (!nested) {
 			if (id == first) {
 				nla_nest_cancel(skb, adt);
@@ -238,9 +250,9 @@ mtype_list(const struct ip_set *set,
 			goto nla_put_failure;
 		if (ip_set_put_extensions(skb, set, x, mtype_is_filled(x)))
 			goto nla_put_failure;
-		nla_nest_end(skb, nested);
+		ipset_nest_end(skb, nested);
 	}
-	nla_nest_end(skb, adt);
+	ipset_nest_end(skb, adt);
 
 	/* Set listing finished */
 	cb->args[IPSET_CB_ARG0] = 0;
@@ -253,17 +265,17 @@ nla_put_failure:
 		cb->args[IPSET_CB_ARG0] = 0;
 		ret = -EMSGSIZE;
 	}
-	nla_nest_end(skb, adt);
+	ipset_nest_end(skb, adt);
 out:
 	rcu_read_unlock();
 	return ret;
 }
 
 static void
-mtype_gc(struct timer_list *t)
+mtype_gc(unsigned long ul_set)
 {
-	struct mtype *map = from_timer(map, t, gc);
-	struct ip_set *set = map->set;
+	struct ip_set *set = (struct ip_set *)ul_set;
+	struct mtype *map = set->data;
 	void *x;
 	u32 id;
 
@@ -286,15 +298,6 @@ mtype_gc(struct timer_list *t)
 	add_timer(&map->gc);
 }
 
-static void
-mtype_cancel_gc(struct ip_set *set)
-{
-	struct mtype *map = set->data;
-
-	if (SET_WITH_TIMEOUT(set))
-		del_timer_sync(&map->gc);
-}
-
 static const struct ip_set_type_variant mtype = {
 	.kadt	= mtype_kadt,
 	.uadt	= mtype_uadt,
@@ -308,7 +311,6 @@ static const struct ip_set_type_variant mtype = {
 	.head	= mtype_head,
 	.list	= mtype_list,
 	.same_set = mtype_same_set,
-	.cancel_gc = mtype_cancel_gc,
 };
 
 #endif /* __IP_SET_BITMAP_IP_GEN_H */

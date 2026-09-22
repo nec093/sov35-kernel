@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * 8250_dma.c - DMA Engine API support for 8250.c
  *
  * Copyright (C) 2013 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
@@ -34,8 +38,10 @@ static void __dma_tx_complete(void *param)
 		uart_write_wakeup(&p->port);
 
 	ret = serial8250_tx_dma(p);
-	if (ret)
-		serial8250_set_THRI(p);
+	if (ret) {
+		p->ier |= UART_IER_THRI;
+		serial_port_out(&p->port, UART_IER, p->ier);
+	}
 
 	spin_unlock_irqrestore(&p->port.lock, flags);
 }
@@ -118,28 +124,15 @@ int serial8250_tx_dma(struct uart_8250_port *p)
 	dma_async_issue_pending(dma->txchan);
 	if (dma->tx_err) {
 		dma->tx_err = 0;
-		serial8250_clear_THRI(p);
+		if (p->ier & UART_IER_THRI) {
+			p->ier &= ~UART_IER_THRI;
+			serial_out(p, UART_IER, p->ier);
+		}
 	}
 	return 0;
 err:
 	dma->tx_err = 1;
 	return ret;
-}
-
-void serial8250_tx_dma_flush(struct uart_8250_port *p)
-{
-	struct uart_8250_dma *dma = p->dma;
-
-	if (!dma->tx_running)
-		return;
-
-	/*
-	 * kfifo_reset() has been called by the serial core, avoid
-	 * advancing and underflowing in __dma_tx_complete().
-	 */
-	dma->tx_size = 0;
-
-	dmaengine_terminate_async(dma->txchan);
 }
 
 int serial8250_rx_dma(struct uart_8250_port *p)

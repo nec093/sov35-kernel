@@ -1,9 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * SC16IS7xx tty serial driver - Copyright (C) 2014 GridPoint
  * Author: Jon Ringle <jringle@gridpoint.com>
  *
  *  Based on max310x.c, by Alexander Shiyan <shc_work@mail.ru>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -14,9 +19,9 @@
 #include <linux/device.h>
 #include <linux/gpio/driver.h>
 #include <linux/i2c.h>
-#include <linux/mod_devicetable.h>
 #include <linux/module.h>
-#include <linux/property.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 #include <linux/regmap.h>
 #include <linux/serial_core.h>
 #include <linux/serial.h>
@@ -24,7 +29,6 @@
 #include <linux/tty_flip.h>
 #include <linux/spi/spi.h>
 #include <linux/uaccess.h>
-#include <linux/units.h>
 #include <uapi/linux/sched/types.h>
 
 #define SC16IS7XX_NAME			"sc16is7xx"
@@ -489,28 +493,16 @@ static bool sc16is7xx_regmap_precious(struct device *dev, unsigned int reg)
 	return false;
 }
 
-/*
- * Configure programmable baud rate generator (divisor) according to the
- * desired baud rate.
- *
- * From the datasheet, the divisor is computed according to:
- *
- *              XTAL1 input frequency
- *             -----------------------
- *                    prescaler
- * divisor = ---------------------------
- *            baud-rate x sampling-rate
- */
 static int sc16is7xx_set_baud(struct uart_port *port, int baud)
 {
 	struct sc16is7xx_port *s = dev_get_drvdata(port->dev);
 	u8 lcr;
-	unsigned int prescaler = 1;
+	u8 prescaler = 0;
 	unsigned long clk = port->uartclk, div = clk / 16 / baud;
 
-	if (div >= BIT(16)) {
-		prescaler = 4;
-		div /= prescaler;
+	if (div > 0xffff) {
+		prescaler = SC16IS7XX_MCR_CLKSEL_BIT;
+		div /= 4;
 	}
 
 	/* In an amazing feat of design, the Enhanced Features Register shares
@@ -545,10 +537,9 @@ static int sc16is7xx_set_baud(struct uart_port *port, int baud)
 
 	mutex_unlock(&s->efr_lock);
 
-	/* If bit MCR_CLKSEL is set, the divide by 4 prescaler is activated. */
 	sc16is7xx_port_update(port, SC16IS7XX_MCR_REG,
 			      SC16IS7XX_MCR_CLKSEL_BIT,
-			      prescaler == 1 ? 0 : SC16IS7XX_MCR_CLKSEL_BIT);
+			      prescaler);
 
 	/* Open the LCR divisors for configuration */
 	sc16is7xx_port_write(port, SC16IS7XX_LCR_REG,
@@ -563,7 +554,7 @@ static int sc16is7xx_set_baud(struct uart_port *port, int baud)
 	/* Put LCR back to the normal mode */
 	sc16is7xx_port_write(port, SC16IS7XX_LCR_REG, lcr);
 
-	return DIV_ROUND_CLOSEST((clk / prescaler) / 16, div);
+	return DIV_ROUND_CLOSEST(clk / 16, div);
 }
 
 static void sc16is7xx_handle_rx(struct uart_port *port, unsigned int rxlen,
@@ -1032,6 +1023,16 @@ static int sc16is7xx_startup(struct uart_port *port)
 	sc16is7xx_port_write(port, SC16IS7XX_FCR_REG,
 			     SC16IS7XX_FCR_FIFO_BIT);
 
+	/* Enable EFR */
+	sc16is7xx_port_write(port, SC16IS7XX_LCR_REG,
+			     SC16IS7XX_LCR_CONF_MODE_B);
+
+	regcache_cache_bypass(s->regmap, true);
+
+	/* Enable write access to enhanced features and internal clock div */
+	sc16is7xx_port_write(port, SC16IS7XX_EFR_REG,
+			     SC16IS7XX_EFR_ENABLE_BIT);
+
 	/* Enable TCR/TLR */
 	sc16is7xx_port_update(port, SC16IS7XX_MCR_REG,
 			      SC16IS7XX_MCR_TCRTLR_BIT,
@@ -1043,8 +1044,7 @@ static int sc16is7xx_startup(struct uart_port *port)
 			     SC16IS7XX_TCR_RX_RESUME(24) |
 			     SC16IS7XX_TCR_RX_HALT(48));
 
-	/* Disable TCR/TLR access */
-	sc16is7xx_port_update(port, SC16IS7XX_MCR_REG, SC16IS7XX_MCR_TCRTLR_BIT, 0);
+	regcache_cache_bypass(s->regmap, false);
 
 	/* Now, initialize the UART */
 	sc16is7xx_port_write(port, SC16IS7XX_LCR_REG, SC16IS7XX_LCR_WORD_LEN_8);
@@ -1205,8 +1205,7 @@ static int sc16is7xx_probe(struct device *dev,
 			   struct regmap *regmap, int irq, unsigned long flags)
 {
 	struct sched_param sched_param = { .sched_priority = MAX_RT_PRIO / 2 };
-	unsigned long freq = 0, *pfreq = dev_get_platdata(dev);
-	u32 uartclk = 0;
+	unsigned long freq, *pfreq = dev_get_platdata(dev);
 	int i, ret;
 	struct sc16is7xx_port *s;
 
@@ -1214,30 +1213,22 @@ static int sc16is7xx_probe(struct device *dev,
 		return PTR_ERR(regmap);
 
 	/* Alloc port structure */
-	s = devm_kzalloc(dev, struct_size(s, p, devtype->nr_uart), GFP_KERNEL);
+	s = devm_kzalloc(dev, sizeof(*s) +
+			 sizeof(struct sc16is7xx_one) * devtype->nr_uart,
+			 GFP_KERNEL);
 	if (!s) {
 		dev_err(dev, "Error allocating port structure\n");
 		return -ENOMEM;
 	}
 
-	/* Always ask for fixed clock rate from a property. */
-	device_property_read_u32(dev, "clock-frequency", &uartclk);
-
 	s->clk = devm_clk_get(dev, NULL);
 	if (IS_ERR(s->clk)) {
-		if (uartclk)
-			freq = uartclk;
 		if (pfreq)
 			freq = *pfreq;
-		if (freq)
-			dev_dbg(dev, "Clock frequency: %luHz\n", freq);
 		else
 			return PTR_ERR(s->clk);
 	} else {
-		ret = clk_prepare_enable(s->clk);
-		if (ret)
-			return ret;
-
+		clk_prepare_enable(s->clk);
 		freq = clk_get_rate(s->clk);
 	}
 
@@ -1287,13 +1278,6 @@ static int sc16is7xx_probe(struct device *dev,
 		s->p[i].port.type	= PORT_SC16IS7XX;
 		s->p[i].port.fifosize	= SC16IS7XX_FIFO_SIZE;
 		s->p[i].port.flags	= UPF_FIXED_TYPE | UPF_LOW_LATENCY;
-		s->p[i].port.iobase	= i;
-		/*
-		 * Use all ones as membase to make sure uart_configure_port() in
-		 * serial_core.c does not abort for SPI/I2C devices where the
-		 * membase address is not applicable.
-		 */
-		s->p[i].port.membase	= (void __iomem *)~0;
 		s->p[i].port.iotype	= UPIO_PORT;
 		s->p[i].port.uartclk	= freq;
 		s->p[i].port.rs485_config = sc16is7xx_config_rs485;
@@ -1417,20 +1401,21 @@ static int sc16is7xx_spi_probe(struct spi_device *spi)
 
 	/* Setup SPI bus */
 	spi->bits_per_word	= 8;
-	/* For all variants, only mode 0 is supported */
-	if ((spi->mode & SPI_MODE_X_MASK) != SPI_MODE_0)
-		return dev_err_probe(&spi->dev, -EINVAL, "Unsupported SPI mode\n");
-
+	/* only supports mode 0 on SC16IS762 */
 	spi->mode		= spi->mode ? : SPI_MODE_0;
-	spi->max_speed_hz	= spi->max_speed_hz ? : 4 * HZ_PER_MHZ;
+	spi->max_speed_hz	= spi->max_speed_hz ? : 15000000;
 	ret = spi_setup(spi);
 	if (ret)
 		return ret;
 
 	if (spi->dev.of_node) {
-		devtype = device_get_match_data(&spi->dev);
-		if (!devtype)
+		const struct of_device_id *of_id =
+			of_match_device(sc16is7xx_dt_ids, &spi->dev);
+
+		if (!of_id)
 			return -ENODEV;
+
+		devtype = (struct sc16is7xx_devtype *)of_id->data;
 	} else {
 		const struct spi_device_id *id_entry = spi_get_device_id(spi);
 
@@ -1466,7 +1451,7 @@ MODULE_DEVICE_TABLE(spi, sc16is7xx_spi_id_table);
 static struct spi_driver sc16is7xx_spi_uart_driver = {
 	.driver = {
 		.name		= SC16IS7XX_NAME,
-		.of_match_table	= sc16is7xx_dt_ids,
+		.of_match_table	= of_match_ptr(sc16is7xx_dt_ids),
 	},
 	.probe		= sc16is7xx_spi_probe,
 	.remove		= sc16is7xx_spi_remove,
@@ -1485,9 +1470,13 @@ static int sc16is7xx_i2c_probe(struct i2c_client *i2c,
 	struct regmap *regmap;
 
 	if (i2c->dev.of_node) {
-		devtype = device_get_match_data(&i2c->dev);
-		if (!devtype)
+		const struct of_device_id *of_id =
+				of_match_device(sc16is7xx_dt_ids, &i2c->dev);
+
+		if (!of_id)
 			return -ENODEV;
+
+		devtype = (struct sc16is7xx_devtype *)of_id->data;
 	} else {
 		devtype = (struct sc16is7xx_devtype *)id->driver_data;
 		flags = IRQF_TRIGGER_FALLING;
@@ -1520,7 +1509,7 @@ MODULE_DEVICE_TABLE(i2c, sc16is7xx_i2c_id_table);
 static struct i2c_driver sc16is7xx_i2c_uart_driver = {
 	.driver = {
 		.name		= SC16IS7XX_NAME,
-		.of_match_table	= sc16is7xx_dt_ids,
+		.of_match_table	= of_match_ptr(sc16is7xx_dt_ids),
 	},
 	.probe		= sc16is7xx_i2c_probe,
 	.remove		= sc16is7xx_i2c_remove,
@@ -1558,11 +1547,11 @@ static int __init sc16is7xx_init(void)
 
 #ifdef CONFIG_SERIAL_SC16IS7XX_SPI
 err_spi:
-#endif
 #ifdef CONFIG_SERIAL_SC16IS7XX_I2C
 	i2c_del_driver(&sc16is7xx_i2c_uart_driver);
-err_i2c:
 #endif
+#endif
+err_i2c:
 	uart_unregister_driver(&sc16is7xx_uart);
 	return ret;
 }

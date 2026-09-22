@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Tty buffer allocation management
  */
@@ -118,12 +117,9 @@ void tty_buffer_free_all(struct tty_port *port)
 	struct tty_bufhead *buf = &port->buf;
 	struct tty_buffer *p, *next;
 	struct llist_node *llist;
-	unsigned int freed = 0;
-	int still_used;
 
 	while ((p = buf->head) != NULL) {
 		buf->head = p->next;
-		freed += p->size;
 		if (p->size > 0)
 			kfree(p);
 	}
@@ -135,9 +131,7 @@ void tty_buffer_free_all(struct tty_port *port)
 	buf->head = &buf->sentinel;
 	buf->tail = &buf->sentinel;
 
-	still_used = atomic_xchg(&buf->mem_used, 0);
-	WARN(still_used != freed, "we still have not freed %d bytes!",
-			still_used - freed);
+	atomic_set(&buf->mem_used, 0);
 }
 
 /**
