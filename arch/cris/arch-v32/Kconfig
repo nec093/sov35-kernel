@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0
 if ETRAX_ARCH_V32
 
-source arch/cris/arch-v32/mach-fs/Kconfig
-source arch/cris/arch-v32/mach-a3/Kconfig
+source "arch/cris/arch-v32/mach-fs/Kconfig"
+source "arch/cris/arch-v32/mach-a3/Kconfig"
 
-source drivers/cpufreq/Kconfig
+source "drivers/cpufreq/Kconfig"
 
 config ETRAX_DRAM_VIRTUAL_BASE
 	hex

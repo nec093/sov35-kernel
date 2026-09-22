@@ -359,7 +359,7 @@ menu "Power management options"
 config ARCH_SUSPEND_POSSIBLE
 	def_bool y
 
-source kernel/power/Kconfig
+source "kernel/power/Kconfig"
 endmenu
 
 endmenu

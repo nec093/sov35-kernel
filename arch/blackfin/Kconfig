@@ -658,7 +658,7 @@ config MIN_SCLK_HZ
 
 comment "Kernel Timer/Scheduler"
 
-source kernel/Kconfig.hz
+source "kernel/Kconfig.hz"
 
 config SET_GENERIC_CLOCKEVENTS
 	bool "Generic clock events"

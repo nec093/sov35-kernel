@@ -31,7 +31,13 @@ source "drivers/net/ethernet/amd/Kconfig"
 source "drivers/net/ethernet/apm/Kconfig"
 source "drivers/net/ethernet/apple/Kconfig"
 source "drivers/net/ethernet/aquantia/Kconfig"
-source "drivers/net/ethernet/arc/Kconfig"
+# 5.4 port: excluded, not sourced. ARC_EMAC_CORE's unconditional
+# "select PHYLIB" closes a structural Kconfig cycle together with
+# drivers/usb/musb (USB_MUSB_SUNXI) + drivers/phy/broadcom
+# (PHY_BCM_NS_USB3) + drivers/base/regmap -- none of which exist on this
+# SoC either; excluding the least-relevant one (ARC, a different CPU
+# architecture entirely) is enough to break the cycle for real hardware.
+# source "drivers/net/ethernet/arc/Kconfig"
 source "drivers/net/ethernet/atheros/Kconfig"
 source "drivers/net/ethernet/aurora/Kconfig"
 source "drivers/net/ethernet/broadcom/Kconfig"

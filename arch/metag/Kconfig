@@ -256,13 +256,13 @@ endmenu
 
 source "kernel/Kconfig.preempt"
 
-source kernel/Kconfig.hz
+source "kernel/Kconfig.hz"
 
 endmenu
 
 menu "Power management options"
 
-source kernel/power/Kconfig
+source "kernel/power/Kconfig"
 
 endmenu
 
