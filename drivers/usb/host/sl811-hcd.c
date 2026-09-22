@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * SL811HS HCD (Host Controller Driver) for USB.
  *
@@ -585,7 +584,6 @@ done(struct sl811 *sl811, struct sl811h_ep *ep, u8 bank)
 		finish_request(sl811, ep, urb, urbstat);
 }
 
-#ifdef QUIRK2
 static inline u8 checkdone(struct sl811 *sl811)
 {
 	u8	ctl;
@@ -617,7 +615,6 @@ static inline u8 checkdone(struct sl811 *sl811)
 #endif
 	return irqstat;
 }
-#endif
 
 static irqreturn_t sl811h_irq(struct usb_hcd *hcd)
 {
@@ -1121,9 +1118,9 @@ sl811h_hub_descriptor (
 }
 
 static void
-sl811h_timer(struct timer_list *t)
+sl811h_timer(unsigned long _sl811)
 {
-	struct sl811 	*sl811 = from_timer(sl811, t, timer);
+	struct sl811 	*sl811 = (void *) _sl811;
 	unsigned long	flags;
 	u8		irqstat;
 	u8		signaling = sl811->ctrl1 & SL11H_CTL1MASK_FORCE;
@@ -1383,7 +1380,7 @@ static void dump_irq(struct seq_file *s, char *label, u8 mask)
 		(mask & SL11H_INTMASK_DP) ? " dp" : "");
 }
 
-static int sl811h_debug_show(struct seq_file *s, void *unused)
+static int sl811h_show(struct seq_file *s, void *unused)
 {
 	struct sl811		*sl811 = s->private;
 	struct sl811h_ep	*ep;
@@ -1493,14 +1490,25 @@ static int sl811h_debug_show(struct seq_file *s, void *unused)
 
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(sl811h_debug);
+
+static int sl811h_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, sl811h_show, inode->i_private);
+}
+
+static const struct file_operations debug_ops = {
+	.open		= sl811h_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 /* expect just one sl811 per system */
 static void create_debug_file(struct sl811 *sl811)
 {
 	sl811->debug_file = debugfs_create_file("sl811h", S_IRUGO,
 						usb_debug_root, sl811,
-						&sl811h_debug_fops);
+						&debug_ops);
 }
 
 static void remove_debug_file(struct sl811 *sl811)
@@ -1634,6 +1642,12 @@ sl811h_probe(struct platform_device *dev)
 	irq = ires->start;
 	irqflags = ires->flags & IRQF_TRIGGER_MASK;
 
+	/* refuse to confuse usbcore */
+	if (dev->dev.dma_mask) {
+		dev_dbg(&dev->dev, "no we won't dma\n");
+		return -EINVAL;
+	}
+
 	/* the chip may be wired for either kind of addressing */
 	addr = platform_get_resource(dev, IORESOURCE_MEM, 0);
 	data = platform_get_resource(dev, IORESOURCE_MEM, 1);
@@ -1677,7 +1691,7 @@ sl811h_probe(struct platform_device *dev)
 	spin_lock_init(&sl811->lock);
 	INIT_LIST_HEAD(&sl811->async);
 	sl811->board = dev_get_platdata(&dev->dev);
-	timer_setup(&sl811->timer, sl811h_timer, 0);
+	setup_timer(&sl811->timer, sl811h_timer, (unsigned long)sl811);
 	sl811->addr_reg = addr_reg;
 	sl811->data_reg = data_reg;
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Driver for USB Mass Storage compliant devices
  * Unusual Devices File
@@ -8,6 +7,23 @@
  *
  * Initial work by:
  *   (c) 2000 Adam J. Richter (adam@yggdrasil.com), Yggdrasil Computing, Inc.
+ *
+ * Please see http://www.one-eyed-alien.net/~mdharm/linux-usb for more
+ * information about this driver.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 /*
@@ -26,9 +42,12 @@
  *	- a patch that adds the entry for your device, including your
  *	  email address right above the entry (plus maybe a brief
  *	  explanation of the reason for the entry),
- *	- a copy of /sys/kernel/debug/usb/devices with your device plugged in
+ *	- a copy of /proc/bus/usb/devices with your device plugged in
  *	  running with this patch.
- * Send your submission to the USB development list <linux-usb@vger.kernel.org>
+ * Send your submission to either Phil Dibowitz <phil@ipom.com> or
+ * Alan Stern <stern@rowland.harvard.edu>, and don't forget to CC: the
+ * USB development list <linux-usb@vger.kernel.org> and the USB storage list
+ * <usb-storage@lists.one-eyed-alien.net>
  */
 
 /*
@@ -157,7 +176,7 @@ UNUSUAL_DEV(  0x0420, 0x0001, 0x0100, 0x0100,
 
 /*
  * Reported by Andrew Nayenko <relan@bk.ru>
- * Updated for new firmware by Phillip Potter <phil@philpotter.co.uk>
+ * Updated for new firmware by Phillip Potter <phillipinda@hotmail.com>
  */
 UNUSUAL_DEV(  0x0421, 0x0019, 0x0592, 0x0610,
 		"Nokia",
@@ -252,13 +271,6 @@ UNUSUAL_DEV(  0x0421, 0x05af, 0x0742, 0x0742,
 UNUSUAL_DEV(  0x0421, 0x06aa, 0x1110, 0x1110,
 		"Nokia",
 		"502",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_MAX_SECTORS_64 ),
-
-/* Added by Lubomir Rintel <lkundrak@v3.sk>, a very fine chap */
-UNUSUAL_DEV(  0x0421, 0x06c2, 0x0000, 0x0406,
-		"Nokia",
-		"Nokia 208",
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_MAX_SECTORS_64 ),
 
@@ -414,16 +426,6 @@ UNUSUAL_DEV(  0x04b8, 0x0602, 0x0110, 0x0110,
 		USB_SC_SCSI, USB_PR_BULK, NULL, US_FL_SINGLE_LUN),
 
 /*
- * Reported by James Buren <braewoods+lkml@braewoods.net>
- * Virtual ISOs cannot be remounted if ejected while the device is locked
- * Disable locking to mimic Windows behavior that bypasses the issue
- */
-UNUSUAL_DEV(  0x04c5, 0x2028, 0x0001, 0x0001,
-		"iODD",
-		"2531/2541",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL, US_FL_NOT_LOCKABLE),
-
-/*
  * Not sure who reported this originally but
  * Pavel Machek <pavel@ucw.cz> reported that the extra US_FL_SINGLE_LUN
  * flag be added */
@@ -433,16 +435,9 @@ UNUSUAL_DEV(  0x04cb, 0x0100, 0x0000, 0x2210,
 		USB_SC_UFI, USB_PR_DEVICE, NULL, US_FL_FIX_INQUIRY | US_FL_SINGLE_LUN),
 
 /*
- * Reported by Ondrej Zary <linux@zary.sk>
+ * Reported by Ondrej Zary <linux@rainbow-software.org>
  * The device reports one sector more and breaks when that sector is accessed
- * Firmwares older than 2.6c (the latest one and the only that claims Linux
- * support) have also broken tag handling
  */
-UNUSUAL_DEV(  0x04ce, 0x0002, 0x0000, 0x026b,
-		"ScanLogic",
-		"SL11R-IDE",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_FIX_CAPACITY | US_FL_BULK_IGNORE_TAG),
 UNUSUAL_DEV(  0x04ce, 0x0002, 0x026c, 0x026c,
 		"ScanLogic",
 		"SL11R-IDE",
@@ -934,13 +929,6 @@ UNUSUAL_DEV(  0x05e3, 0x0723, 0x9451, 0x9451,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_SANE_SENSE ),
 
-/* Added by Maël GUERIN <mael.guerin@murena.io> */
-UNUSUAL_DEV(  0x0603, 0x8611, 0x0000, 0xffff,
-		"Novatek",
-		"NTK96550-based camera",
-		USB_SC_SCSI, USB_PR_BULK, NULL,
-		US_FL_BULK_IGNORE_TAG ),
-
 /*
  * Reported by Hanno Boeck <hanno@gmx.de>
  * Taken from the Lycoris Kernel
@@ -1289,6 +1277,12 @@ UNUSUAL_DEV( 0x090a, 0x1200, 0x0000, 0x9999,
 		USB_SC_RBC, USB_PR_BULK, NULL,
 		0 ),
 
+UNUSUAL_DEV(0x090c, 0x1000, 0x1100, 0x1100,
+		"Samsung",
+		"Flash Drive FIT",
+		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+		US_FL_MAX_SECTORS_64),
+
 /* aeb */
 UNUSUAL_DEV( 0x090c, 0x1132, 0x0000, 0xffff,
 		"Feiya",
@@ -1489,28 +1483,6 @@ UNUSUAL_DEV( 0x0bc2, 0x3332, 0x0000, 0x9999,
 		"External",
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_NO_WP_DETECT ),
-
-/*
- * Reported by Zenm Chen <zenmchen@gmail.com>
- * Ignore driver CD mode, otherwise usb_modeswitch may fail to switch
- * the device into Wi-Fi mode.
- */
-UNUSUAL_DEV( 0x0bda, 0x1a2b, 0x0000, 0xffff,
-		"Realtek",
-		"DISK",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_IGNORE_DEVICE ),
-
-/*
- * Reported by Zenm Chen <zenmchen@gmail.com>
- * Ignore driver CD mode, otherwise usb_modeswitch may fail to switch
- * the device into Wi-Fi mode.
- */
-UNUSUAL_DEV( 0x0bda, 0xa192, 0x0000, 0xffff,
-		"Realtek",
-		"DISK",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_IGNORE_DEVICE ),
 
 UNUSUAL_DEV(  0x0d49, 0x7310, 0x0000, 0x9999,
 		"Maxtor",
@@ -2259,18 +2231,6 @@ UNUSUAL_DEV( 0x1908, 0x3335, 0x0200, 0x0200,
 		US_FL_NO_READ_DISC_INFO ),
 
 /*
- * Reported by Matthias Schwarzott <zzam@gentoo.org>
- * The Amazon Kindle treats SYNCHRONIZE CACHE as an indication that
- * the host may be finished with it, and automatically ejects its
- * emulated media unless it receives another command within one second.
- */
-UNUSUAL_DEV( 0x1949, 0x0004, 0x0000, 0x9999,
-		"Amazon",
-		"Kindle",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_SENSE_AFTER_SYNC ),
-
-/*
  * Reported by Oliver Neukum <oneukum@suse.com>
  * This device morphes spontaneously into another device if the access
  * pattern of Windows isn't followed. Thus writable media would be dirty
@@ -2324,29 +2284,12 @@ UNUSUAL_DEV( 0x1e74, 0x4621, 0x0000, 0x0000,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_BULK_IGNORE_TAG | US_FL_MAX_SECTORS_64 ),
 
-/* Reported by Witold Lipieta <witold.lipieta@thaumatec.com> */
-UNUSUAL_DEV( 0x1fc9, 0x0117, 0x0100, 0x0100,
-		"NXP Semiconductors",
-		"PN7462AU",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_IGNORE_RESIDUE ),
-
 /* Supplied with some Castlewood ORB removable drives */
 UNUSUAL_DEV(  0x2027, 0xa001, 0x0000, 0x9999,
 		"Double-H Technology",
 		"USB to SCSI Intelligent Cable",
 		USB_SC_DEVICE, USB_PR_DEVICE, usb_stor_euscsi_init,
 		US_FL_SCM_MULT_TARG ),
-
-/*
- * Reported by DocMAX <mail@vacharakis.de>
- * and Thomas Weißschuh <linux@weissschuh.net>
- */
-UNUSUAL_DEV( 0x2109, 0x0715, 0x9999, 0x9999,
-		"VIA Labs, Inc.",
-		"VL817 SATA Bridge",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_IGNORE_UAS),
 
 UNUSUAL_DEV( 0x2116, 0x0320, 0x0001, 0x0001,
 		"ST",
@@ -2404,7 +2347,7 @@ UNUSUAL_DEV(  0x357d, 0x7788, 0x0114, 0x0114,
 		"JMicron",
 		"USB to ATA/ATAPI Bridge",
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_BROKEN_FUA | US_FL_IGNORE_UAS ),
+		US_FL_BROKEN_FUA ),
 
 /* Reported by Andrey Rahmatullin <wrar@altlinux.org> */
 UNUSUAL_DEV(  0x4102, 0x1020, 0x0100,  0x0100,
@@ -2447,17 +2390,6 @@ UNUSUAL_DEV(  0xc251, 0x4003, 0x0100, 0x0100,
 		"V2M MotherBoard",
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_NOT_LOCKABLE),
-
-/*
- * Reported by Icenowy Zheng <uwu@icenowy.me>
- * This is an interface for vendor-specific cryptic commands instead
- * of real USB storage device.
- */
-UNUSUAL_DEV(  0xe5b7, 0x0811, 0x0100, 0x0100,
-		"ZhuHai JieLi Technology",
-		"JieLi BR21",
-		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
-		US_FL_IGNORE_DEVICE),
 
 /* Reported by Andrew Simmons <andrew.simmons@gmail.com> */
 UNUSUAL_DEV(  0xed06, 0x4500, 0x0001, 0x0001,

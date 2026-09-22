@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * drivers/usb/driver.c - most of the driver model stuff for usb
  *
@@ -15,8 +14,6 @@
  *	(C) Copyright Yggdrasil Computing, Inc. 2000
  *		(usb_device_id matching changes by Adam J. Richter)
  *	(C) Copyright Greg Kroah-Hartman 2002-2003
- *
- * Released under the GPLv2 only.
  *
  * NOTE! This is not actually a driver at all, rather this is
  * just a collection of helper routines that implement the
@@ -342,8 +339,8 @@ static int usb_probe_interface(struct device *dev)
 	if (driver->disable_hub_initiated_lpm) {
 		lpm_disable_error = usb_unlocked_disable_lpm(udev);
 		if (lpm_disable_error) {
-			dev_err(&intf->dev, "%s Failed to disable LPM for driver %s\n",
-				__func__, driver->name);
+			dev_err(&intf->dev, "%s Failed to disable LPM for driver %s\n.",
+					__func__, driver->name);
 			error = lpm_disable_error;
 			goto err;
 		}
@@ -505,6 +502,7 @@ int usb_driver_claim_interface(struct usb_driver *driver,
 				struct usb_interface *iface, void *priv)
 {
 	struct device *dev;
+	struct usb_device *udev;
 	int retval = 0;
 
 	if (!iface)
@@ -517,6 +515,8 @@ int usb_driver_claim_interface(struct usb_driver *driver,
 	/* reject claim if interface is not authorized */
 	if (!iface->authorized)
 		return -ENODEV;
+
+	udev = interface_to_usbdev(iface);
 
 	dev->driver = &driver->drvwrap.driver;
 	usb_set_intfdata(iface, priv);
@@ -892,7 +892,6 @@ int usb_register_device_driver(struct usb_device_driver *new_udriver,
 	new_udriver->drvwrap.driver.probe = usb_probe_device;
 	new_udriver->drvwrap.driver.remove = usb_unbind_device;
 	new_udriver->drvwrap.driver.owner = owner;
-	new_udriver->drvwrap.driver.dev_groups = new_udriver->dev_groups;
 
 	retval = driver_register(&new_udriver->drvwrap.driver);
 
@@ -955,7 +954,6 @@ int usb_register_driver(struct usb_driver *new_driver, struct module *owner,
 	new_driver->drvwrap.driver.remove = usb_unbind_interface;
 	new_driver->drvwrap.driver.owner = owner;
 	new_driver->drvwrap.driver.mod_name = mod_name;
-	new_driver->drvwrap.driver.dev_groups = new_driver->dev_groups;
 	spin_lock_init(&new_driver->dynids.lock);
 	INIT_LIST_HEAD(&new_driver->dynids.list);
 
@@ -1064,7 +1062,7 @@ static void usb_rebind_intf(struct usb_interface *intf)
 	if (!intf->dev.power.is_prepared) {
 		intf->needs_binding = 0;
 		rc = device_attach(&intf->dev);
-		if (rc < 0 && rc != -EPROBE_DEFER)
+		if (rc < 0)
 			dev_warn(&intf->dev, "rebind failed: %d\n", rc);
 	}
 }
@@ -1334,8 +1332,8 @@ static int usb_suspend_both(struct usb_device *udev, pm_message_t msg)
 			int err;
 			u16 devstat;
 
-			err = usb_get_std_status(udev, USB_RECIP_DEVICE, 0,
-						 &devstat);
+			err = usb_get_status(udev, USB_RECIP_DEVICE, 0,
+					     &devstat);
 			if (err) {
 				dev_err(&udev->dev,
 					"Failed to suspend device, error %d\n",
@@ -1455,7 +1453,9 @@ static void choose_wakeup(struct usb_device *udev, pm_message_t msg)
 int usb_suspend(struct device *dev, pm_message_t msg)
 {
 	struct usb_device	*udev = to_usb_device(dev);
-	int r;
+
+	if (udev->bus->skip_resume && udev->state == USB_STATE_SUSPENDED)
+		return 0;
 
 	unbind_no_pm_drivers_interfaces(udev);
 
@@ -1464,14 +1464,7 @@ int usb_suspend(struct device *dev, pm_message_t msg)
 	 * so we may still need to unbind and rebind upon resume
 	 */
 	choose_wakeup(udev, msg);
-	r = usb_suspend_both(udev, msg);
-	if (r)
-		return r;
-
-	if (udev->quirks & USB_QUIRK_DISCONNECT_SUSPEND)
-		usb_port_disable(udev);
-
-	return 0;
+	return usb_suspend_both(udev, msg);
 }
 
 /* The device lock is held by the PM core */
@@ -1492,6 +1485,16 @@ int usb_resume(struct device *dev, pm_message_t msg)
 {
 	struct usb_device	*udev = to_usb_device(dev);
 	int			status;
+
+	/*
+	 * Some buses would like to keep their devices in suspend
+	 * state after system resume.  Their resume happen when
+	 * a remote wakeup is detected or interface driver start
+	 * I/O. And in the case when the system is restoring from
+	 * hibernation, make sure all the devices are resumed.
+	 */
+	if (udev->bus->skip_resume && msg.event != PM_EVENT_RESTORE)
+		return 0;
 
 	/* For all calls, take the device back to full power and
 	 * tell the PM core in case it was autosuspended previously.
@@ -1923,5 +1926,4 @@ struct bus_type usb_bus_type = {
 	.name =		"usb",
 	.match =	usb_device_match,
 	.uevent =	usb_uevent,
-	.need_parent_lock =	true,
 };

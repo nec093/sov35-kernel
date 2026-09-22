@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ImgTec IR Hardware Decoder found in PowerDown Controller.
  *
  * Copyright 2010-2014 Imagination Technologies Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  *
  * This ties into the input subsystem using the RC-core. Protocol support is
  * provided in separate modules which provide the parameters and scancode
@@ -335,7 +339,7 @@ static void img_ir_decoder_preprocess(struct img_ir_decoder *decoder)
 /**
  * img_ir_decoder_convert() - Generate internal timings in decoder.
  * @decoder:	Decoder to be converted to internal timings.
- * @reg_timings: Timing register values.
+ * @timings:	Timing register values.
  * @clock_hz:	IR clock rate in Hz.
  *
  * Fills out the repeat timings and timing register values for a specific clock
@@ -860,9 +864,9 @@ static void img_ir_handle_data(struct img_ir_priv *priv, u32 len, u64 raw)
 }
 
 /* timer function to end waiting for repeat. */
-static void img_ir_end_timer(struct timer_list *t)
+static void img_ir_end_timer(unsigned long arg)
 {
-	struct img_ir_priv *priv = from_timer(priv, t, hw.end_timer);
+	struct img_ir_priv *priv = (struct img_ir_priv *)arg;
 
 	spin_lock_irq(&priv->lock);
 	img_ir_end_repeat(priv);
@@ -874,9 +878,9 @@ static void img_ir_end_timer(struct timer_list *t)
  * cleared when invalid interrupts were generated due to a quirk in the
  * img-ir decoder.
  */
-static void img_ir_suspend_timer(struct timer_list *t)
+static void img_ir_suspend_timer(unsigned long arg)
 {
-	struct img_ir_priv *priv = from_timer(priv, t, hw.suspend_timer);
+	struct img_ir_priv *priv = (struct img_ir_priv *)arg;
 
 	spin_lock_irq(&priv->lock);
 	/*
@@ -1048,8 +1052,9 @@ int img_ir_probe_hw(struct img_ir_priv *priv)
 	img_ir_probe_hw_caps(priv);
 
 	/* Set up the end timer */
-	timer_setup(&hw->end_timer, img_ir_end_timer, 0);
-	timer_setup(&hw->suspend_timer, img_ir_suspend_timer, 0);
+	setup_timer(&hw->end_timer, img_ir_end_timer, (unsigned long)priv);
+	setup_timer(&hw->suspend_timer, img_ir_suspend_timer,
+				(unsigned long)priv);
 
 	/* Register a clock notifier */
 	if (!IS_ERR(priv->clk)) {

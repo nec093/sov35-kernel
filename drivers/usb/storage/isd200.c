@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Transport & Protocol Driver for In-System Design, Inc. ISD200 ASIC
  *
@@ -14,6 +13,20 @@
  * The ISD200 ASIC does not natively support ATA devices.  The chip
  * does implement an interface, the ATA Command Block (ATACB) which provides
  * a means of passing ATA commands and ATA register accesses to a device.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * History:
  *
@@ -53,7 +66,6 @@
 MODULE_DESCRIPTION("Driver for In-System Design, Inc. ISD200 ASIC");
 MODULE_AUTHOR("Björn Stenberg <bjorn@haxx.se>");
 MODULE_LICENSE("GPL");
-MODULE_IMPORT_NS(USB_STORAGE);
 
 static int isd200_Initialization(struct us_data *us);
 
@@ -1105,7 +1117,7 @@ static void isd200_dump_driveid(struct us_data *us, u16 *id)
 static int isd200_get_inquiry_data( struct us_data *us )
 {
 	struct isd200_info *info = (struct isd200_info *)us->extra;
-	int retStatus;
+	int retStatus = ISD200_GOOD;
 	u16 *id = info->id;
 
 	usb_stor_dbg(us, "Entering isd200_get_inquiry_data\n");
@@ -1137,13 +1149,6 @@ static int isd200_get_inquiry_data( struct us_data *us )
 				isd200_fix_driveid(id);
 				isd200_dump_driveid(us, id);
 
-				/* Prevent division by 0 in isd200_scsi_to_ata() */
-				if (id[ATA_ID_HEADS] == 0 || id[ATA_ID_SECTORS] == 0) {
-					usb_stor_dbg(us, "   Invalid ATA Identify data\n");
-					retStatus = ISD200_ERROR;
-					goto Done;
-				}
-
 				memset(&info->InquiryData, 0, sizeof(info->InquiryData));
 
 				/* Standard IDE interface only supports disks */
@@ -1161,7 +1166,7 @@ static int isd200_get_inquiry_data( struct us_data *us )
 				/* Fill in vendor identification fields */
 				src = (__be16 *)&id[ATA_ID_PROD];
 				dest = (__u16*)info->InquiryData.VendorId;
-				for (i = 0; i < 4; i++)
+				for (i=0;i<4;i++)
 					dest[i] = be16_to_cpu(src[i]);
 
 				src = (__be16 *)&id[ATA_ID_PROD + 8/2];
@@ -1209,7 +1214,6 @@ static int isd200_get_inquiry_data( struct us_data *us )
 		}
 	}
 
- Done:
 	usb_stor_dbg(us, "Leaving isd200_get_inquiry_data %08X\n", retStatus);
 
 	return(retStatus);
@@ -1489,27 +1493,22 @@ static int isd200_init_info(struct us_data *us)
 
 static int isd200_Initialization(struct us_data *us)
 {
-	int rc = 0;
-
 	usb_stor_dbg(us, "ISD200 Initialization...\n");
 
 	/* Initialize ISD200 info struct */
 
-	if (isd200_init_info(us) < 0) {
+	if (isd200_init_info(us) == ISD200_ERROR) {
 		usb_stor_dbg(us, "ERROR Initializing ISD200 Info struct\n");
-		rc = -ENOMEM;
 	} else {
 		/* Get device specific data */
 
-		if (isd200_get_inquiry_data(us) != ISD200_GOOD) {
+		if (isd200_get_inquiry_data(us) != ISD200_GOOD)
 			usb_stor_dbg(us, "ISD200 Initialization Failure\n");
-			rc = -EINVAL;
-		} else {
+		else
 			usb_stor_dbg(us, "ISD200 Initialization complete\n");
-		}
 	}
 
-	return rc;
+	return 0;
 }
 
 
@@ -1525,7 +1524,7 @@ static int isd200_Initialization(struct us_data *us)
 
 static void isd200_ata_command(struct scsi_cmnd *srb, struct us_data *us)
 {
-	int sendToTransport, orig_bufflen;
+	int sendToTransport = 1, orig_bufflen;
 	union ata_cdb ataCdb;
 
 	/* Make sure driver was initialized */

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * drivers/usb/core/usb.c
  *
@@ -12,8 +11,6 @@
  * (C) Copyright Yggdrasil Computing, Inc. 2000
  *     (usb_device_id matching changes by Adam J. Richter)
  * (C) Copyright Greg Kroah-Hartman 2002-2003
- *
- * Released under the GPLv2 only.
  *
  * NOTE! This is not actually a driver at all, rather this is
  * just a collection of helper routines that implement the
@@ -46,7 +43,8 @@
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
 
-#include "hub.h"
+#include "usb.h"
+
 
 const char *usbcore_name = "usbcore";
 
@@ -64,8 +62,8 @@ int usb_disabled(void)
 EXPORT_SYMBOL_GPL(usb_disabled);
 
 #ifdef	CONFIG_PM
-/* Default delay value, in seconds */
-static int usb_autosuspend_delay = CONFIG_USB_AUTOSUSPEND_DELAY;
+static int usb_autosuspend_delay = 2;		/* Default delay value,
+						 * in seconds */
 module_param_named(autosuspend, usb_autosuspend_delay, int, 0644);
 MODULE_PARM_DESC(autosuspend, "default autosuspend delay");
 
@@ -73,216 +71,6 @@ MODULE_PARM_DESC(autosuspend, "default autosuspend delay");
 #define usb_autosuspend_delay		0
 #endif
 
-static bool match_endpoint(struct usb_endpoint_descriptor *epd,
-		struct usb_endpoint_descriptor **bulk_in,
-		struct usb_endpoint_descriptor **bulk_out,
-		struct usb_endpoint_descriptor **int_in,
-		struct usb_endpoint_descriptor **int_out)
-{
-	switch (usb_endpoint_type(epd)) {
-	case USB_ENDPOINT_XFER_BULK:
-		if (usb_endpoint_dir_in(epd)) {
-			if (bulk_in && !*bulk_in) {
-				*bulk_in = epd;
-				break;
-			}
-		} else {
-			if (bulk_out && !*bulk_out) {
-				*bulk_out = epd;
-				break;
-			}
-		}
-
-		return false;
-	case USB_ENDPOINT_XFER_INT:
-		if (usb_endpoint_dir_in(epd)) {
-			if (int_in && !*int_in) {
-				*int_in = epd;
-				break;
-			}
-		} else {
-			if (int_out && !*int_out) {
-				*int_out = epd;
-				break;
-			}
-		}
-
-		return false;
-	default:
-		return false;
-	}
-
-	return (!bulk_in || *bulk_in) && (!bulk_out || *bulk_out) &&
-			(!int_in || *int_in) && (!int_out || *int_out);
-}
-
-/**
- * usb_find_common_endpoints() -- look up common endpoint descriptors
- * @alt:	alternate setting to search
- * @bulk_in:	pointer to descriptor pointer, or NULL
- * @bulk_out:	pointer to descriptor pointer, or NULL
- * @int_in:	pointer to descriptor pointer, or NULL
- * @int_out:	pointer to descriptor pointer, or NULL
- *
- * Search the alternate setting's endpoint descriptors for the first bulk-in,
- * bulk-out, interrupt-in and interrupt-out endpoints and return them in the
- * provided pointers (unless they are NULL).
- *
- * If a requested endpoint is not found, the corresponding pointer is set to
- * NULL.
- *
- * Return: Zero if all requested descriptors were found, or -ENXIO otherwise.
- */
-int usb_find_common_endpoints(struct usb_host_interface *alt,
-		struct usb_endpoint_descriptor **bulk_in,
-		struct usb_endpoint_descriptor **bulk_out,
-		struct usb_endpoint_descriptor **int_in,
-		struct usb_endpoint_descriptor **int_out)
-{
-	struct usb_endpoint_descriptor *epd;
-	int i;
-
-	if (bulk_in)
-		*bulk_in = NULL;
-	if (bulk_out)
-		*bulk_out = NULL;
-	if (int_in)
-		*int_in = NULL;
-	if (int_out)
-		*int_out = NULL;
-
-	for (i = 0; i < alt->desc.bNumEndpoints; ++i) {
-		epd = &alt->endpoint[i].desc;
-
-		if (match_endpoint(epd, bulk_in, bulk_out, int_in, int_out))
-			return 0;
-	}
-
-	return -ENXIO;
-}
-EXPORT_SYMBOL_GPL(usb_find_common_endpoints);
-
-/**
- * usb_find_common_endpoints_reverse() -- look up common endpoint descriptors
- * @alt:	alternate setting to search
- * @bulk_in:	pointer to descriptor pointer, or NULL
- * @bulk_out:	pointer to descriptor pointer, or NULL
- * @int_in:	pointer to descriptor pointer, or NULL
- * @int_out:	pointer to descriptor pointer, or NULL
- *
- * Search the alternate setting's endpoint descriptors for the last bulk-in,
- * bulk-out, interrupt-in and interrupt-out endpoints and return them in the
- * provided pointers (unless they are NULL).
- *
- * If a requested endpoint is not found, the corresponding pointer is set to
- * NULL.
- *
- * Return: Zero if all requested descriptors were found, or -ENXIO otherwise.
- */
-int usb_find_common_endpoints_reverse(struct usb_host_interface *alt,
-		struct usb_endpoint_descriptor **bulk_in,
-		struct usb_endpoint_descriptor **bulk_out,
-		struct usb_endpoint_descriptor **int_in,
-		struct usb_endpoint_descriptor **int_out)
-{
-	struct usb_endpoint_descriptor *epd;
-	int i;
-
-	if (bulk_in)
-		*bulk_in = NULL;
-	if (bulk_out)
-		*bulk_out = NULL;
-	if (int_in)
-		*int_in = NULL;
-	if (int_out)
-		*int_out = NULL;
-
-	for (i = alt->desc.bNumEndpoints - 1; i >= 0; --i) {
-		epd = &alt->endpoint[i].desc;
-
-		if (match_endpoint(epd, bulk_in, bulk_out, int_in, int_out))
-			return 0;
-	}
-
-	return -ENXIO;
-}
-EXPORT_SYMBOL_GPL(usb_find_common_endpoints_reverse);
-
-/**
- * usb_find_endpoint() - Given an endpoint address, search for the endpoint's
- * usb_host_endpoint structure in an interface's current altsetting.
- * @intf: the interface whose current altsetting should be searched
- * @ep_addr: the endpoint address (number and direction) to find
- *
- * Search the altsetting's list of endpoints for one with the specified address.
- *
- * Return: Pointer to the usb_host_endpoint if found, %NULL otherwise.
- */
-static const struct usb_host_endpoint *usb_find_endpoint(
-		const struct usb_interface *intf, unsigned int ep_addr)
-{
-	int n;
-	const struct usb_host_endpoint *ep;
-
-	n = intf->cur_altsetting->desc.bNumEndpoints;
-	ep = intf->cur_altsetting->endpoint;
-	for (; n > 0; (--n, ++ep)) {
-		if (ep->desc.bEndpointAddress == ep_addr)
-			return ep;
-	}
-	return NULL;
-}
-
-/**
- * usb_check_bulk_endpoints - Check whether an interface's current altsetting
- * contains a set of bulk endpoints with the given addresses.
- * @intf: the interface whose current altsetting should be searched
- * @ep_addrs: 0-terminated array of the endpoint addresses (number and
- * direction) to look for
- *
- * Search for endpoints with the specified addresses and check their types.
- *
- * Return: %true if all the endpoints are found and are bulk, %false otherwise.
- */
-bool usb_check_bulk_endpoints(
-		const struct usb_interface *intf, const u8 *ep_addrs)
-{
-	const struct usb_host_endpoint *ep;
-
-	for (; *ep_addrs; ++ep_addrs) {
-		ep = usb_find_endpoint(intf, *ep_addrs);
-		if (!ep || !usb_endpoint_xfer_bulk(&ep->desc))
-			return false;
-	}
-	return true;
-}
-EXPORT_SYMBOL_GPL(usb_check_bulk_endpoints);
-
-/**
- * usb_check_int_endpoints - Check whether an interface's current altsetting
- * contains a set of interrupt endpoints with the given addresses.
- * @intf: the interface whose current altsetting should be searched
- * @ep_addrs: 0-terminated array of the endpoint addresses (number and
- * direction) to look for
- *
- * Search for endpoints with the specified addresses and check their types.
- *
- * Return: %true if all the endpoints are found and are interrupt,
- * %false otherwise.
- */
-bool usb_check_int_endpoints(
-		const struct usb_interface *intf, const u8 *ep_addrs)
-{
-	const struct usb_host_endpoint *ep;
-
-	for (; *ep_addrs; ++ep_addrs) {
-		ep = usb_find_endpoint(intf, *ep_addrs);
-		if (!ep || !usb_endpoint_xfer_int(&ep->desc))
-			return false;
-	}
-	return true;
-}
-EXPORT_SYMBOL_GPL(usb_check_int_endpoints);
 
 /**
  * usb_find_alt_setting() - Given a configuration, find the alternate setting
@@ -401,9 +189,9 @@ struct find_interface_arg {
 	struct device_driver *drv;
 };
 
-static int __find_interface(struct device *dev, const void *data)
+static int __find_interface(struct device *dev, void *data)
 {
-	const struct find_interface_arg *arg = data;
+	struct find_interface_arg *arg = data;
 	struct usb_interface *intf;
 
 	if (!is_usb_interface(dev))
@@ -493,7 +281,8 @@ static void usb_release_dev(struct device *dev)
 
 	usb_destroy_configuration(udev);
 	usb_release_bos_descriptor(udev);
-	of_node_put(dev->of_node);
+	if (udev->parent)
+		of_node_put(dev->of_node);
 	usb_put_hcd(hcd);
 	kfree(udev->product);
 	kfree(udev->manufacturer);
@@ -611,27 +400,6 @@ static unsigned usb_bus_is_wusb(struct usb_bus *bus)
 	return hcd->wireless;
 }
 
-static bool usb_dev_authorized(struct usb_device *dev, struct usb_hcd *hcd)
-{
-	struct usb_hub *hub;
-
-	if (!dev->parent)
-		return true; /* Root hub always ok [and always wired] */
-
-	switch (hcd->dev_policy) {
-	case USB_DEVICE_AUTHORIZE_NONE:
-	default:
-		return false;
-
-	case USB_DEVICE_AUTHORIZE_ALL:
-		return true;
-
-	case USB_DEVICE_AUTHORIZE_INTERNAL:
-		hub = usb_hub_to_struct_hub(dev->parent);
-		return hub->ports[dev->portnum - 1]->connect_type ==
-				USB_PORT_CONNECT_TYPE_HARD_WIRED;
-	}
-}
 
 /**
  * usb_alloc_dev - usb device constructor (usbcore-internal)
@@ -713,20 +481,18 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 		dev->route = 0;
 
 		dev->dev.parent = bus->controller;
-		device_set_of_node_from_dev(&dev->dev, bus->sysdev);
 		dev_set_name(&dev->dev, "usb%d", bus->busnum);
 		root_hub = 1;
 	} else {
-		int n;
-
 		/* match any labeling on the hubs; it's one-based */
 		if (parent->devpath[0] == '0') {
-			n = snprintf(dev->devpath, sizeof(dev->devpath), "%d", port1);
+			snprintf(dev->devpath, sizeof dev->devpath,
+				"%d", port1);
 			/* Root ports are not counted in route string */
 			dev->route = 0;
 		} else {
-			n = snprintf(dev->devpath, sizeof(dev->devpath), "%s.%d",
-				     parent->devpath, port1);
+			snprintf(dev->devpath, sizeof dev->devpath,
+				"%s.%d", parent->devpath, port1);
 			/* Route string assumes hubs have less than 16 ports */
 			if (port1 < 15)
 				dev->route = parent->route +
@@ -734,11 +500,6 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 			else
 				dev->route = parent->route +
 					(15 << ((parent->level - 1)*4));
-		}
-		if (n >= sizeof(dev->devpath)) {
-			usb_put_hcd(bus_to_hcd(bus));
-			usb_put_dev(dev);
-			return NULL;
 		}
 
 		dev->dev.parent = &parent->dev;
@@ -749,7 +510,8 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 			raw_port = usb_hcd_find_raw_port_number(usb_hcd,
 				port1);
 		}
-		dev->dev.of_node = usb_of_get_device_node(parent, raw_port);
+		dev->dev.of_node = usb_of_get_child_node(parent->dev.of_node,
+				raw_port);
 
 		/* hub driver sets up TT records */
 	}
@@ -765,11 +527,12 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 	dev->connect_time = jiffies;
 	dev->active_duration = -jiffies;
 #endif
-
-	dev->authorized = usb_dev_authorized(dev, usb_hcd);
-	if (!root_hub)
+	if (root_hub)	/* Root hub always ok [and always wired] */
+		dev->authorized = 1;
+	else {
+		dev->authorized = !!HCD_DEV_AUTHORIZED(usb_hcd);
 		dev->wusb = usb_bus_is_wusb(bus) ? 1 : 0;
-
+	}
 	return dev;
 }
 EXPORT_SYMBOL_GPL(usb_alloc_dev);
@@ -926,6 +689,59 @@ int usb_get_current_frame_number(struct usb_device *dev)
 }
 EXPORT_SYMBOL_GPL(usb_get_current_frame_number);
 
+int usb_sec_event_ring_setup(struct usb_device *dev,
+	unsigned int intr_num)
+{
+	if (dev->state == USB_STATE_NOTATTACHED)
+		return 0;
+
+	return usb_hcd_sec_event_ring_setup(dev, intr_num);
+}
+EXPORT_SYMBOL(usb_sec_event_ring_setup);
+
+int usb_sec_event_ring_cleanup(struct usb_device *dev,
+	unsigned int intr_num)
+{
+	return usb_hcd_sec_event_ring_cleanup(dev, intr_num);
+}
+EXPORT_SYMBOL(usb_sec_event_ring_cleanup);
+
+phys_addr_t
+usb_get_sec_event_ring_phys_addr(struct usb_device *dev,
+	unsigned int intr_num, dma_addr_t *dma)
+{
+	if (dev->state == USB_STATE_NOTATTACHED)
+		return 0;
+
+	return usb_hcd_get_sec_event_ring_phys_addr(dev, intr_num, dma);
+}
+EXPORT_SYMBOL(usb_get_sec_event_ring_phys_addr);
+
+phys_addr_t usb_get_xfer_ring_phys_addr(struct usb_device *dev,
+	struct usb_host_endpoint *ep, dma_addr_t *dma)
+{
+	if (dev->state == USB_STATE_NOTATTACHED)
+		return 0;
+
+	return usb_hcd_get_xfer_ring_phys_addr(dev, ep, dma);
+}
+EXPORT_SYMBOL(usb_get_xfer_ring_phys_addr);
+
+int usb_get_controller_id(struct usb_device *dev)
+{
+	if (dev->state == USB_STATE_NOTATTACHED)
+		return -EINVAL;
+
+	return usb_hcd_get_controller_id(dev);
+}
+EXPORT_SYMBOL(usb_get_controller_id);
+
+int usb_stop_endpoint(struct usb_device *dev, struct usb_host_endpoint *ep)
+{
+	return usb_hcd_stop_endpoint(dev, ep);
+}
+EXPORT_SYMBOL(usb_stop_endpoint);
+
 /*-------------------------------------------------------------------*/
 /*
  * __usb_get_extra_descriptor() finds a descriptor of specific type in the
@@ -1015,6 +831,228 @@ void usb_free_coherent(struct usb_device *dev, size_t size, void *addr,
 }
 EXPORT_SYMBOL_GPL(usb_free_coherent);
 
+/**
+ * usb_buffer_map - create DMA mapping(s) for an urb
+ * @urb: urb whose transfer_buffer/setup_packet will be mapped
+ *
+ * URB_NO_TRANSFER_DMA_MAP is added to urb->transfer_flags if the operation
+ * succeeds. If the device is connected to this system through a non-DMA
+ * controller, this operation always succeeds.
+ *
+ * This call would normally be used for an urb which is reused, perhaps
+ * as the target of a large periodic transfer, with usb_buffer_dmasync()
+ * calls to synchronize memory and dma state.
+ *
+ * Reverse the effect of this call with usb_buffer_unmap().
+ *
+ * Return: Either %NULL (indicating no buffer could be mapped), or @urb.
+ *
+ */
+#if 0
+struct urb *usb_buffer_map(struct urb *urb)
+{
+	struct usb_bus		*bus;
+	struct device		*controller;
+
+	if (!urb
+			|| !urb->dev
+			|| !(bus = urb->dev->bus)
+			|| !(controller = bus->sysdev))
+		return NULL;
+
+	if (controller->dma_mask) {
+		urb->transfer_dma = dma_map_single(controller,
+			urb->transfer_buffer, urb->transfer_buffer_length,
+			usb_pipein(urb->pipe)
+				? DMA_FROM_DEVICE : DMA_TO_DEVICE);
+	/* FIXME generic api broken like pci, can't report errors */
+	/* if (urb->transfer_dma == DMA_ADDR_INVALID) return 0; */
+	} else
+		urb->transfer_dma = ~0;
+	urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+	return urb;
+}
+EXPORT_SYMBOL_GPL(usb_buffer_map);
+#endif  /*  0  */
+
+/* XXX DISABLED, no users currently.  If you wish to re-enable this
+ * XXX please determine whether the sync is to transfer ownership of
+ * XXX the buffer from device to cpu or vice verse, and thusly use the
+ * XXX appropriate _for_{cpu,device}() method.  -DaveM
+ */
+#if 0
+
+/**
+ * usb_buffer_dmasync - synchronize DMA and CPU view of buffer(s)
+ * @urb: urb whose transfer_buffer/setup_packet will be synchronized
+ */
+void usb_buffer_dmasync(struct urb *urb)
+{
+	struct usb_bus		*bus;
+	struct device		*controller;
+
+	if (!urb
+			|| !(urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP)
+			|| !urb->dev
+			|| !(bus = urb->dev->bus)
+			|| !(controller = bus->sysdev))
+		return;
+
+	if (controller->dma_mask) {
+		dma_sync_single_for_cpu(controller,
+			urb->transfer_dma, urb->transfer_buffer_length,
+			usb_pipein(urb->pipe)
+				? DMA_FROM_DEVICE : DMA_TO_DEVICE);
+		if (usb_pipecontrol(urb->pipe))
+			dma_sync_single_for_cpu(controller,
+					urb->setup_dma,
+					sizeof(struct usb_ctrlrequest),
+					DMA_TO_DEVICE);
+	}
+}
+EXPORT_SYMBOL_GPL(usb_buffer_dmasync);
+#endif
+
+/**
+ * usb_buffer_unmap - free DMA mapping(s) for an urb
+ * @urb: urb whose transfer_buffer will be unmapped
+ *
+ * Reverses the effect of usb_buffer_map().
+ */
+#if 0
+void usb_buffer_unmap(struct urb *urb)
+{
+	struct usb_bus		*bus;
+	struct device		*controller;
+
+	if (!urb
+			|| !(urb->transfer_flags & URB_NO_TRANSFER_DMA_MAP)
+			|| !urb->dev
+			|| !(bus = urb->dev->bus)
+			|| !(controller = bus->sysdev))
+		return;
+
+	if (controller->dma_mask) {
+		dma_unmap_single(controller,
+			urb->transfer_dma, urb->transfer_buffer_length,
+			usb_pipein(urb->pipe)
+				? DMA_FROM_DEVICE : DMA_TO_DEVICE);
+	}
+	urb->transfer_flags &= ~URB_NO_TRANSFER_DMA_MAP;
+}
+EXPORT_SYMBOL_GPL(usb_buffer_unmap);
+#endif  /*  0  */
+
+#if 0
+/**
+ * usb_buffer_map_sg - create scatterlist DMA mapping(s) for an endpoint
+ * @dev: device to which the scatterlist will be mapped
+ * @is_in: mapping transfer direction
+ * @sg: the scatterlist to map
+ * @nents: the number of entries in the scatterlist
+ *
+ * Return: Either < 0 (indicating no buffers could be mapped), or the
+ * number of DMA mapping array entries in the scatterlist.
+ *
+ * Note:
+ * The caller is responsible for placing the resulting DMA addresses from
+ * the scatterlist into URB transfer buffer pointers, and for setting the
+ * URB_NO_TRANSFER_DMA_MAP transfer flag in each of those URBs.
+ *
+ * Top I/O rates come from queuing URBs, instead of waiting for each one
+ * to complete before starting the next I/O.   This is particularly easy
+ * to do with scatterlists.  Just allocate and submit one URB for each DMA
+ * mapping entry returned, stopping on the first error or when all succeed.
+ * Better yet, use the usb_sg_*() calls, which do that (and more) for you.
+ *
+ * This call would normally be used when translating scatterlist requests,
+ * rather than usb_buffer_map(), since on some hardware (with IOMMUs) it
+ * may be able to coalesce mappings for improved I/O efficiency.
+ *
+ * Reverse the effect of this call with usb_buffer_unmap_sg().
+ */
+int usb_buffer_map_sg(const struct usb_device *dev, int is_in,
+		      struct scatterlist *sg, int nents)
+{
+	struct usb_bus		*bus;
+	struct device		*controller;
+
+	if (!dev
+			|| !(bus = dev->bus)
+			|| !(controller = bus->sysdev)
+			|| !controller->dma_mask)
+		return -EINVAL;
+
+	/* FIXME generic api broken like pci, can't report errors */
+	return dma_map_sg(controller, sg, nents,
+			is_in ? DMA_FROM_DEVICE : DMA_TO_DEVICE) ? : -ENOMEM;
+}
+EXPORT_SYMBOL_GPL(usb_buffer_map_sg);
+#endif
+
+/* XXX DISABLED, no users currently.  If you wish to re-enable this
+ * XXX please determine whether the sync is to transfer ownership of
+ * XXX the buffer from device to cpu or vice verse, and thusly use the
+ * XXX appropriate _for_{cpu,device}() method.  -DaveM
+ */
+#if 0
+
+/**
+ * usb_buffer_dmasync_sg - synchronize DMA and CPU view of scatterlist buffer(s)
+ * @dev: device to which the scatterlist will be mapped
+ * @is_in: mapping transfer direction
+ * @sg: the scatterlist to synchronize
+ * @n_hw_ents: the positive return value from usb_buffer_map_sg
+ *
+ * Use this when you are re-using a scatterlist's data buffers for
+ * another USB request.
+ */
+void usb_buffer_dmasync_sg(const struct usb_device *dev, int is_in,
+			   struct scatterlist *sg, int n_hw_ents)
+{
+	struct usb_bus		*bus;
+	struct device		*controller;
+
+	if (!dev
+			|| !(bus = dev->bus)
+			|| !(controller = bus->sysdev)
+			|| !controller->dma_mask)
+		return;
+
+	dma_sync_sg_for_cpu(controller, sg, n_hw_ents,
+			    is_in ? DMA_FROM_DEVICE : DMA_TO_DEVICE);
+}
+EXPORT_SYMBOL_GPL(usb_buffer_dmasync_sg);
+#endif
+
+#if 0
+/**
+ * usb_buffer_unmap_sg - free DMA mapping(s) for a scatterlist
+ * @dev: device to which the scatterlist will be mapped
+ * @is_in: mapping transfer direction
+ * @sg: the scatterlist to unmap
+ * @n_hw_ents: the positive return value from usb_buffer_map_sg
+ *
+ * Reverses the effect of usb_buffer_map_sg().
+ */
+void usb_buffer_unmap_sg(const struct usb_device *dev, int is_in,
+			 struct scatterlist *sg, int n_hw_ents)
+{
+	struct usb_bus		*bus;
+	struct device		*controller;
+
+	if (!dev
+			|| !(bus = dev->bus)
+			|| !(controller = bus->sysdev)
+			|| !controller->dma_mask)
+		return;
+
+	dma_unmap_sg(controller, sg, n_hw_ents,
+			is_in ? DMA_FROM_DEVICE : DMA_TO_DEVICE);
+}
+EXPORT_SYMBOL_GPL(usb_buffer_unmap_sg);
+#endif
+
 /*
  * Notifications of device and interface registration
  */
@@ -1045,17 +1083,33 @@ static struct notifier_block usb_bus_nb = {
 	.notifier_call = usb_bus_notify,
 };
 
-static struct dentry *usb_devices_root;
+struct dentry *usb_debug_root;
+EXPORT_SYMBOL_GPL(usb_debug_root);
 
-static void usb_debugfs_init(void)
+static struct dentry *usb_debug_devices;
+
+static int usb_debugfs_init(void)
 {
-	usb_devices_root = debugfs_create_file("devices", 0444, usb_debug_root,
-					       NULL, &usbfs_devices_fops);
+	usb_debug_root = debugfs_create_dir("usb", NULL);
+	if (!usb_debug_root)
+		return -ENOENT;
+
+	usb_debug_devices = debugfs_create_file("devices", 0444,
+						usb_debug_root, NULL,
+						&usbfs_devices_fops);
+	if (!usb_debug_devices) {
+		debugfs_remove(usb_debug_root);
+		usb_debug_root = NULL;
+		return -ENOENT;
+	}
+
+	return 0;
 }
 
 static void usb_debugfs_cleanup(void)
 {
-	debugfs_remove(usb_devices_root);
+	debugfs_remove(usb_debug_devices);
+	debugfs_remove(usb_debug_root);
 }
 
 /*
@@ -1070,7 +1124,9 @@ static int __init usb_init(void)
 	}
 	usb_init_pool_max();
 
-	usb_debugfs_init();
+	retval = usb_debugfs_init();
+	if (retval)
+		goto out;
 
 	usb_acpi_register();
 	retval = bus_register(&usb_bus_type);
@@ -1122,7 +1178,6 @@ static void __exit usb_exit(void)
 	if (usb_disabled())
 		return;
 
-	usb_release_quirk_list();
 	usb_deregister_device_driver(&usb_generic_driver);
 	usb_major_cleanup();
 	usb_deregister(&usbfs_driver);

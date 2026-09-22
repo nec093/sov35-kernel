@@ -115,7 +115,6 @@ static struct sk_buff *sr_tx_fixup(struct usbnet *dev, struct sk_buff *skb,
 	u32 padbytes = 0xffff0000;
 	u32 packet_len;
 	int padlen;
-	void *ptr;
 
 	padlen = ((skb->len + 4) % (dev->maxpacket - 1)) ? 0 : 4;
 
@@ -134,12 +133,14 @@ static struct sk_buff *sr_tx_fixup(struct usbnet *dev, struct sk_buff *skb,
 			return NULL;
 	}
 
-	ptr = skb_push(skb, 4);
+	skb_push(skb, 4);
 	packet_len = (((skb->len - 4) ^ 0x0000ffff) << 16) + (skb->len - 4);
-	put_unaligned_le32(packet_len, ptr);
+	cpu_to_le32s(&packet_len);
+	skb_copy_to_linear_data(skb, &packet_len, sizeof(packet_len));
 
 	if (padlen) {
-		put_unaligned_le32(padbytes, skb_tail_pointer(skb));
+		cpu_to_le32s(&padbytes);
+		memcpy(skb_tail_pointer(skb), &padbytes, sizeof(padbytes));
 		skb_put(skb, sizeof(padbytes));
 	}
 
@@ -730,15 +731,12 @@ static int sr9800_bind(struct usbnet *dev, struct usb_interface *intf)
 	struct sr_data *data = (struct sr_data *)&dev->data;
 	u16 led01_mux, led23_mux;
 	int ret, embd_phy;
-	u8 addr[ETH_ALEN];
 	u32 phyid;
 	u16 rx_ctl;
 
 	data->eeprom_len = SR9800_EEPROM_LEN;
 
-	ret = usbnet_get_endpoints(dev, intf);
-	if (ret)
-		goto out;
+	usbnet_get_endpoints(dev, intf);
 
 	/* LED Setting Rule :
 	 * AABB:CCDD
@@ -756,12 +754,12 @@ static int sr9800_bind(struct usbnet *dev, struct usb_interface *intf)
 	}
 
 	/* Get the MAC address */
-	ret = sr_read_cmd(dev, SR_CMD_READ_NODE_ID, 0, 0, ETH_ALEN, addr);
+	ret = sr_read_cmd(dev, SR_CMD_READ_NODE_ID, 0, 0, ETH_ALEN,
+			  dev->net->dev_addr);
 	if (ret < 0) {
 		netdev_dbg(dev->net, "Failed to read MAC address: %d\n", ret);
 		return ret;
 	}
-	eth_hw_addr_set(dev->net, addr);
 	netdev_dbg(dev->net, "mac addr : %pM\n", dev->net->dev_addr);
 
 	/* Initialize MII structure */

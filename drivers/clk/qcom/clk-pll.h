@@ -1,6 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013, 2016-2017, The Linux Foundation. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #ifndef __QCOM_CLK_PLL_H__
@@ -40,6 +48,7 @@ struct clk_pll {
 	u32	l_reg;
 	u32	m_reg;
 	u32	n_reg;
+	u32	user_reg;
 	u32	config_reg;
 	u32	mode_reg;
 	u32	status_reg;
@@ -52,25 +61,46 @@ struct clk_pll {
 	struct clk_regmap clkr;
 };
 
+struct clk_pll_acpu_vote {
+	u32 *soft_voter;
+	u32 soft_voter_mask;
+/* Soft voting values */
+#define PLL_SOFT_VOTE_PRIMARY	BIT(0)
+#define PLL_SOFT_VOTE_CPU	BIT(1)
+#define PLL_SOFT_VOTE_AUX	BIT(2)
+
+	struct clk_regmap clkr;
+};
+
 extern const struct clk_ops clk_pll_ops;
 extern const struct clk_ops clk_pll_vote_ops;
+extern const struct clk_ops clk_pll_acpu_vote_ops;
 extern const struct clk_ops clk_pll_sr2_ops;
 
 #define to_clk_pll(_hw) container_of(to_clk_regmap(_hw), struct clk_pll, clkr)
+#define to_clk_pll_acpu_vote(_hw) \
+	container_of(to_clk_regmap(_hw), struct clk_pll_acpu_vote, clkr)
 
 struct pll_config {
 	u16 l;
 	u32 m;
 	u32 n;
+	u32 frac;
 	u32 vco_val;
 	u32 vco_mask;
 	u32 pre_div_val;
 	u32 pre_div_mask;
 	u32 post_div_val;
 	u32 post_div_mask;
+	u32 mn_ena_val;
 	u32 mn_ena_mask;
 	u32 main_output_mask;
 	u32 aux_output_mask;
+	u32 aux2_output_mask;
+	u32 early_output_mask;
+	u32 config_ctl_val;
+	u32 config_ctl_hi_val;
+	u32 config_ctl_hi1_val;
 };
 
 void clk_pll_configure_sr(struct clk_pll *pll, struct regmap *regmap,

@@ -1,6 +1,13 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/*
- * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #ifndef _CORESIGHT_CORESIGHT_ETM_H
@@ -162,6 +169,8 @@
  * @seq_curr_state: current value of the sequencer register.
  * @ctxid_idx: index for the context ID registers.
  * @ctxid_pid: value for the context ID to trigger on.
+ * @ctxid_vpid:	Virtual PID seen by users if PID namespace is enabled, otherwise
+ *		the same value of ctxid_pid.
  * @ctxid_mask: mask applicable to all the context IDs.
  * @sync_freq:	Synchronisation frequency.
  * @timestamp_event: Defines an event that requests the insertion
@@ -194,6 +203,7 @@ struct etm_config {
 	u32				seq_curr_state;
 	u8				ctxid_idx;
 	u32				ctxid_pid[ETM_MAX_CTXID_CMP];
+	u32				ctxid_vpid[ETM_MAX_CTXID_CMP];
 	u32				ctxid_mask;
 	u32				sync_freq;
 	u32				timestamp_event;
@@ -202,6 +212,7 @@ struct etm_config {
 /**
  * struct etm_drvdata - specifics associated to an ETM component
  * @base:	memory mapped base address for this component.
+ * @dev:	the device entity associated to this component.
  * @atclk:	optional clock for the core parts of the ETM.
  * @csdev:	component vitals needed by the framework.
  * @spinlock:	only one at a time pls.
@@ -225,6 +236,7 @@ struct etm_config {
  */
 struct etm_drvdata {
 	void __iomem			*base;
+	struct device			*dev;
 	struct clk			*atclk;
 	struct coresight_device		*csdev;
 	spinlock_t			spinlock;
@@ -252,7 +264,7 @@ static inline void etm_writel(struct etm_drvdata *drvdata,
 {
 	if (drvdata->use_cp14) {
 		if (etm_writel_cp14(off, val)) {
-			dev_err(&drvdata->csdev->dev,
+			dev_err(drvdata->dev,
 				"invalid CP14 access to ETM reg: %#x", off);
 		}
 	} else {
@@ -266,7 +278,7 @@ static inline unsigned int etm_readl(struct etm_drvdata *drvdata, u32 off)
 
 	if (drvdata->use_cp14) {
 		if (etm_readl_cp14(off, &val)) {
-			dev_err(&drvdata->csdev->dev,
+			dev_err(drvdata->dev,
 				"invalid CP14 access to ETM reg: %#x", off);
 		}
 	} else {

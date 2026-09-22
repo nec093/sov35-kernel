@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
 * Driver for EHCI HCD on SPEAr SOC
 *
@@ -6,6 +5,10 @@
 * Deepak Sikri <deepak.sikri@st.com>
 *
 * Based on various ehci-*.c drivers
+*
+* This file is subject to the terms and conditions of the GNU General Public
+* License. See the file COPYING in the main directory of this archive for
+* more details.
 */
 
 #include <linux/clk.h>
@@ -110,9 +113,7 @@ static int spear_ehci_hcd_drv_probe(struct platform_device *pdev)
 	/* registers start at offset 0x0 */
 	hcd_to_ehci(hcd)->caps = hcd->regs;
 
-	retval = clk_prepare_enable(sehci->clk);
-	if (retval)
-		goto err_put_hcd;
+	clk_prepare_enable(sehci->clk);
 	retval = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (retval)
 		goto err_stop_ehci;
@@ -137,7 +138,8 @@ static int spear_ehci_hcd_drv_remove(struct platform_device *pdev)
 
 	usb_remove_hcd(hcd);
 
-	clk_disable_unprepare(sehci->clk);
+	if (sehci->clk)
+		clk_disable_unprepare(sehci->clk);
 	usb_put_hcd(hcd);
 
 	return 0;

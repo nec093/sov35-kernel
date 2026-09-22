@@ -1,9 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *      uvc_v4l2.c  --  USB Video Class driver - V4L2 API
  *
  *      Copyright (C) 2005-2010
  *          Laurent Pinchart (laurent.pinchart@ideasonboard.com)
+ *
+ *      This program is free software; you can redistribute it and/or modify
+ *      it under the terms of the GNU General Public License as published by
+ *      the Free Software Foundation; either version 2 of the License, or
+ *      (at your option) any later version.
+ *
  */
 
 #include <linux/compat.h>
@@ -35,13 +40,13 @@ static int uvc_ioctl_ctrl_map(struct uvc_video_chain *chain,
 	unsigned int size;
 	int ret;
 
-	map = kzalloc(sizeof(*map), GFP_KERNEL);
+	map = kzalloc(sizeof *map, GFP_KERNEL);
 	if (map == NULL)
 		return -ENOMEM;
 
 	map->id = xmap->id;
-	memcpy(map->name, xmap->name, sizeof(map->name));
-	memcpy(map->entity, xmap->entity, sizeof(map->entity));
+	memcpy(map->name, xmap->name, sizeof map->name);
+	memcpy(map->entity, xmap->entity, sizeof map->entity);
 	map->selector = xmap->selector;
 	map->size = xmap->size;
 	map->offset = xmap->offset;
@@ -61,14 +66,19 @@ static int uvc_ioctl_ctrl_map(struct uvc_video_chain *chain,
 		if (xmap->menu_count == 0 ||
 		    xmap->menu_count > UVC_MAX_CONTROL_MENU_ENTRIES) {
 			ret = -EINVAL;
-			goto free_map;
+			goto done;
 		}
 
 		size = xmap->menu_count * sizeof(*map->menu_info);
-		map->menu_info = memdup_user(xmap->menu_info, size);
-		if (IS_ERR(map->menu_info)) {
-			ret = PTR_ERR(map->menu_info);
-			goto free_map;
+		map->menu_info = kmalloc(size, GFP_KERNEL);
+		if (map->menu_info == NULL) {
+			ret = -ENOMEM;
+			goto done;
+		}
+
+		if (copy_from_user(map->menu_info, xmap->menu_info, size)) {
+			ret = -EFAULT;
+			goto done;
 		}
 
 		map->menu_count = xmap->menu_count;
@@ -78,13 +88,13 @@ static int uvc_ioctl_ctrl_map(struct uvc_video_chain *chain,
 		uvc_trace(UVC_TRACE_CONTROL, "Unsupported V4L2 control type "
 			  "%u.\n", xmap->v4l2_type);
 		ret = -ENOTTY;
-		goto free_map;
+		goto done;
 	}
 
 	ret = uvc_ctrl_add_mapping(chain, map);
 
+done:
 	kfree(map->menu_info);
-free_map:
 	kfree(map);
 
 	return ret;
@@ -100,12 +110,12 @@ free_map:
  * the Video Probe and Commit negotiation, but some hardware don't implement
  * that feature.
  */
-static u32 uvc_try_frame_interval(struct uvc_frame *frame, u32 interval)
+static __u32 uvc_try_frame_interval(struct uvc_frame *frame, __u32 interval)
 {
 	unsigned int i;
 
 	if (frame->bFrameIntervalType) {
-		u32 best = -1, dist;
+		__u32 best = -1, dist;
 
 		for (i = 0; i < frame->bFrameIntervalType; ++i) {
 			dist = interval > frame->dwFrameInterval[i]
@@ -120,9 +130,9 @@ static u32 uvc_try_frame_interval(struct uvc_frame *frame, u32 interval)
 
 		interval = frame->dwFrameInterval[i-1];
 	} else {
-		const u32 min = frame->dwFrameInterval[0];
-		const u32 max = frame->dwFrameInterval[1];
-		const u32 step = frame->dwFrameInterval[2];
+		const __u32 min = frame->dwFrameInterval[0];
+		const __u32 max = frame->dwFrameInterval[1];
+		const __u32 step = frame->dwFrameInterval[2];
 
 		interval = min + (interval - min + step/2) / step * step;
 		if (interval > max)
@@ -132,7 +142,7 @@ static u32 uvc_try_frame_interval(struct uvc_frame *frame, u32 interval)
 	return interval;
 }
 
-static u32 uvc_v4l2_get_bytesperline(const struct uvc_format *format,
+static __u32 uvc_v4l2_get_bytesperline(const struct uvc_format *format,
 	const struct uvc_frame *frame)
 {
 	switch (format->fcc) {
@@ -153,17 +163,17 @@ static int uvc_v4l2_try_format(struct uvc_streaming *stream,
 {
 	struct uvc_format *format = NULL;
 	struct uvc_frame *frame = NULL;
-	u16 rw, rh;
+	__u16 rw, rh;
 	unsigned int d, maxd;
 	unsigned int i;
-	u32 interval;
+	__u32 interval;
 	int ret = 0;
-	u8 *fcc;
+	__u8 *fcc;
 
 	if (fmt->type != stream->type)
 		return -EINVAL;
 
-	fcc = (u8 *)&fmt->fmt.pix.pixelformat;
+	fcc = (__u8 *)&fmt->fmt.pix.pixelformat;
 	uvc_trace(UVC_TRACE_FORMAT, "Trying format 0x%08x (%c%c%c%c): %ux%u.\n",
 			fmt->fmt.pix.pixelformat,
 			fcc[0], fcc[1], fcc[2], fcc[3],
@@ -192,8 +202,8 @@ static int uvc_v4l2_try_format(struct uvc_streaming *stream,
 	maxd = (unsigned int)-1;
 
 	for (i = 0; i < format->nframes; ++i) {
-		u16 w = format->frame[i].wWidth;
-		u16 h = format->frame[i].wHeight;
+		__u16 w = format->frame[i].wWidth;
+		__u16 h = format->frame[i].wHeight;
 
 		d = min(w, rw) * min(h, rh);
 		d = w*h + rw*rh - 2*d;
@@ -219,7 +229,7 @@ static int uvc_v4l2_try_format(struct uvc_streaming *stream,
 		(100000000/interval)%10);
 
 	/* Set the format index, frame index and frame interval. */
-	memset(probe, 0, sizeof(*probe));
+	memset(probe, 0, sizeof *probe);
 	probe->bmHint = 1;	/* dwFrameInterval */
 	probe->bFormatIndex = format->index;
 	probe->bFrameIndex = frame->bFrameIndex;
@@ -247,42 +257,13 @@ static int uvc_v4l2_try_format(struct uvc_streaming *stream,
 	if (ret < 0)
 		goto done;
 
-	/* After the probe, update fmt with the values returned from
-	 * negotiation with the device. Some devices return invalid bFormatIndex
-	 * and bFrameIndex values, in which case we can only assume they have
-	 * accepted the requested format as-is.
-	 */
-	for (i = 0; i < stream->nformats; ++i) {
-		if (probe->bFormatIndex == stream->format[i].index) {
-			format = &stream->format[i];
-			break;
-		}
-	}
-
-	if (i == stream->nformats)
-		uvc_trace(UVC_TRACE_FORMAT,
-			  "Unknown bFormatIndex %u, using default\n",
-			  probe->bFormatIndex);
-
-	for (i = 0; i < format->nframes; ++i) {
-		if (probe->bFrameIndex == format->frame[i].bFrameIndex) {
-			frame = &format->frame[i];
-			break;
-		}
-	}
-
-	if (i == format->nframes)
-		uvc_trace(UVC_TRACE_FORMAT,
-			  "Unknown bFrameIndex %u, using default\n",
-			  probe->bFrameIndex);
-
 	fmt->fmt.pix.width = frame->wWidth;
 	fmt->fmt.pix.height = frame->wHeight;
 	fmt->fmt.pix.field = V4L2_FIELD_NONE;
 	fmt->fmt.pix.bytesperline = uvc_v4l2_get_bytesperline(format, frame);
 	fmt->fmt.pix.sizeimage = probe->dwMaxVideoFrameSize;
-	fmt->fmt.pix.pixelformat = format->fcc;
 	fmt->fmt.pix.colorspace = format->colorspace;
+	fmt->fmt.pix.priv = 0;
 
 	if (uvc_format != NULL)
 		*uvc_format = format;
@@ -319,6 +300,7 @@ static int uvc_v4l2_get_format(struct uvc_streaming *stream,
 	fmt->fmt.pix.bytesperline = uvc_v4l2_get_bytesperline(format, frame);
 	fmt->fmt.pix.sizeimage = stream->ctrl.dwMaxVideoFrameSize;
 	fmt->fmt.pix.colorspace = format->colorspace;
+	fmt->fmt.pix.priv = 0;
 
 done:
 	mutex_unlock(&stream->mutex);
@@ -359,7 +341,7 @@ done:
 static int uvc_v4l2_get_streamparm(struct uvc_streaming *stream,
 		struct v4l2_streamparm *parm)
 {
-	u32 numerator, denominator;
+	uint32_t numerator, denominator;
 
 	if (parm->type != stream->type)
 		return -EINVAL;
@@ -371,7 +353,7 @@ static int uvc_v4l2_get_streamparm(struct uvc_streaming *stream,
 	denominator = 10000000;
 	uvc_simplify_fraction(&numerator, &denominator, 8, 333);
 
-	memset(parm, 0, sizeof(*parm));
+	memset(parm, 0, sizeof *parm);
 	parm->type = stream->type;
 
 	if (stream->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
@@ -396,10 +378,7 @@ static int uvc_v4l2_set_streamparm(struct uvc_streaming *stream,
 {
 	struct uvc_streaming_control probe;
 	struct v4l2_fract timeperframe;
-	struct uvc_format *format;
-	struct uvc_frame *frame;
-	u32 interval, maxd;
-	unsigned int i;
+	uint32_t interval;
 	int ret;
 
 	if (parm->type != stream->type)
@@ -422,33 +401,9 @@ static int uvc_v4l2_set_streamparm(struct uvc_streaming *stream,
 		return -EBUSY;
 	}
 
-	format = stream->cur_format;
-	frame = stream->cur_frame;
 	probe = stream->ctrl;
-	probe.dwFrameInterval = uvc_try_frame_interval(frame, interval);
-	maxd = abs((s32)probe.dwFrameInterval - interval);
-
-	/* Try frames with matching size to find the best frame interval. */
-	for (i = 0; i < format->nframes && maxd != 0; i++) {
-		u32 d, ival;
-
-		if (&format->frame[i] == stream->cur_frame)
-			continue;
-
-		if (format->frame[i].wWidth != stream->cur_frame->wWidth ||
-		    format->frame[i].wHeight != stream->cur_frame->wHeight)
-			continue;
-
-		ival = uvc_try_frame_interval(&format->frame[i], interval);
-		d = abs((s32)ival - interval);
-		if (d >= maxd)
-			continue;
-
-		frame = &format->frame[i];
-		probe.bFrameIndex = frame->bFrameIndex;
-		probe.dwFrameInterval = ival;
-		maxd = d;
-	}
+	probe.dwFrameInterval =
+		uvc_try_frame_interval(stream->cur_frame, interval);
 
 	/* Probe the device with the new settings. */
 	ret = uvc_probe_video(stream, &probe);
@@ -458,7 +413,6 @@ static int uvc_v4l2_set_streamparm(struct uvc_streaming *stream,
 	}
 
 	stream->ctrl = probe;
-	stream->cur_frame = frame;
 	mutex_unlock(&stream->mutex);
 
 	/* Return the actual frame period. */
@@ -467,13 +421,10 @@ static int uvc_v4l2_set_streamparm(struct uvc_streaming *stream,
 	uvc_simplify_fraction(&timeperframe.numerator,
 		&timeperframe.denominator, 8, 333);
 
-	if (parm->type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
+	if (parm->type == V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		parm->parm.capture.timeperframe = timeperframe;
-		parm->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
-	} else {
+	else
 		parm->parm.output.timeperframe = timeperframe;
-		parm->parm.output.capability = V4L2_CAP_TIMEPERFRAME;
-	}
 
 	return 0;
 }
@@ -552,7 +503,7 @@ static int uvc_v4l2_open(struct file *file)
 		return ret;
 
 	/* Create the device handle. */
-	handle = kzalloc(sizeof(*handle), GFP_KERNEL);
+	handle = kzalloc(sizeof *handle, GFP_KERNEL);
 	if (handle == NULL) {
 		usb_autopm_put_interface(stream->dev->intf);
 		return -ENOMEM;
@@ -589,8 +540,6 @@ static int uvc_v4l2_release(struct file *file)
 
 	uvc_trace(UVC_TRACE_CALLS, "uvc_v4l2_release\n");
 
-	uvc_ctrl_cleanup_fh(handle);
-
 	/* Only free resources if this is a privileged handle. */
 	if (uvc_has_privileges(handle))
 		uvc_queue_release(&stream->queue);
@@ -619,11 +568,15 @@ static int uvc_ioctl_querycap(struct file *file, void *fh,
 	struct uvc_video_chain *chain = handle->chain;
 	struct uvc_streaming *stream = handle->stream;
 
-	strscpy(cap->driver, "uvcvideo", sizeof(cap->driver));
-	strscpy(cap->card, vdev->name, sizeof(cap->card));
+	strlcpy(cap->driver, "uvcvideo", sizeof(cap->driver));
+	strlcpy(cap->card, vdev->name, sizeof(cap->card));
 	usb_make_path(stream->dev->udev, cap->bus_info, sizeof(cap->bus_info));
 	cap->capabilities = V4L2_CAP_DEVICE_CAPS | V4L2_CAP_STREAMING
 			  | chain->caps;
+	if (stream->type == V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING;
+	else
+		cap->device_caps = V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_STREAMING;
 
 	return 0;
 }
@@ -633,7 +586,7 @@ static int uvc_ioctl_enum_fmt(struct uvc_streaming *stream,
 {
 	struct uvc_format *format;
 	enum v4l2_buf_type type = fmt->type;
-	u32 index = fmt->index;
+	__u32 index = fmt->index;
 
 	if (fmt->type != stream->type || fmt->index >= stream->nformats)
 		return -EINVAL;
@@ -646,7 +599,7 @@ static int uvc_ioctl_enum_fmt(struct uvc_streaming *stream,
 	fmt->flags = 0;
 	if (format->flags & UVC_FMT_FLAG_COMPRESSED)
 		fmt->flags |= V4L2_FMT_FLAG_COMPRESSED;
-	strscpy(fmt->description, format->name, sizeof(fmt->description));
+	strlcpy(fmt->description, format->name, sizeof(fmt->description));
 	fmt->description[sizeof(fmt->description) - 1] = 0;
 	fmt->pixelformat = format->fcc;
 	return 0;
@@ -779,8 +732,7 @@ static int uvc_ioctl_qbuf(struct file *file, void *fh, struct v4l2_buffer *buf)
 	if (!uvc_has_privileges(handle))
 		return -EBUSY;
 
-	return uvc_queue_buffer(&stream->queue,
-				stream->vdev.v4l2_dev->mdev, buf);
+	return uvc_queue_buffer(&stream->queue, buf);
 }
 
 static int uvc_ioctl_expbuf(struct file *file, void *fh,
@@ -861,36 +813,34 @@ static int uvc_ioctl_enum_input(struct file *file, void *fh,
 	struct uvc_video_chain *chain = handle->chain;
 	const struct uvc_entity *selector = chain->selector;
 	struct uvc_entity *iterm = NULL;
-	struct uvc_entity *it;
 	u32 index = input->index;
+	int pin = 0;
 
 	if (selector == NULL ||
 	    (chain->dev->quirks & UVC_QUIRK_IGNORE_SELECTOR_UNIT)) {
 		if (index != 0)
 			return -EINVAL;
-		list_for_each_entry(it, &chain->entities, chain) {
-			if (UVC_ENTITY_IS_ITERM(it)) {
-				iterm = it;
+		list_for_each_entry(iterm, &chain->entities, chain) {
+			if (UVC_ENTITY_IS_ITERM(iterm))
 				break;
-			}
 		}
+		pin = iterm->id;
 	} else if (index < selector->bNrInPins) {
-		list_for_each_entry(it, &chain->entities, chain) {
-			if (!UVC_ENTITY_IS_ITERM(it))
+		pin = selector->baSourceID[index];
+		list_for_each_entry(iterm, &chain->entities, chain) {
+			if (!UVC_ENTITY_IS_ITERM(iterm))
 				continue;
-			if (it->id == selector->baSourceID[index]) {
-				iterm = it;
+			if (iterm->id == pin)
 				break;
-			}
 		}
 	}
 
-	if (iterm == NULL)
+	if (iterm == NULL || iterm->id != pin)
 		return -EINVAL;
 
 	memset(input, 0, sizeof(*input));
 	input->index = index;
-	strscpy(input->name, iterm->name, sizeof(input->name));
+	strlcpy(input->name, iterm->name, sizeof(input->name));
 	if (UVC_ENTITY_TYPE(iterm) == UVC_ITT_CAMERA)
 		input->type = V4L2_INPUT_TYPE_CAMERA;
 
@@ -901,8 +851,8 @@ static int uvc_ioctl_g_input(struct file *file, void *fh, unsigned int *input)
 {
 	struct uvc_fh *handle = fh;
 	struct uvc_video_chain *chain = handle->chain;
-	u8 *buf;
 	int ret;
+	u8 i;
 
 	if (chain->selector == NULL ||
 	    (chain->dev->quirks & UVC_QUIRK_IGNORE_SELECTOR_UNIT)) {
@@ -910,27 +860,22 @@ static int uvc_ioctl_g_input(struct file *file, void *fh, unsigned int *input)
 		return 0;
 	}
 
-	buf = kmalloc(1, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
 	ret = uvc_query_ctrl(chain->dev, UVC_GET_CUR, chain->selector->id,
 			     chain->dev->intfnum,  UVC_SU_INPUT_SELECT_CONTROL,
-			     buf, 1);
-	if (!ret)
-		*input = *buf - 1;
+			     &i, 1);
+	if (ret < 0)
+		return ret;
 
-	kfree(buf);
-
-	return ret;
+	*input = i - 1;
+	return 0;
 }
 
 static int uvc_ioctl_s_input(struct file *file, void *fh, unsigned int input)
 {
 	struct uvc_fh *handle = fh;
 	struct uvc_video_chain *chain = handle->chain;
-	u8 *buf;
 	int ret;
+	u32 i;
 
 	ret = uvc_acquire_privileges(handle);
 	if (ret < 0)
@@ -946,17 +891,10 @@ static int uvc_ioctl_s_input(struct file *file, void *fh, unsigned int input)
 	if (input >= chain->selector->bNrInPins)
 		return -EINVAL;
 
-	buf = kmalloc(1, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
-	*buf = input + 1;
-	ret = uvc_query_ctrl(chain->dev, UVC_SET_CUR, chain->selector->id,
-			     chain->dev->intfnum, UVC_SU_INPUT_SELECT_CONTROL,
-			     buf, 1);
-	kfree(buf);
-
-	return ret;
+	i = input + 1;
+	return uvc_query_ctrl(chain->dev, UVC_SET_CUR, chain->selector->id,
+			      chain->dev->intfnum, UVC_SU_INPUT_SELECT_CONTROL,
+			      &i, 1);
 }
 
 static int uvc_ioctl_queryctrl(struct file *file, void *fh,
@@ -982,7 +920,7 @@ static int uvc_ioctl_query_ext_ctrl(struct file *file, void *fh,
 
 	qec->id = qc.id;
 	qec->type = qc.type;
-	strscpy(qec->name, qc.name, sizeof(qec->name));
+	strlcpy(qec->name, qc.name, sizeof(qec->name));
 	qec->minimum = qc.minimum;
 	qec->maximum = qc.maximum;
 	qec->step = qc.step;
@@ -1037,7 +975,7 @@ static int uvc_ioctl_s_ctrl(struct file *file, void *fh,
 	if (ret < 0)
 		return ret;
 
-	ret = uvc_ctrl_set(handle, &xctrl);
+	ret = uvc_ctrl_set(chain, &xctrl);
 	if (ret < 0) {
 		uvc_ctrl_rollback(handle);
 		return ret;
@@ -1112,7 +1050,7 @@ static int uvc_ioctl_s_try_ext_ctrls(struct uvc_fh *handle,
 		return ret;
 
 	for (i = 0; i < ctrls->count; ++ctrl, ++i) {
-		ret = uvc_ctrl_set(handle, ctrl);
+		ret = uvc_ctrl_set(chain, ctrl);
 		if (ret < 0) {
 			uvc_ctrl_rollback(handle);
 			ctrls->error_idx = commit ? ctrls->count : i;
@@ -1216,9 +1154,8 @@ static int uvc_ioctl_enum_framesizes(struct file *file, void *fh,
 	struct uvc_fh *handle = fh;
 	struct uvc_streaming *stream = handle->stream;
 	struct uvc_format *format = NULL;
-	struct uvc_frame *frame = NULL;
-	unsigned int index;
-	unsigned int i;
+	struct uvc_frame *frame;
+	int i;
 
 	/* Look for the given pixel format */
 	for (i = 0; i < stream->nformats; i++) {
@@ -1230,20 +1167,10 @@ static int uvc_ioctl_enum_framesizes(struct file *file, void *fh,
 	if (format == NULL)
 		return -EINVAL;
 
-	/* Skip duplicate frame sizes */
-	for (i = 0, index = 0; i < format->nframes; i++) {
-		if (frame && frame->wWidth == format->frame[i].wWidth &&
-		    frame->wHeight == format->frame[i].wHeight)
-			continue;
-		frame = &format->frame[i];
-		if (index == fsize->index)
-			break;
-		index++;
-	}
-
-	if (i == format->nframes)
+	if (fsize->index >= format->nframes)
 		return -EINVAL;
 
+	frame = &format->frame[fsize->index];
 	fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
 	fsize->discrete.width = frame->wWidth;
 	fsize->discrete.height = frame->wHeight;
@@ -1257,9 +1184,7 @@ static int uvc_ioctl_enum_frameintervals(struct file *file, void *fh,
 	struct uvc_streaming *stream = handle->stream;
 	struct uvc_format *format = NULL;
 	struct uvc_frame *frame = NULL;
-	unsigned int nintervals;
-	unsigned int index;
-	unsigned int i;
+	int i;
 
 	/* Look for the given pixel format and frame size */
 	for (i = 0; i < stream->nformats; i++) {
@@ -1271,28 +1196,30 @@ static int uvc_ioctl_enum_frameintervals(struct file *file, void *fh,
 	if (format == NULL)
 		return -EINVAL;
 
-	index = fival->index;
 	for (i = 0; i < format->nframes; i++) {
 		if (format->frame[i].wWidth == fival->width &&
 		    format->frame[i].wHeight == fival->height) {
 			frame = &format->frame[i];
-			nintervals = frame->bFrameIntervalType ?: 1;
-			if (index < nintervals)
-				break;
-			index -= nintervals;
+			break;
 		}
 	}
-	if (i == format->nframes)
+	if (frame == NULL)
 		return -EINVAL;
 
 	if (frame->bFrameIntervalType) {
+		if (fival->index >= frame->bFrameIntervalType)
+			return -EINVAL;
+
 		fival->type = V4L2_FRMIVAL_TYPE_DISCRETE;
 		fival->discrete.numerator =
-			frame->dwFrameInterval[index];
+			frame->dwFrameInterval[fival->index];
 		fival->discrete.denominator = 10000000;
 		uvc_simplify_fraction(&fival->discrete.numerator,
 			&fival->discrete.denominator, 8, 333);
 	} else {
+		if (fival->index)
+			return -EINVAL;
+
 		fival->type = V4L2_FRMIVAL_TYPE_STEPWISE;
 		fival->stepwise.min.numerator = frame->dwFrameInterval[0];
 		fival->stepwise.min.denominator = 10000000;
@@ -1343,85 +1270,96 @@ static long uvc_ioctl_default(struct file *file, void *fh, bool valid_prio,
 
 #ifdef CONFIG_COMPAT
 struct uvc_xu_control_mapping32 {
-	u32 id;
-	u8 name[32];
-	u8 entity[16];
-	u8 selector;
+	__u32 id;
+	__u8 name[32];
+	__u8 entity[16];
+	__u8 selector;
 
-	u8 size;
-	u8 offset;
-	u32 v4l2_type;
-	u32 data_type;
+	__u8 size;
+	__u8 offset;
+	__u32 v4l2_type;
+	__u32 data_type;
 
 	compat_caddr_t menu_info;
-	u32 menu_count;
+	__u32 menu_count;
 
-	u32 reserved[4];
+	__u32 reserved[4];
 };
 
 static int uvc_v4l2_get_xu_mapping(struct uvc_xu_control_mapping *kp,
 			const struct uvc_xu_control_mapping32 __user *up)
 {
-	struct uvc_xu_control_mapping32 *p = (void *)kp;
-	compat_caddr_t info;
-	u32 count;
+	compat_caddr_t p;
 
-	if (copy_from_user(p, up, sizeof(*p)))
+	if (!access_ok(VERIFY_READ, up, sizeof(*up)) ||
+	    __copy_from_user(kp, up, offsetof(typeof(*up), menu_info)) ||
+	    __get_user(kp->menu_count, &up->menu_count))
 		return -EFAULT;
 
-	count = p->menu_count;
-	info = p->menu_info;
-
 	memset(kp->reserved, 0, sizeof(kp->reserved));
-	kp->menu_info = count ? compat_ptr(info) : NULL;
-	kp->menu_count = count;
+
+	if (kp->menu_count == 0) {
+		kp->menu_info = NULL;
+		return 0;
+	}
+
+	if (__get_user(p, &up->menu_info))
+		return -EFAULT;
+	kp->menu_info = compat_ptr(p);
+
 	return 0;
 }
 
 static int uvc_v4l2_put_xu_mapping(const struct uvc_xu_control_mapping *kp,
 			struct uvc_xu_control_mapping32 __user *up)
 {
-	if (copy_to_user(up, kp, offsetof(typeof(*up), menu_info)) ||
-	    put_user(kp->menu_count, &up->menu_count))
+	if (!access_ok(VERIFY_WRITE, up, sizeof(*up)) ||
+	    __copy_to_user(up, kp, offsetof(typeof(*up), menu_info)) ||
+	    __put_user(kp->menu_count, &up->menu_count))
 		return -EFAULT;
 
-	if (clear_user(up->reserved, sizeof(up->reserved)))
+	if (__clear_user(up->reserved, sizeof(up->reserved)))
 		return -EFAULT;
 
 	return 0;
 }
 
 struct uvc_xu_control_query32 {
-	u8 unit;
-	u8 selector;
-	u8 query;
-	u16 size;
+	__u8 unit;
+	__u8 selector;
+	__u8 query;
+	__u16 size;
 	compat_caddr_t data;
 };
 
 static int uvc_v4l2_get_xu_query(struct uvc_xu_control_query *kp,
 			const struct uvc_xu_control_query32 __user *up)
 {
-	struct uvc_xu_control_query32 v;
+	compat_caddr_t p;
 
-	if (copy_from_user(&v, up, sizeof(v)))
+	if (!access_ok(VERIFY_READ, up, sizeof(*up)) ||
+	    __copy_from_user(kp, up, offsetof(typeof(*up), data)))
 		return -EFAULT;
 
-	*kp = (struct uvc_xu_control_query){
-		.unit = v.unit,
-		.selector = v.selector,
-		.query = v.query,
-		.size = v.size,
-		.data = v.size ? compat_ptr(v.data) : NULL
-	};
+	if (kp->size == 0) {
+		kp->data = NULL;
+		return 0;
+	}
+
+	if (__get_user(p, &up->data))
+		return -EFAULT;
+	kp->data = compat_ptr(p);
+
 	return 0;
 }
 
 static int uvc_v4l2_put_xu_query(const struct uvc_xu_control_query *kp,
 			struct uvc_xu_control_query32 __user *up)
 {
-	if (copy_to_user(up, kp, offsetof(typeof(*up), data)))
+	if (!access_ok(VERIFY_WRITE, up, sizeof(*up)) ||
+	    __copy_to_user(up, kp, offsetof(typeof(*up), data)))
 		return -EFAULT;
+
 	return 0;
 }
 
@@ -1490,7 +1428,7 @@ static int uvc_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
 	return uvc_queue_mmap(&stream->queue, vma);
 }
 
-static __poll_t uvc_v4l2_poll(struct file *file, poll_table *wait)
+static unsigned int uvc_v4l2_poll(struct file *file, poll_table *wait)
 {
 	struct uvc_fh *handle = file->private_data;
 	struct uvc_streaming *stream = handle->stream;

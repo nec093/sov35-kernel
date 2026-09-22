@@ -1,9 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
     yuv support
 
     Copyright (C) 2007  Ian Armstrong <ian@iarmst.demon.co.uk>
 
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include "ivtv-driver.h"
@@ -98,7 +110,7 @@ static int ivtv_yuv_prep_user_dma(struct ivtv *itv, struct ivtv_user_dma *dma,
 			/*
 			 * Inherit the -EFAULT from rc's
 			 * initialization, but allow it to be
-			 * overridden by uv_pages above if it was an
+			 * overriden by uv_pages above if it was an
 			 * actual errno.
 			 */
 		} else {
@@ -118,14 +130,13 @@ static int ivtv_yuv_prep_user_dma(struct ivtv *itv, struct ivtv_user_dma *dma,
 		dma->page_count = 0;
 		return -ENOMEM;
 	}
-	dma->SG_length = dma_map_sg(&itv->pdev->dev, dma->SGlist,
-				    dma->page_count, DMA_TO_DEVICE);
+	dma->SG_length = pci_map_sg(itv->pdev, dma->SGlist, dma->page_count, PCI_DMA_TODEVICE);
 
 	/* Fill SG Array with new values */
 	ivtv_udma_fill_sg_array(dma, y_buffer_offset, uv_buffer_offset, y_size);
 
 	/* If we've offset the y plane, ensure top area is blanked */
-	if (f->offset_y && yi->blanking_ptr) {
+	if (f->offset_y && yi->blanking_dmaptr) {
 		dma->SGarray[dma->SG_length].size = cpu_to_le32(720*16);
 		dma->SGarray[dma->SG_length].src = cpu_to_le32(yi->blanking_dmaptr);
 		dma->SGarray[dma->SG_length].dst = cpu_to_le32(IVTV_DECODER_OFFSET + yuv_offset[frame]);
@@ -926,15 +937,7 @@ static void ivtv_yuv_init(struct ivtv *itv)
 	/* We need a buffer for blanking when Y plane is offset - non-fatal if we can't get one */
 	yi->blanking_ptr = kzalloc(720 * 16, GFP_ATOMIC|__GFP_NOWARN);
 	if (yi->blanking_ptr) {
-		yi->blanking_dmaptr = dma_map_single(&itv->pdev->dev,
-						     yi->blanking_ptr,
-						     720 * 16, DMA_TO_DEVICE);
-		if (dma_mapping_error(&itv->pdev->dev, yi->blanking_dmaptr)) {
-			kfree(yi->blanking_ptr);
-			yi->blanking_ptr = NULL;
-			yi->blanking_dmaptr = 0;
-			IVTV_DEBUG_WARN("Failed to dma_map yuv blanking buffer\n");
-		}
+		yi->blanking_dmaptr = pci_map_single(itv->pdev, yi->blanking_ptr, 720*16, PCI_DMA_TODEVICE);
 	} else {
 		yi->blanking_dmaptr = 0;
 		IVTV_DEBUG_WARN("Failed to allocate yuv blanking buffer\n");
@@ -1278,8 +1281,7 @@ void ivtv_yuv_close(struct ivtv *itv)
 	if (yi->blanking_ptr) {
 		kfree(yi->blanking_ptr);
 		yi->blanking_ptr = NULL;
-		dma_unmap_single(&itv->pdev->dev, yi->blanking_dmaptr,
-				 720 * 16, DMA_TO_DEVICE);
+		pci_unmap_single(itv->pdev, yi->blanking_dmaptr, 720*16, PCI_DMA_TODEVICE);
 	}
 
 	/* Invalidate the old dimension information */

@@ -1,11 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * DMA memory management for framework level HCD code (hc_driver)
  *
  * This implementation plugs in through generic "usb_bus" level methods,
  * and should work with all USB controllers, regardless of bus type.
- *
- * Released under the GPLv2 only.
  */
 
 #include <linux/module.h>
@@ -16,7 +13,6 @@
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmapool.h>
-#include <linux/genalloc.h>
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
 
@@ -66,7 +62,9 @@ int hcd_buffer_create(struct usb_hcd *hcd)
 	char		name[16];
 	int		i, size;
 
-	if (hcd->localmem_pool || !hcd_uses_dma(hcd))
+	if (!IS_ENABLED(CONFIG_HAS_DMA) ||
+	    (!is_device_dma_capable(hcd->self.sysdev) &&
+	     !(hcd->driver->flags & HCD_LOCAL_MEM)))
 		return 0;
 
 	for (i = 0; i < HCD_BUFFER_POOLS; i++) {
@@ -100,8 +98,12 @@ void hcd_buffer_destroy(struct usb_hcd *hcd)
 		return;
 
 	for (i = 0; i < HCD_BUFFER_POOLS; i++) {
-		dma_pool_destroy(hcd->pool[i]);
-		hcd->pool[i] = NULL;
+		struct dma_pool *pool = hcd->pool[i];
+
+		if (pool) {
+			dma_pool_destroy(pool);
+			hcd->pool[i] = NULL;
+		}
 	}
 }
 
@@ -123,11 +125,10 @@ void *hcd_buffer_alloc(
 	if (size == 0)
 		return NULL;
 
-	if (hcd->localmem_pool)
-		return gen_pool_dma_alloc(hcd->localmem_pool, size, dma);
-
 	/* some USB hosts just use PIO */
-	if (!hcd_uses_dma(hcd)) {
+	if (!IS_ENABLED(CONFIG_HAS_DMA) ||
+	    (!is_device_dma_capable(bus->sysdev) &&
+	     !(hcd->driver->flags & HCD_LOCAL_MEM))) {
 		*dma = ~(dma_addr_t) 0;
 		return kmalloc(size, mem_flags);
 	}
@@ -152,12 +153,9 @@ void hcd_buffer_free(
 	if (!addr)
 		return;
 
-	if (hcd->localmem_pool) {
-		gen_pool_free(hcd->localmem_pool, (unsigned long)addr, size);
-		return;
-	}
-
-	if (!hcd_uses_dma(hcd)) {
+	if (!IS_ENABLED(CONFIG_HAS_DMA) ||
+	    (!is_device_dma_capable(bus->sysdev) &&
+	     !(hcd->driver->flags & HCD_LOCAL_MEM))) {
 		kfree(addr);
 		return;
 	}
@@ -168,46 +166,5 @@ void hcd_buffer_free(
 			return;
 		}
 	}
-	dma_free_coherent(hcd->self.sysdev, size, addr, dma);
-}
-
-void *hcd_buffer_alloc_pages(struct usb_hcd *hcd,
-		size_t size, gfp_t mem_flags, dma_addr_t *dma)
-{
-	if (size == 0)
-		return NULL;
-
-	if (hcd->localmem_pool)
-		return gen_pool_dma_alloc_align(hcd->localmem_pool,
-				size, dma, PAGE_SIZE);
-
-	/* some USB hosts just use PIO */
-	if (!hcd_uses_dma(hcd)) {
-		*dma = DMA_MAPPING_ERROR;
-		return (void *)__get_free_pages(mem_flags,
-				get_order(size));
-	}
-
-	return dma_alloc_coherent(hcd->self.sysdev,
-			size, dma, mem_flags);
-}
-
-void hcd_buffer_free_pages(struct usb_hcd *hcd,
-		size_t size, void *addr, dma_addr_t dma)
-{
-	if (!addr)
-		return;
-
-	if (hcd->localmem_pool) {
-		gen_pool_free(hcd->localmem_pool,
-				(unsigned long)addr, size);
-		return;
-	}
-
-	if (!hcd_uses_dma(hcd)) {
-		free_pages((unsigned long)addr, get_order(size));
-		return;
-	}
-
 	dma_free_coherent(hcd->self.sysdev, size, addr, dma);
 }

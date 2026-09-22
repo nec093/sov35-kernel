@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-1.0+
 /*
  * OHCI HCD (Host Controller Driver) for USB.
  *
@@ -152,7 +151,7 @@ static int ohci_quirk_amd700(struct usb_hcd *hcd)
 {
 	struct ohci_hcd *ohci = hcd_to_ohci(hcd);
 
-	if (usb_amd_quirk_pll_check())
+	if (usb_amd_find_chipset_info())
 		ohci->flags |= OHCI_QUIRK_AMD_PLL;
 
 	/* SB800 needs pre-fetch fix */
@@ -162,25 +161,6 @@ static int ohci_quirk_amd700(struct usb_hcd *hcd)
 	}
 
 	ohci->flags |= OHCI_QUIRK_GLOBAL_SUSPEND;
-	return 0;
-}
-
-static int ohci_quirk_loongson(struct usb_hcd *hcd)
-{
-	struct pci_dev *pdev = to_pci_dev(hcd->self.controller);
-
-	/*
-	 * Loongson's LS7A OHCI controller (rev 0x02) has a
-	 * flaw. MMIO register with offset 0x60/64 is treated
-	 * as legacy PS2-compatible keyboard/mouse interface.
-	 * Since OHCI only use 4KB BAR resource, LS7A OHCI's
-	 * 32KB BAR is wrapped around (the 2nd 4KB BAR space
-	 * is the same as the 1st 4KB internally). So add 4KB
-	 * offset (0x1000) to the OHCI registers as a quirk.
-	 */
-	if (pdev->revision == 0x2)
-		hcd->regs += SZ_4K;	/* SZ_4K = 0x1000 */
-
 	return 0;
 }
 
@@ -244,10 +224,6 @@ static const struct pci_device_id ohci_pci_quirks[] = {
 		.driver_data = (unsigned long)ohci_quirk_amd700,
 	},
 	{
-		PCI_DEVICE(PCI_VENDOR_ID_LOONGSON, 0x7a24),
-		.driver_data = (unsigned long)ohci_quirk_loongson,
-	},
-	{
 		.vendor		= PCI_VENDOR_ID_APPLE,
 		.device		= 0x003f,
 		.subvendor	= PCI_SUBVENDOR_ID_REDHAT_QUMRANET,
@@ -297,7 +273,7 @@ static const struct ohci_driver_overrides pci_overrides __initconst = {
 	.reset =		ohci_pci_reset,
 };
 
-static const struct pci_device_id pci_ids[] = { {
+static const struct pci_device_id pci_ids [] = { {
 	/* handle any USB OHCI controller */
 	PCI_DEVICE_CLASS(PCI_CLASS_SERIAL_USB_OHCI, ~0),
 	.driver_data =	(unsigned long) &ohci_pci_hc_driver,

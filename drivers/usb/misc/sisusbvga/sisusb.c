@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
 /*
  * sisusb - usb kernel driver for SiS315(E) based USB2VGA dongles
  *
@@ -53,7 +52,7 @@
 #include "sisusb.h"
 #include "sisusb_init.h"
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 #include <linux/font.h>
 #endif
 
@@ -61,7 +60,7 @@
 
 /* Forward declarations / clean-up routines */
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 static int sisusb_first_vc;
 static int sisusb_last_vc;
 module_param_named(first, sisusb_first_vc, int, 0);
@@ -1200,7 +1199,7 @@ static int sisusb_read_mem_bulk(struct sisusb_usb_data *sisusb, u32 addr,
 
 /* High level: Gfx (indexed) register access */
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 int sisusb_setreg(struct sisusb_usb_data *sisusb, u32 port, u8 data)
 {
 	return sisusb_write_memio_byte(sisusb, SISUSB_TYPE_IO, port, data);
@@ -1274,7 +1273,7 @@ int sisusb_setidxregand(struct sisusb_usb_data *sisusb, u32 port,
 
 /* Write/read video ram */
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 int sisusb_writeb(struct sisusb_usb_data *sisusb, u32 adr, u8 data)
 {
 	return sisusb_write_memio_byte(sisusb, SISUSB_TYPE_MEM, adr, data);
@@ -1751,10 +1750,10 @@ static int sisusb_setup_screen(struct sisusb_usb_data *sisusb,
 	return ret;
 }
 
-static void sisusb_set_default_mode(struct sisusb_usb_data *sisusb,
+static int sisusb_set_default_mode(struct sisusb_usb_data *sisusb,
 		int touchengines)
 {
-	int i, j, modex, bpp, du;
+	int ret = 0, i, j, modex, modey, bpp, du;
 	u8 sr31, cr63, tmp8;
 	static const char attrdata[] = {
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -1777,7 +1776,7 @@ static void sisusb_set_default_mode(struct sisusb_usb_data *sisusb,
 		0x00
 	};
 
-	modex = 640; bpp = 2;
+	modex = 640; modey = 480; bpp = 2;
 
 	GETIREG(SISSR, 0x31, &sr31);
 	GETIREG(SISCR, 0x63, &cr63);
@@ -1883,6 +1882,8 @@ static void sisusb_set_default_mode(struct sisusb_usb_data *sisusb,
 	}
 
 	SETIREG(SISCR, 0x34, 0x44);	/* we just set std mode #44 */
+
+	return ret;
 }
 
 static int sisusb_init_gfxcore(struct sisusb_usb_data *sisusb)
@@ -2027,7 +2028,7 @@ static int sisusb_init_gfxcore(struct sisusb_usb_data *sisusb)
 
 		ret |= SETIREG(SISCR, 0x83, 0x00);
 
-		sisusb_set_default_mode(sisusb, 0);
+		ret |= sisusb_set_default_mode(sisusb, 0);
 
 		ret |= SETIREGAND(SISSR, 0x21, 0xdf);
 		ret |= SETIREGOR(SISSR, 0x01, 0x20);
@@ -2115,7 +2116,7 @@ static void sisusb_get_ramconfig(struct sisusb_usb_data *sisusb)
 		bw = busSDR[(tmp8 & 0x03)];
 		break;
 	case 2:
-		ramtypetext1 = "asymmetric";
+		ramtypetext1 = "asymmeric";
 		sisusb->vramsize += sisusb->vramsize/2;
 		bw = busDDRA[(tmp8 & 0x03)];
 		break;
@@ -2254,7 +2255,7 @@ static int sisusb_init_gfxdevice(struct sisusb_usb_data *sisusb, int initscreen)
 		if (sisusb_init_gfxcore(sisusb) == 0) {
 			sisusb->gfxinit = 1;
 			sisusb_get_ramconfig(sisusb);
-			sisusb_set_default_mode(sisusb, 1);
+			ret |= sisusb_set_default_mode(sisusb, 1);
 			ret |= sisusb_setup_screen(sisusb, 1, initscreen);
 		}
 	}
@@ -2263,7 +2264,7 @@ static int sisusb_init_gfxdevice(struct sisusb_usb_data *sisusb, int initscreen)
 }
 
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 
 /* Set up default text mode:
  * - Set text mode (0x03)
@@ -2456,7 +2457,7 @@ void sisusb_delete(struct kref *kref)
 	sisusb->sisusb_dev = NULL;
 	sisusb_free_buffers(sisusb);
 	sisusb_free_urbs(sisusb);
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 	kfree(sisusb->SiS_Pr);
 #endif
 	kfree(sisusb);
@@ -2852,7 +2853,7 @@ static int sisusb_handle_command(struct sisusb_usb_data *sisusb,
 
 	case SUCMD_HANDLETEXTMODE:
 		retval = 0;
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 		/* Gfx core must be initialized, SiS_Pr must exist */
 		if (!sisusb->gfxinit || !sisusb->SiS_Pr)
 			return -ENODEV;
@@ -2868,7 +2869,7 @@ static int sisusb_handle_command(struct sisusb_usb_data *sisusb,
 #endif
 		break;
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 	case SUCMD_SETMODE:
 		/* Gfx core must be initialized, SiS_Pr must exist */
 		if (!sisusb->gfxinit || !sisusb->SiS_Pr)
@@ -2952,7 +2953,7 @@ static long sisusb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		x.sisusb_vramsize = sisusb->vramsize;
 		x.sisusb_minor = sisusb->minor;
 		x.sisusb_fbdevactive = 0;
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 		x.sisusb_conactive  = sisusb->haveconsole ? 1 : 0;
 #else
 		x.sisusb_conactive  = 0;
@@ -2983,7 +2984,7 @@ err_out:
 	return retval;
 }
 
-#ifdef CONFIG_COMPAT
+#ifdef SISUSB_NEW_CONFIG_COMPAT
 static long sisusb_compat_ioctl(struct file *f, unsigned int cmd,
 		unsigned long arg)
 {
@@ -3009,7 +3010,7 @@ static const struct file_operations usb_sisusb_fops = {
 	.read =		sisusb_read,
 	.write =	sisusb_write,
 	.llseek =	sisusb_lseek,
-#ifdef CONFIG_COMPAT
+#ifdef SISUSB_NEW_CONFIG_COMPAT
 	.compat_ioctl = sisusb_compat_ioctl,
 #endif
 	.unlocked_ioctl = sisusb_ioctl
@@ -3103,7 +3104,7 @@ static int sisusb_probe(struct usb_interface *intf,
 	dev_info(&sisusb->sisusb_dev->dev, "Allocated %d output buffers\n",
 			sisusb->numobufs);
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 	/* Allocate our SiS_Pr */
 	sisusb->SiS_Pr = kmalloc(sizeof(struct SiS_Private), GFP_KERNEL);
 	if (!sisusb->SiS_Pr) {
@@ -3124,7 +3125,7 @@ static int sisusb_probe(struct usb_interface *intf,
 
 	if (dev->speed == USB_SPEED_HIGH || dev->speed >= USB_SPEED_SUPER) {
 		int initscreen = 1;
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 		if (sisusb_first_vc > 0 && sisusb_last_vc > 0 &&
 				sisusb_first_vc <= sisusb_last_vc &&
 				sisusb_last_vc <= MAX_NR_CONSOLES)
@@ -3146,7 +3147,7 @@ static int sisusb_probe(struct usb_interface *intf,
 	dev_dbg(&sisusb->sisusb_dev->dev, "*** RWTEST END ***\n");
 #endif
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 	sisusb_console_init(sisusb, sisusb_first_vc, sisusb_last_vc);
 #endif
 
@@ -3172,7 +3173,7 @@ static void sisusb_disconnect(struct usb_interface *intf)
 	if (!sisusb)
 		return;
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 	sisusb_console_exit(sisusb);
 #endif
 
@@ -3222,7 +3223,7 @@ static struct usb_driver sisusb_driver = {
 static int __init usb_sisusb_init(void)
 {
 
-#ifdef CONFIG_USB_SISUSBVGA_CON
+#ifdef INCL_SISUSB_CON
 	sisusb_init_concode();
 #endif
 

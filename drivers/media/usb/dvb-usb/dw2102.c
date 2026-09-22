@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* DVB USB framework compliant Linux driver for the
  *	DVBWorld DVB-S 2101, 2102, DVB-S2 2104, DVB-C 3101,
  *	TeVii S421, S480, S482, S600, S630, S632, S650, S660, S662,
@@ -8,9 +7,13 @@
  *	Terratec Cinergy S2 cards
  * Copyright (C) 2008-2012 Igor M. Liplianin (liplianin@me.by)
  *
- * see Documentation/media/dvb-drivers/dvb-usb.rst for more information
+ *	This program is free software; you can redistribute it and/or modify it
+ *	under the terms of the GNU General Public License as published by the
+ *	Free Software Foundation, version 2.
+ *
+ * see Documentation/dvb/README.dvb-usb for more information
  */
-#include <media/dvb-usb-ids.h>
+#include "dvb-usb-ids.h"
 #include "dw2102.h"
 #include "si21xx.h"
 #include "stv0299.h"
@@ -58,7 +61,9 @@
 #define P1100_FIRMWARE  "dvb-usb-p1100.fw"
 #define P7500_FIRMWARE  "dvb-usb-p7500.fw"
 
-#define	err_str "did not find the firmware file '%s'. You can use <kernel_dir>/scripts/get_dvb_firmware to get the firmware"
+#define	err_str "did not find the firmware file. (%s) " \
+		"Please see linux/Documentation/dvb/ for more details " \
+		"on firmware-problems."
 
 struct dw2102_state {
 	u8 initialized;
@@ -693,7 +698,6 @@ static int su3000_i2c_transfer(struct i2c_adapter *adap, struct i2c_msg msg[],
 {
 	struct dvb_usb_device *d = i2c_get_adapdata(adap);
 	struct dw2102_state *state;
-	int j;
 
 	if (!d)
 		return -ENODEV;
@@ -707,11 +711,11 @@ static int su3000_i2c_transfer(struct i2c_adapter *adap, struct i2c_msg msg[],
 		return -EAGAIN;
 	}
 
-	j = 0;
-	while (j < num) {
-		switch (msg[j].addr) {
+	switch (num) {
+	case 1:
+		switch (msg[0].addr) {
 		case SU3000_STREAM_CTRL:
-			state->data[0] = msg[j].buf[0] + 0x36;
+			state->data[0] = msg[0].buf[0] + 0x36;
 			state->data[1] = 3;
 			state->data[2] = 0;
 			if (dvb_usb_generic_rw(d, state->data, 3,
@@ -723,86 +727,61 @@ static int su3000_i2c_transfer(struct i2c_adapter *adap, struct i2c_msg msg[],
 			if (dvb_usb_generic_rw(d, state->data, 1,
 					state->data, 2, 0) < 0)
 				err("i2c transfer failed.");
-			msg[j].buf[1] = state->data[0];
-			msg[j].buf[0] = state->data[1];
+			msg[0].buf[1] = state->data[0];
+			msg[0].buf[0] = state->data[1];
 			break;
 		default:
-			/* if the current write msg is followed by a another
-			 * read msg to/from the same address
-			 */
-			if ((j+1 < num) && (msg[j+1].flags & I2C_M_RD) &&
-			    (msg[j].addr == msg[j+1].addr)) {
-				/* join both i2c msgs to one usb read command */
-				if (4 + msg[j].len > sizeof(state->data)) {
-					warn("i2c combined wr/rd: write len=%d is too big!\n",
-					    msg[j].len);
-					num = -EOPNOTSUPP;
-					break;
-				}
-				if (1 + msg[j+1].len > sizeof(state->data)) {
-					warn("i2c combined wr/rd: read len=%d is too big!\n",
-					    msg[j+1].len);
-					num = -EOPNOTSUPP;
-					break;
-				}
-
-				state->data[0] = 0x09;
-				state->data[1] = msg[j].len;
-				state->data[2] = msg[j+1].len;
-				state->data[3] = msg[j].addr;
-				memcpy(&state->data[4], msg[j].buf, msg[j].len);
-
-				if (dvb_usb_generic_rw(d, state->data, msg[j].len + 4,
-					state->data, msg[j+1].len + 1, 0) < 0)
-					err("i2c transfer failed.");
-
-				memcpy(msg[j+1].buf, &state->data[1], msg[j+1].len);
-				j++;
-				break;
-			}
-
-			if (msg[j].flags & I2C_M_RD) {
-				/* single read */
-				if (4 + msg[j].len > sizeof(state->data)) {
-					warn("i2c rd: len=%d is too big!\n", msg[j].len);
-					num = -EOPNOTSUPP;
-					break;
-				}
-
-				state->data[0] = 0x09;
-				state->data[1] = 0;
-				state->data[2] = msg[j].len;
-				state->data[3] = msg[j].addr;
-				memcpy(&state->data[4], msg[j].buf, msg[j].len);
-
-				if (dvb_usb_generic_rw(d, state->data, 4,
-					state->data, msg[j].len + 1, 0) < 0)
-					err("i2c transfer failed.");
-
-				memcpy(msg[j].buf, &state->data[1], msg[j].len);
-				break;
-			}
-
-			/* single write */
-			if (3 + msg[j].len > sizeof(state->data)) {
-				warn("i2c wr: len=%d is too big!\n", msg[j].len);
+			if (3 + msg[0].len > sizeof(state->data)) {
+				warn("i2c wr: len=%d is too big!\n",
+				     msg[0].len);
 				num = -EOPNOTSUPP;
 				break;
 			}
 
+			/* always i2c write*/
 			state->data[0] = 0x08;
-			state->data[1] = msg[j].addr;
-			state->data[2] = msg[j].len;
+			state->data[1] = msg[0].addr;
+			state->data[2] = msg[0].len;
 
-			memcpy(&state->data[3], msg[j].buf, msg[j].len);
+			memcpy(&state->data[3], msg[0].buf, msg[0].len);
 
-			if (dvb_usb_generic_rw(d, state->data, msg[j].len + 3,
+			if (dvb_usb_generic_rw(d, state->data, msg[0].len + 3,
 						state->data, 1, 0) < 0)
 				err("i2c transfer failed.");
-		} // switch
-		j++;
 
-	} // while
+		}
+		break;
+	case 2:
+		/* always i2c read */
+		if (4 + msg[0].len > sizeof(state->data)) {
+			warn("i2c rd: len=%d is too big!\n",
+			     msg[0].len);
+			num = -EOPNOTSUPP;
+			break;
+		}
+		if (1 + msg[1].len > sizeof(state->data)) {
+			warn("i2c rd: len=%d is too big!\n",
+			     msg[1].len);
+			num = -EOPNOTSUPP;
+			break;
+		}
+
+		state->data[0] = 0x09;
+		state->data[1] = msg[0].len;
+		state->data[2] = msg[1].len;
+		state->data[3] = msg[0].addr;
+		memcpy(&state->data[4], msg[0].buf, msg[0].len);
+
+		if (dvb_usb_generic_rw(d, state->data, msg[0].len + 4,
+					state->data, msg[1].len + 1, 0) < 0)
+			err("i2c transfer failed.");
+
+		memcpy(msg[1].buf, &state->data[1], msg[1].len);
+		break;
+	default:
+		warn("more than 2 i2c messages at a time is not handled yet.");
+		break;
+	}
 	mutex_unlock(&d->data_mutex);
 	mutex_unlock(&d->i2c_mutex);
 	return num;
@@ -1613,7 +1592,7 @@ static int tt_s2_4600_frontend_attach(struct dvb_usb_adapter *adap)
 	m88ds3103_pdata.lnb_hv_pol = 1;
 	m88ds3103_pdata.lnb_en_pol = 0;
 	memset(&board_info, 0, sizeof(board_info));
-	strscpy(board_info.type, "m88ds3103", I2C_NAME_SIZE);
+	strlcpy(board_info.type, "m88ds3103", I2C_NAME_SIZE);
 	board_info.addr = 0x68;
 	board_info.platform_data = &m88ds3103_pdata;
 	request_module("m88ds3103");
@@ -1632,7 +1611,7 @@ static int tt_s2_4600_frontend_attach(struct dvb_usb_adapter *adap)
 	/* attach tuner */
 	ts2020_config.fe = adap->fe_adap[0].fe;
 	memset(&board_info, 0, sizeof(board_info));
-	strscpy(board_info.type, "ts2022", I2C_NAME_SIZE);
+	strlcpy(board_info.type, "ts2022", I2C_NAME_SIZE);
 	board_info.addr = 0x60;
 	board_info.platform_data = &ts2020_config;
 	request_module("ts2020");

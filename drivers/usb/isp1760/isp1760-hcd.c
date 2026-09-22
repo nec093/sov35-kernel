@@ -789,11 +789,11 @@ static void collect_qtds(struct usb_hcd *hcd, struct isp1760_qh *qh,
 					mem_reads8(hcd->regs, qtd->payload_addr,
 							qtd->data_buffer,
 							qtd->actual_length);
-					/* Fall through */
+					/* Fall through (?) */
 				case OUT_PID:
 					qtd->urb->actual_length +=
 							qtd->actual_length;
-					/* Fall through */
+					/* Fall through ... */
 				case SETUP_PID:
 					break;
 				}
@@ -1260,11 +1260,10 @@ leave:
 #define SLOT_TIMEOUT 300
 #define SLOT_CHECK_PERIOD 200
 static struct timer_list errata2_timer;
-static struct usb_hcd *errata2_timer_hcd;
 
-static void errata2_function(struct timer_list *unused)
+static void errata2_function(unsigned long data)
 {
-	struct usb_hcd *hcd = errata2_timer_hcd;
+	struct usb_hcd *hcd = (struct usb_hcd *) data;
 	struct isp1760_hcd *priv = hcd_to_priv(hcd);
 	int slot;
 	struct ptd ptd;
@@ -1336,8 +1335,7 @@ static int isp1760_run(struct usb_hcd *hcd)
 	if (retval)
 		return retval;
 
-	errata2_timer_hcd = hcd;
-	timer_setup(&errata2_timer, errata2_function, 0);
+	setup_timer(&errata2_timer, errata2_function, (unsigned long)hcd);
 	errata2_timer.expires = jiffies + msecs_to_jiffies(SLOT_CHECK_PERIOD);
 	add_timer(&errata2_timer);
 
@@ -1818,6 +1816,7 @@ static int isp1760_hub_control(struct usb_hcd *hcd, u16 typeReq,
 	u32 temp, status;
 	unsigned long flags;
 	int retval = 0;
+	unsigned selector;
 
 	/*
 	 * FIXME:  support SetPortFeatures USB_PORT_FEAT_INDICATOR.
@@ -2010,6 +2009,7 @@ static int isp1760_hub_control(struct usb_hcd *hcd, u16 typeReq,
 		}
 		break;
 	case SetPortFeature:
+		selector = wIndex >> 8;
 		wIndex &= 0xff;
 		if (!wIndex || wIndex > ports)
 			goto error;
@@ -2092,7 +2092,7 @@ static void isp1760_stop(struct usb_hcd *hcd)
 
 	isp1760_hub_control(hcd, ClearPortFeature, USB_PORT_FEAT_POWER,	1,
 			NULL, 0);
-	msleep(20);
+	mdelay(20);
 
 	spin_lock_irq(&priv->lock);
 	ehci_reset(hcd);

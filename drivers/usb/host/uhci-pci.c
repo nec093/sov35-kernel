@@ -118,13 +118,11 @@ static int uhci_pci_init(struct usb_hcd *hcd)
 
 	uhci->rh_numports = uhci_count_ports(hcd);
 
-	/*
-	 * Intel controllers report the OverCurrent bit active on.  VIA
-	 * and ZHAOXIN controllers report it active off, so we'll adjust
-	 * the bit value.  (It's not standardized in the UHCI spec.)
+	/* Intel controllers report the OverCurrent bit active on.
+	 * VIA controllers report it active off, so we'll adjust the
+	 * bit value.  (It's not standardized in the UHCI spec.)
 	 */
-	if (to_pci_dev(uhci_dev(uhci))->vendor == PCI_VENDOR_ID_VIA ||
-			to_pci_dev(uhci_dev(uhci))->vendor == PCI_VENDOR_ID_ZHAOXIN)
+	if (to_pci_dev(uhci_dev(uhci))->vendor == PCI_VENDOR_ID_VIA)
 		uhci->oc_low = 1;
 
 	/* HP's server management chip requires a longer port reset delay. */
@@ -262,7 +260,7 @@ static const struct hc_driver uhci_driver = {
 
 	/* Generic hardware linkage */
 	.irq =			uhci_irq,
-	.flags =		HCD_DMA | HCD_USB11,
+	.flags =		HCD_USB11,
 
 	/* Basic lifecycle operations */
 	.reset =		uhci_pci_init,

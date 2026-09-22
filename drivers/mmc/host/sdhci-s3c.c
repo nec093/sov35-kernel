@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* linux/drivers/mmc/host/sdhci-s3c.c
  *
  * Copyright 2008 Openmoko Inc.
@@ -7,6 +6,10 @@
  *      http://armlinux.simtec.co.uk/
  *
  * SDHCI (HSMMC) support for Samsung SoC
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/spinlock.h>
@@ -455,8 +458,10 @@ static int sdhci_s3c_probe(struct platform_device *pdev)
 	}
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0)
+	if (irq < 0) {
+		dev_err(dev, "no irq specified\n");
 		return irq;
+	}
 
 	host = sdhci_alloc_host(dev, sizeof(struct sdhci_s3c));
 	if (IS_ERR(host)) {
@@ -574,7 +579,6 @@ static int sdhci_s3c_probe(struct platform_device *pdev)
 	switch (pdata->max_width) {
 	case 8:
 		host->mmc->caps |= MMC_CAP_8_BIT_DATA;
-		/* Fall through */
 	case 4:
 		host->mmc->caps |= MMC_CAP_4_BIT_DATA;
 		break;
@@ -616,8 +620,10 @@ static int sdhci_s3c_probe(struct platform_device *pdev)
 		goto err_req_regs;
 
 	ret = sdhci_add_host(host);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "sdhci_add_host() failed\n");
 		goto err_req_regs;
+	}
 
 #ifdef CONFIG_PM
 	if (pdata->cd_type != S3C_SDHCI_CD_INTERNAL)
@@ -703,7 +709,7 @@ static int sdhci_s3c_runtime_resume(struct device *dev)
 	clk_prepare_enable(busclk);
 	if (ourhost->cur_clk >= 0)
 		clk_prepare_enable(ourhost->clk_bus[ourhost->cur_clk]);
-	ret = sdhci_runtime_resume_host(host, 0);
+	ret = sdhci_runtime_resume_host(host);
 	return ret;
 }
 #endif
@@ -714,24 +720,32 @@ static const struct dev_pm_ops sdhci_s3c_pmops = {
 			   NULL)
 };
 
+#if defined(CONFIG_CPU_EXYNOS4210) || defined(CONFIG_SOC_EXYNOS4212)
+static struct sdhci_s3c_drv_data exynos4_sdhci_drv_data = {
+	.no_divider = true,
+};
+#define EXYNOS4_SDHCI_DRV_DATA ((kernel_ulong_t)&exynos4_sdhci_drv_data)
+#else
+#define EXYNOS4_SDHCI_DRV_DATA ((kernel_ulong_t)NULL)
+#endif
+
 static const struct platform_device_id sdhci_s3c_driver_ids[] = {
 	{
 		.name		= "s3c-sdhci",
 		.driver_data	= (kernel_ulong_t)NULL,
+	}, {
+		.name		= "exynos4-sdhci",
+		.driver_data	= EXYNOS4_SDHCI_DRV_DATA,
 	},
 	{ }
 };
 MODULE_DEVICE_TABLE(platform, sdhci_s3c_driver_ids);
 
 #ifdef CONFIG_OF
-static struct sdhci_s3c_drv_data exynos4_sdhci_drv_data = {
-	.no_divider = true,
-};
-
 static const struct of_device_id sdhci_s3c_dt_match[] = {
 	{ .compatible = "samsung,s3c6410-sdhci", },
 	{ .compatible = "samsung,exynos4210-sdhci",
-		.data = &exynos4_sdhci_drv_data },
+		.data = (void *)EXYNOS4_SDHCI_DRV_DATA },
 	{},
 };
 MODULE_DEVICE_TABLE(of, sdhci_s3c_dt_match);
