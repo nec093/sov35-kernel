@@ -126,10 +126,6 @@ struct tun_security_struct {
 	u32 sid;			/* SID for the tun device sockets */
 };
 
-struct bpf_security_struct {
-	u32 sid;  /*SID of bpf obj creater*/
-};
-
 struct key_security_struct {
 	u32 sid;	/* SID of key */
 };
