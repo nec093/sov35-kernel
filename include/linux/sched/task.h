@@ -50,6 +50,15 @@ extern void init_idle(struct task_struct *idle, int cpu);
 extern int sched_fork(unsigned long clone_flags, struct task_struct *p);
 extern void sched_dead(struct task_struct *p);
 
+/*
+ * 5.4 port: CAF's WALT scheduler defines a real sched_exit() (per-task
+ * load-tracking cleanup); WALT is not part of this port (Phase A is
+ * mainline CFS, see kernel_4.14_port_HANDOFF.md), so this is always the
+ * no-op stub -- matching what port-4.14's "#else" branch used when
+ * CONFIG_SCHED_WALT was off, which is also the actual defconfig state.
+ */
+static inline void sched_exit(struct task_struct *p) { }
+
 void __noreturn do_task_dead(void);
 void __noreturn make_task_dead(int signr);
 
