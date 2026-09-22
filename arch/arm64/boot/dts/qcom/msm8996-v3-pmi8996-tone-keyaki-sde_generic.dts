@@ -1,0 +1,71 @@
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+/*
+ * Copyright (C) 2016 Sony Mobile Communications Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2, as
+ * published by the Free Software Foundation.
+ */
+
+
+/dts-v1/;
+
+#include "msm8996-v3.dtsi"
+#include "pmi8996.dtsi"
+#include "msm8996-sde-overlay.dtsi"
+#include "msm8996-mtp.dtsi"
+#include "msm8996-tone-common.dtsi"
+#include "msm8996-tone-common-sde-overlay.dtsi"
+#include "msm8996-tone-keyaki-camera.dtsi"
+#include "msm8996-tone-keyaki-common.dtsi"
+#include "msm8996-tone-keyaki_generic.dtsi"
+#include "dsi-panel-somc-kagura.dtsi"
+#include "dsi-panel-somc-kagura-sde.dtsi"
+
+/ {
+	model = "SoMC Keyaki-ROW";
+	compatible = "somc,keyaki-row", "qcom,msm8996";
+	qcom,board-id = <8 0>;
+};
+
+/*
+ * dsi-panel-somc-kagura.dtsi is shared with the actual "kagura" (XZ
+ * Premium) board and defines a second "1080p120" display timing whose
+ * PHY timing bytes and DCS command sequences are byte-for-byte
+ * identical to "1080p60" (i.e. it never really drives the panel at a
+ * different rate). On keyaki (XZs), whose panel is not rated for
+ * anything beyond 60Hz, the GSI's SurfaceFlinger/HWC repeatedly
+ * switches into this bogus config during video playback (observed
+ * flapping every 150ms-1s), and each switch desyncs the hybrid
+ * in-cell touch controller ("In-Cell I/F state no update" in dmesg),
+ * causing screen corruption and an unresponsive touchscreen. Remove
+ * the timing here so it can never be selected, without touching the
+ * shared file (kagura's own dtb build is unaffected).
+ */
+&dsi_jdi_synaptics_cmd_6 {
+	qcom,mdss-dsi-display-timings {
+		/delete-node/ 1080p120;
+	};
+};
+
+&dsi_sharp_synaptics_cmd_9 {
+	qcom,mdss-dsi-display-timings {
+		/delete-node/ 1080p120;
+	};
+};
+
+&dsi_default_panel {
+	qcom,mdss-dsi-display-timings {
+		/delete-node/ 1080p120;
+	};
+};
