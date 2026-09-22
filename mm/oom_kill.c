@@ -422,8 +422,22 @@ static int dump_task(struct task_struct *p, void *arg)
  * State information includes task's pid, uid, tgid, vm size, rss,
  * pgtables_bytes, swapents, oom_score_adj value, and name.
  */
-static void dump_tasks(struct oom_control *oc)
+/*
+ * 5.4 port: non-static (was static) so drivers/staging/android/
+ * lowmemorykiller.c can call it directly, same as on 4.14. oc may be NULL
+ * here (lowmemorykiller has no oom_control of its own); is_memcg_oom(),
+ * dump_task() and oom_cpuset_eligible() all dereference oc unconditionally
+ * but are fine with an all-zero one (unconstrained: no memcg, no
+ * nodemask), so substitute that instead of changing any of their
+ * signatures.
+ */
+void dump_tasks(struct oom_control *oc)
 {
+	struct oom_control oc_none = { };
+
+	if (!oc)
+		oc = &oc_none;
+
 	pr_info("Tasks state (memory values in pages):\n");
 	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
 
@@ -692,7 +706,14 @@ static void wake_oom_reaper(struct timer_list *timer)
  * before the exit path is able to wake the futex waiters.
  */
 #define OOM_REAPER_DELAY (2*HZ)
-static void queue_oom_reaper(struct task_struct *tsk)
+/*
+ * 5.4 port: non-static so lowmemorykiller can queue a task for reaping
+ * directly, matching what it did on 4.14 by calling wake_oom_reaper(task)
+ * -- mainline's wake_oom_reaper is now the *timer callback*
+ * (struct timer_list *, armed per-task by this function), not something
+ * meant to be called directly with a task_struct any more.
+ */
+void queue_oom_reaper(struct task_struct *tsk)
 {
 	/* mm is already queued? */
 	if (test_and_set_bit(MMF_OOM_REAP_QUEUED, &tsk->signal->oom_mm->flags))
@@ -711,7 +732,7 @@ static int __init oom_init(void)
 }
 subsys_initcall(oom_init)
 #else
-static inline void queue_oom_reaper(struct task_struct *tsk)
+void queue_oom_reaper(struct task_struct *tsk)
 {
 }
 #endif /* CONFIG_MMU */

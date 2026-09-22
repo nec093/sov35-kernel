@@ -494,18 +494,21 @@ struct spi_device_id {
 	kernel_ulong_t driver_data;	/* Data private to the driver */
 };
 
-/* SLIMbus */
-
-#define SLIMBUS_NAME_SIZE	32
-#define SLIMBUS_MODULE_PREFIX	"slim:"
-
-struct slim_device_id {
-	__u16 manf_id, prod_code;
-	__u16 dev_index, instance;
-
-	/* Data private to the driver */
-	kernel_ulong_t driver_data;
-};
+/*
+ * 5.4 port: the old Sony/CAF numeric-addressed "struct slim_device_id"
+ * (manf_id/prod_code/dev_index/instance) that used to live here was
+ * removed -- mainline reworked the SLIMbus subsystem between 4.14 and
+ * 5.4 to name-based driver matching (see the name-based slim_device_id
+ * further down this file, used by drivers/slimbus/{core,qcom-ctrl,...}.c).
+ * manf_id/prod_code still exist at runtime, just on struct slim_device,
+ * not on the id-table-matching struct. CAF's own drivers/slimbus/
+ * slim-msm*.c (old Sony SLIMbus controller driver) was NOT restored for
+ * this reason -- mainline's drivers/slimbus/qcom-ctrl.c /
+ * qcom-ngd-ctrl.c natively target Qualcomm SLIMbus hardware in the new
+ * architecture. TODO: audio (techpack/audio, WCD934X codec drivers)
+ * likely still expects the old numeric id-table shape and needs
+ * reconciling against the new API -- not done yet.
+ */
 
 #define APR_NAME_SIZE	32
 #define APR_MODULE_PREFIX "apr:"

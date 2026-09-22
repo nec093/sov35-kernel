@@ -17,7 +17,20 @@
 #include <linux/rbtree.h>
 #include <linux/mutex.h>
 #include <linux/err.h>
+#include <linux/device.h>
 #include <asm/barrier.h>
+
+/*
+ * 5.4 port: arch/arm64/include/asm/dma-mapping.h (which used to provide
+ * this) was removed -- arm64 now gets a generated generic wrapper via
+ * "generic-y += dma-mapping.h" in arch/arm64/include/asm/Kbuild, so the
+ * only place left to read the coherence flag from is dev->dma_coherent
+ * directly.
+ */
+static inline bool is_device_dma_coherent(struct device *dev)
+{
+	return dev->dma_coherent;
+}
 
 #include <linux/msm_dma_iommu_mapping.h>
 

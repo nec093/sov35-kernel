@@ -115,9 +115,16 @@ extern bool out_of_memory(struct oom_control *oc);
 
 extern void exit_oom_victim(void);
 
-/* used by the CAF lowmemorykiller */
-extern void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask);
-extern void wake_oom_reaper(struct task_struct *tsk);
+/*
+ * used by the CAF lowmemorykiller. 5.4 port: dump_tasks now takes struct
+ * oom_control * (NULL is fine, see the comment on its definition);
+ * queue_oom_reaper replaces wake_oom_reaper as the thing lowmemorykiller
+ * calls directly (wake_oom_reaper itself became the per-task timer
+ * callback that queue_oom_reaper arms, no longer callable with a plain
+ * task_struct).
+ */
+extern void dump_tasks(struct oom_control *oc);
+extern void queue_oom_reaper(struct task_struct *tsk);
 
 extern int register_oom_notifier(struct notifier_block *nb);
 extern int unregister_oom_notifier(struct notifier_block *nb);

@@ -102,8 +102,14 @@ static inline bool mmget_not_zero(struct mm_struct *mm)
 	return atomic_inc_not_zero(&mm->mm_users);
 }
 
-/* mmput gets rid of the mappings and all user-space */
-extern int mmput(struct mm_struct *mm);
+/*
+ * mmput gets rid of the mappings and all user-space.
+ * 5.4 port: this was `extern int mmput(...)` (a 4.14-era CAF change
+ * tracking whether __mmput actually ran), but nothing in this tree reads
+ * that return value and mainline's own kernel/fork.c mmput() is still
+ * void -- matching it rather than carrying an unused API difference.
+ */
+extern void mmput(struct mm_struct *mm);
 #ifdef CONFIG_MMU
 /* same as above but performs the slow path from the async context. Can
  * be called from the atomic context as well

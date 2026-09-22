@@ -613,7 +613,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			if (!test_bit(MMF_OOM_SKIP, &selected->mm->flags) &&
 			    oom_reaper) {
 				mark_lmk_victim(selected);
-				wake_oom_reaper(selected);
+				queue_oom_reaper(selected);
 			}
 		}
 		task_unlock(selected);
@@ -646,7 +646,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		if (lowmem_debug_level >= 2 && selected_oom_score_adj == 0) {
 			show_mem(SHOW_MEM_FILTER_NODES, NULL);
 			show_mem_call_notifiers();
-			dump_tasks(NULL, NULL);
+			dump_tasks(NULL);
 		}
 
 		lowmem_deathpending_timeout = jiffies + HZ;

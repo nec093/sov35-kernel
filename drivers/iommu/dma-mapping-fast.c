@@ -18,6 +18,12 @@
 #include <linux/vmalloc.h>
 #include <asm/cacheflush.h>
 #include <asm/dma-iommu.h>
+
+/* 5.4 port: see the comment on the same shim in msm_dma_iommu_mapping.c */
+static inline bool is_device_dma_coherent(struct device *dev)
+{
+	return dev->dma_coherent;
+}
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <trace/events/iommu.h>

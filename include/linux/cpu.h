@@ -87,10 +87,48 @@ extern ssize_t arch_cpu_release(const char *, size_t);
  */
 #define CPU_ONLINE		0x0002 /* CPU is up */
 #define CPU_UP_PREPARE		0x0003 /* CPU coming up */
+/*
+ * 5.4 port: mainline kept only this minimal residual set (values fixed by
+ * whatever still consumes CPU_DEAD_FROZEN). The CAF/Sony legacy notifier
+ * compat in kernel/cpu.c needs the rest of the old set back; picked unused
+ * numbers rather than reusing port-4.14's (those collided with
+ * CPU_DEAD_FROZEN, which moved).
+ */
+#define CPU_UP_CANCELED		0x0004 /* CPU (unsigned)v NOT coming up */
+#define CPU_DOWN_PREPARE	0x0005 /* CPU (unsigned)v going down */
+#define CPU_DOWN_FAILED		0x0006 /* CPU (unsigned)v NOT going down */
 #define CPU_DEAD		0x0007 /* CPU dead */
 #define CPU_DEAD_FROZEN		0x0008 /* CPU timed out on unplug */
 #define CPU_POST_DEAD		0x0009 /* CPU successfully unplugged */
+#define CPU_STARTING		0x000A /* CPU (unsigned)v soon running.
+					* Called on the new cpu, just before
+					* enabling interrupts. Must not sleep,
+					* must not fail */
 #define CPU_BROKEN		0x000B /* CPU did not die properly */
+#define CPU_DYING		0x000C /* CPU (unsigned)v not running any task,
+					* not handling interrupts, soon dead.
+					* Called on the dying cpu, interrupts
+					* are already disabled. Must not
+					* sleep, must not fail */
+
+#define CPU_TASKS_FROZEN	0x0010
+
+#define CPU_UP_CANCELED_FROZEN	(CPU_UP_CANCELED | CPU_TASKS_FROZEN)
+#define CPU_DOWN_PREPARE_FROZEN	(CPU_DOWN_PREPARE | CPU_TASKS_FROZEN)
+#define CPU_DOWN_FAILED_FROZEN	(CPU_DOWN_FAILED | CPU_TASKS_FROZEN)
+#define CPU_DYING_FROZEN	(CPU_DYING | CPU_TASKS_FROZEN)
+#define CPU_STARTING_FROZEN	(CPU_STARTING | CPU_TASKS_FROZEN)
+
+struct notifier_block;
+/* Legacy notifier API, emulated in kernel/cpu.c on top of the hotplug states */
+extern int register_cpu_notifier(struct notifier_block *nb);
+extern int __register_cpu_notifier(struct notifier_block *nb);
+extern void unregister_cpu_notifier(struct notifier_block *nb);
+extern void __unregister_cpu_notifier(struct notifier_block *nb);
+#define register_hotcpu_notifier(nb)		register_cpu_notifier(nb)
+#define __register_hotcpu_notifier(nb)		__register_cpu_notifier(nb)
+#define unregister_hotcpu_notifier(nb)		unregister_cpu_notifier(nb)
+#define __unregister_hotcpu_notifier(nb)	__unregister_cpu_notifier(nb)
 
 #ifdef CONFIG_SMP
 extern bool cpuhp_tasks_frozen;
@@ -211,6 +249,13 @@ void cpuhp_report_idle_dead(void);
 #else
 static inline void cpuhp_report_idle_dead(void) { }
 #endif /* #ifdef CONFIG_HOTPLUG_CPU */
+
+#define IDLE_START 1
+#define IDLE_END 2
+
+void idle_notifier_register(struct notifier_block *n);
+void idle_notifier_unregister(struct notifier_block *n);
+void idle_notifier_call_chain(unsigned long val);
 
 enum cpuhp_smt_control {
 	CPU_SMT_ENABLED,
