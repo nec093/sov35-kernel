@@ -609,6 +609,12 @@ static inline bool task_under_cgroup_hierarchy(struct task_struct *task,
 	return cgroup_is_descendant(cset->dfl_cgrp, ancestor);
 }
 
+/*
+ * 5.4 port: CAF addition, see the definition in kernel/cgroup/cgroup.c
+ * for what it's for.
+ */
+int subsys_cgroup_allow_attach(struct cgroup_taskset *tset);
+
 /* no synchronization, the result can only be used as a hint */
 static inline bool cgroup_is_populated(struct cgroup *cgrp)
 {
@@ -740,6 +746,11 @@ static inline bool task_under_cgroup_hierarchy(struct task_struct *task,
 					       struct cgroup *ancestor)
 {
 	return true;
+}
+
+static inline int subsys_cgroup_allow_attach(void *tset)
+{
+	return -EINVAL;
 }
 
 static inline void cgroup_path_from_kernfs_id(const union kernfs_node_id *id,

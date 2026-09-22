@@ -4892,6 +4892,32 @@ static int cgroup_procs_show(struct seq_file *s, void *v)
 	return 0;
 }
 
+/*
+ * 5.4 port: CAF addition, wired to struct cgroup_subsys.allow_attach for
+ * mem_cgroup_allow_attach() (mm/memcontrol.c) and any WALT/schedtune
+ * subsys that wants the same "root or matching euid" check before a
+ * cgroup_taskset attach is allowed to proceed.
+ */
+int subsys_cgroup_allow_attach(struct cgroup_taskset *tset)
+{
+	const struct cred *cred = current_cred(), *tcred;
+	struct task_struct *task;
+	struct cgroup_subsys_state *css;
+
+	if (capable(CAP_SYS_NICE))
+		return 0;
+
+	cgroup_taskset_for_each(task, css, tset) {
+		tcred = __task_cred(task);
+
+		if (current != task && !uid_eq(cred->euid, tcred->uid) &&
+		    !uid_eq(cred->euid, tcred->suid))
+			return -EACCES;
+	}
+
+	return 0;
+}
+
 static int cgroup_procs_write_permission(struct cgroup *src_cgrp,
 					 struct cgroup *dst_cgrp,
 					 struct super_block *sb,
