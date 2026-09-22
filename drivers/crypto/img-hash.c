@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014 Imagination Technologies
  * Authors:  Will Thomas, James Hartley
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  *
  *	Interface structure taken from omap-sham driver
  */
@@ -434,7 +437,7 @@ static int img_hash_write_via_dma_stop(struct img_hash_dev *hdev)
 	struct img_hash_request_ctx *ctx = ahash_request_ctx(hdev->req);
 
 	if (ctx->flags & DRIVER_FLAGS_SG)
-		dma_unmap_sg(hdev->dev, ctx->sg, 1, DMA_TO_DEVICE);
+		dma_unmap_sg(hdev->dev, ctx->sg, ctx->dma_ct, DMA_TO_DEVICE);
 
 	return 0;
 }
@@ -962,7 +965,9 @@ static int img_hash_probe(struct platform_device *pdev)
 	crypto_init_queue(&hdev->queue, IMG_HASH_QUEUE_LENGTH);
 
 	/* Register bank */
-	hdev->io_base = devm_platform_ioremap_resource(pdev, 0);
+	hash_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+
+	hdev->io_base = devm_ioremap_resource(dev, hash_res);
 	if (IS_ERR(hdev->io_base)) {
 		err = PTR_ERR(hdev->io_base);
 		dev_err(dev, "can't ioremap, returned %d\n", err);
@@ -982,6 +987,7 @@ static int img_hash_probe(struct platform_device *pdev)
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
+		dev_err(dev, "no IRQ resource info\n");
 		err = irq;
 		goto res_err;
 	}

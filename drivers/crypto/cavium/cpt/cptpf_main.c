@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2016 Cavium, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License
+ * as published by the Free Software Foundation.
  */
 
 #include <linux/device.h>
@@ -45,7 +48,7 @@ static void cpt_disable_cores(struct cpt_device *cpt, u64 coremask,
 		dev_err(dev, "Cores still busy %llx", coremask);
 		grp = cpt_read_csr64(cpt->reg_base,
 				     CPTX_PF_EXEC_BUSY(0));
-		if (!timeout--)
+		if (timeout--)
 			break;
 
 		udelay(CSR_DELAY);
@@ -277,8 +280,8 @@ static int cpt_ucode_load_fw(struct cpt_device *cpt, const u8 *fw, bool is_ae)
 	mcode->num_cores = is_ae ? 6 : 10;
 
 	/*  Allocate DMAable space */
-	mcode->code = dma_alloc_coherent(&cpt->pdev->dev, mcode->code_size,
-					 &mcode->phys_base, GFP_KERNEL);
+	mcode->code = dma_zalloc_coherent(&cpt->pdev->dev, mcode->code_size,
+					  &mcode->phys_base, GFP_KERNEL);
 	if (!mcode->code) {
 		dev_err(dev, "Unable to allocate space for microcode");
 		ret = -ENOMEM;
@@ -303,8 +306,6 @@ static int cpt_ucode_load_fw(struct cpt_device *cpt, const u8 *fw, bool is_ae)
 
 	ret = do_cpt_init(cpt, mcode);
 	if (ret) {
-		dma_free_coherent(&cpt->pdev->dev, mcode->code_size,
-				  mcode->code, mcode->phys_base);
 		dev_err(dev, "do_cpt_init failed with ret: %d\n", ret);
 		goto fw_release;
 	}
@@ -397,7 +398,7 @@ static void cpt_disable_all_cores(struct cpt_device *cpt)
 		dev_err(dev, "Cores still busy");
 		grp = cpt_read_csr64(cpt->reg_base,
 				     CPTX_PF_EXEC_BUSY(0));
-		if (!timeout--)
+		if (timeout--)
 			break;
 
 		udelay(CSR_DELAY);
@@ -437,7 +438,7 @@ static int cpt_device_init(struct cpt_device *cpt)
 
 	/* Reset the PF when probed first */
 	cpt_reset(cpt);
-	msleep(100);
+	mdelay(100);
 
 	/*Check BIST status*/
 	bist = (u64)cpt_check_bist_status(cpt);

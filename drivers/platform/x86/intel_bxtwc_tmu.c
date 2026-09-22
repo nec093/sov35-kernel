@@ -1,16 +1,24 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- * Intel BXT Whiskey Cove PMIC TMU driver
+ * intel_bxtwc_tmu.c - Intel BXT Whiskey Cove PMIC TMU driver
  *
  * Copyright (C) 2016 Intel Corporation. All rights reserved.
  *
  * This driver adds TMU (Time Management Unit) support for Intel BXT platform.
  * It enables the alarm wake-up functionality in the TMU unit of Whiskey Cove
  * PMIC.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/module.h>
-#include <linux/mod_devicetable.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/mfd/intel_soc_pmic.h>
@@ -48,8 +56,9 @@ static irqreturn_t bxt_wcove_tmu_irq_handler(int irq, void *data)
 static int bxt_wcove_tmu_probe(struct platform_device *pdev)
 {
 	struct intel_soc_pmic *pmic = dev_get_drvdata(pdev->dev.parent);
+	struct regmap_irq_chip_data *regmap_irq_chip;
 	struct wcove_tmu *wctmu;
-	int ret;
+	int ret, virq, irq;
 
 	wctmu = devm_kzalloc(&pdev->dev, sizeof(*wctmu), GFP_KERNEL);
 	if (!wctmu)
@@ -58,18 +67,30 @@ static int bxt_wcove_tmu_probe(struct platform_device *pdev)
 	wctmu->dev = &pdev->dev;
 	wctmu->regmap = pmic->regmap;
 
-	wctmu->irq = platform_get_irq(pdev, 0);
-	if (wctmu->irq < 0)
-		return wctmu->irq;
+	irq = platform_get_irq(pdev, 0);
 
-	ret = devm_request_threaded_irq(&pdev->dev, wctmu->irq,
+	if (irq < 0) {
+		dev_err(&pdev->dev, "invalid irq %d\n", irq);
+		return irq;
+	}
+
+	regmap_irq_chip = pmic->irq_chip_data_tmu;
+	virq = regmap_irq_get_virq(regmap_irq_chip, irq);
+	if (virq < 0) {
+		dev_err(&pdev->dev,
+			"failed to get virtual interrupt=%d\n", irq);
+		return virq;
+	}
+
+	ret = devm_request_threaded_irq(&pdev->dev, virq,
 					NULL, bxt_wcove_tmu_irq_handler,
 					IRQF_ONESHOT, "bxt_wcove_tmu", wctmu);
 	if (ret) {
 		dev_err(&pdev->dev, "request irq failed: %d,virq: %d\n",
-			ret, wctmu->irq);
+							ret, virq);
 		return ret;
 	}
+	wctmu->irq = virq;
 
 	/* Unmask TMU second level Wake & System alarm */
 	regmap_update_bits(wctmu->regmap, BXTWC_MTMUIRQ_REG,

@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2004 - 2006 rt2x00 SourceForge Project
  * <http://rt2x00.serialmonkey.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  * Module: eeprom_93cx6
  * Abstract: EEPROM reader routines for 93cx6 chipsets.
@@ -186,11 +195,6 @@ void eeprom_93cx6_read(struct eeprom_93cx6 *eeprom, const u8 word,
 	eeprom_93cx6_write_bits(eeprom, command,
 		PCI_EEPROM_WIDTH_OPCODE + eeprom->width);
 
-	if (has_quirk_extra_read_cycle(eeprom)) {
-		eeprom_93cx6_pulse_high(eeprom);
-		eeprom_93cx6_pulse_low(eeprom);
-	}
-
 	/*
 	 * Read the requested 16 bits.
 	 */
@@ -256,11 +260,6 @@ void eeprom_93cx6_readb(struct eeprom_93cx6 *eeprom, const u8 byte,
 	command = (PCI_EEPROM_READ_OPCODE << (eeprom->width + 1)) | byte;
 	eeprom_93cx6_write_bits(eeprom, command,
 		PCI_EEPROM_WIDTH_OPCODE + eeprom->width + 1);
-
-	if (has_quirk_extra_read_cycle(eeprom)) {
-		eeprom_93cx6_pulse_high(eeprom);
-		eeprom_93cx6_pulse_low(eeprom);
-	}
 
 	/*
 	 * Read the requested 8 bits.

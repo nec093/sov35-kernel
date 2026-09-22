@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI LP855x Backlight Driver
  *
  *			Copyright (C) 2011 Texas Instruments
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/module.h>
@@ -21,7 +25,7 @@
 #define LP855X_DEVICE_CTRL		0x01
 #define LP855X_EEPROM_START		0xA0
 #define LP855X_EEPROM_END		0xA7
-#define LP8556_EPROM_START		0x98
+#define LP8556_EPROM_START		0xA0
 #define LP8556_EPROM_END		0xAF
 
 /* LP8555/7 Registers */
@@ -370,7 +374,7 @@ static int lp855x_parse_dt(struct lp855x *lp)
 		struct device_node *child;
 		int i = 0;
 
-		rom = devm_kcalloc(dev, rom_length, sizeof(*rom), GFP_KERNEL);
+		rom = devm_kzalloc(dev, sizeof(*rom) * rom_length, GFP_KERNEL);
 		if (!rom)
 			return -ENOMEM;
 

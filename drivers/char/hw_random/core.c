@@ -4,7 +4,7 @@
  * Copyright 2006 Michael Buesch <m@bues.ch>
  * Copyright 2005 (c) MontaVista Software, Inc.
  *
- * Please read Documentation/admin-guide/hw_random.rst for details on use.
+ * Please read Documentation/hw_random.txt for details on use.
  *
  * This software may be used and distributed according to the terms
  * of the GNU General Public License, incorporated herein by reference.
@@ -24,12 +24,9 @@
 #include <linux/random.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/string.h>
 #include <linux/uaccess.h>
 
 #define RNG_MODULE_NAME		"hw_random"
-
-#define RNG_BUFFER_SIZE (SMP_CACHE_BYTES < 32 ? 32 : SMP_CACHE_BYTES)
 
 static struct hwrng *current_rng;
 /* the current rng has been explicitly chosen by user via sysfs */
@@ -48,10 +45,10 @@ static unsigned short default_quality; /* = 0; default to "off" */
 
 module_param(current_quality, ushort, 0644);
 MODULE_PARM_DESC(current_quality,
-		 "current hwrng entropy estimation per 1024 bits of input");
+		 "current hwrng entropy estimation per mill");
 module_param(default_quality, ushort, 0644);
 MODULE_PARM_DESC(default_quality,
-		 "default entropy content of hwrng per 1024 bits of input");
+		 "default entropy content of hwrng per mill");
 
 static void drop_current_rng(void);
 static int hwrng_init(struct hwrng *rng);
@@ -62,7 +59,7 @@ static inline int rng_get_data(struct hwrng *rng, u8 *buffer, size_t size,
 
 static size_t rng_buffer_size(void)
 {
-	return RNG_BUFFER_SIZE;
+	return SMP_CACHE_BYTES < 32 ? 32 : SMP_CACHE_BYTES;
 }
 
 static void add_early_randomness(struct hwrng *rng)
@@ -205,7 +202,6 @@ static inline int rng_get_data(struct hwrng *rng, u8 *buffer, size_t size,
 static ssize_t rng_dev_read(struct file *filp, char __user *buf,
 			    size_t size, loff_t *offp)
 {
-	u8 buffer[RNG_BUFFER_SIZE];
 	ssize_t ret = 0;
 	int err = 0;
 	int bytes_read, len;
@@ -233,37 +229,34 @@ static ssize_t rng_dev_read(struct file *filp, char __user *buf,
 			if (bytes_read < 0) {
 				err = bytes_read;
 				goto out_unlock_reading;
-			} else if (bytes_read == 0 &&
-				   (filp->f_flags & O_NONBLOCK)) {
-				err = -EAGAIN;
-				goto out_unlock_reading;
 			}
-
 			data_avail = bytes_read;
 		}
 
-		len = data_avail;
-		if (len) {
+		if (!data_avail) {
+			if (filp->f_flags & O_NONBLOCK) {
+				err = -EAGAIN;
+				goto out_unlock_reading;
+			}
+		} else {
+			len = data_avail;
 			if (len > size)
 				len = size;
 
 			data_avail -= len;
 
-			memcpy(buffer, rng_buffer + data_avail, len);
-		}
-		mutex_unlock(&reading_mutex);
-		put_rng(rng);
-
-		if (len) {
-			if (copy_to_user(buf + ret, buffer, len)) {
+			if (copy_to_user(buf + ret, rng_buffer + data_avail,
+								len)) {
 				err = -EFAULT;
-				goto out;
+				goto out_unlock_reading;
 			}
 
 			size -= len;
 			ret += len;
 		}
 
+		mutex_unlock(&reading_mutex);
+		put_rng(rng);
 
 		if (need_resched())
 			schedule_timeout_interruptible(1);
@@ -274,7 +267,6 @@ static ssize_t rng_dev_read(struct file *filp, char __user *buf,
 		}
 	}
 out:
-	memzero_explicit(buffer, sizeof(buffer));
 	return ret ? : err;
 
 out_unlock_reading:
@@ -301,52 +293,26 @@ static struct miscdevice rng_miscdev = {
 	.groups		= rng_dev_groups,
 };
 
-static int enable_best_rng(void)
-{
-	int ret = -ENODEV;
-
-	BUG_ON(!mutex_is_locked(&rng_mutex));
-
-	/* rng_list is sorted by quality, use the best (=first) one */
-	if (!list_empty(&rng_list)) {
-		struct hwrng *new_rng;
-
-		new_rng = list_entry(rng_list.next, struct hwrng, list);
-		ret = ((new_rng == current_rng) ? 0 : set_current_rng(new_rng));
-		if (!ret)
-			cur_rng_set_by_user = 0;
-	} else {
-		drop_current_rng();
-		cur_rng_set_by_user = 0;
-		ret = 0;
-	}
-
-	return ret;
-}
-
 static ssize_t hwrng_attr_current_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t len)
 {
-	int err = -ENODEV;
+	int err;
 	struct hwrng *rng;
 
 	err = mutex_lock_interruptible(&rng_mutex);
 	if (err)
 		return -ERESTARTSYS;
-
-	if (sysfs_streq(buf, "")) {
-		err = enable_best_rng();
-	} else {
-		list_for_each_entry(rng, &rng_list, list) {
-			if (sysfs_streq(rng->name, buf)) {
-				cur_rng_set_by_user = 1;
+	err = -ENODEV;
+	list_for_each_entry(rng, &rng_list, list) {
+		if (sysfs_streq(rng->name, buf)) {
+			err = 0;
+			cur_rng_set_by_user = 1;
+			if (rng != current_rng)
 				err = set_current_rng(rng);
-				break;
-			}
+			break;
 		}
 	}
-
 	mutex_unlock(&rng_mutex);
 
 	return err ? : len;
@@ -458,7 +424,7 @@ static void start_khwrngd(void)
 {
 	hwrng_fill = kthread_run(hwrng_fillfn, NULL, "hwrng");
 	if (IS_ERR(hwrng_fill)) {
-		pr_err("hwrng_fill thread creation failed\n");
+		pr_err("hwrng_fill thread creation failed");
 		hwrng_fill = NULL;
 	}
 }
@@ -525,16 +491,18 @@ EXPORT_SYMBOL_GPL(hwrng_register);
 
 void hwrng_unregister(struct hwrng *rng)
 {
-	int err;
-
 	mutex_lock(&rng_mutex);
 
 	list_del(&rng->list);
 	if (current_rng == rng) {
-		err = enable_best_rng();
-		if (err) {
-			drop_current_rng();
-			cur_rng_set_by_user = 0;
+		drop_current_rng();
+		cur_rng_set_by_user = 0;
+		/* rng_list is sorted by quality, use the best (=first) one */
+		if (!list_empty(&rng_list)) {
+			struct hwrng *new_rng;
+
+			new_rng = list_entry(rng_list.next, struct hwrng, list);
+			set_current_rng(new_rng);
 		}
 	}
 

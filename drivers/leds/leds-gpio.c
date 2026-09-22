@@ -1,10 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * LEDs driver for GPIOs
  *
  * Copyright (C) 2007 8D Technologies inc.
  * Raphael Assenat <raph@8d.com>
  * Copyright (C) 2008 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 #include <linux/err.h>
 #include <linux/gpio.h>
@@ -16,6 +20,7 @@
 #include <linux/platform_device.h>
 #include <linux/property.h>
 #include <linux/slab.h>
+#include <linux/regulator/consumer.h>
 
 struct gpio_led_data {
 	struct led_classdev cdev;
@@ -73,11 +78,40 @@ static int gpio_blink_set(struct led_classdev *led_cdev,
 
 static int create_gpio_led(const struct gpio_led *template,
 	struct gpio_led_data *led_dat, struct device *parent,
-	struct fwnode_handle *fwnode, gpio_blink_set_t blink_set)
+	struct device_node *np, gpio_blink_set_t blink_set)
 {
-	struct led_init_data init_data = {};
 	int ret, state;
 
+	led_dat->gpiod = template->gpiod;
+	if (!led_dat->gpiod) {
+		/*
+		 * This is the legacy code path for platform code that
+		 * still uses GPIO numbers. Ultimately we would like to get
+		 * rid of this block completely.
+		 */
+		unsigned long flags = GPIOF_OUT_INIT_LOW;
+
+		/* skip leds that aren't available */
+		if (!gpio_is_valid(template->gpio)) {
+			dev_info(parent, "Skipping unavailable LED gpio %d (%s)\n",
+					template->gpio, template->name);
+			return 0;
+		}
+
+		if (template->active_low)
+			flags |= GPIOF_ACTIVE_LOW;
+
+		ret = devm_gpio_request_one(parent, template->gpio, flags,
+					    template->name);
+		if (ret < 0)
+			return ret;
+
+		led_dat->gpiod = gpio_to_desc(template->gpio);
+		if (!led_dat->gpiod)
+			return -EINVAL;
+	}
+
+	led_dat->cdev.name = template->name;
 	led_dat->cdev.default_trigger = template->default_trigger;
 	led_dat->can_sleep = gpiod_cansleep(led_dat->gpiod);
 	if (!led_dat->can_sleep)
@@ -108,20 +142,12 @@ static int create_gpio_led(const struct gpio_led *template,
 	if (ret < 0)
 		return ret;
 
-	if (template->name) {
-		led_dat->cdev.name = template->name;
-		ret = devm_led_classdev_register(parent, &led_dat->cdev);
-	} else {
-		init_data.fwnode = fwnode;
-		ret = devm_led_classdev_register_ext(parent, &led_dat->cdev,
-						     &init_data);
-	}
-
-	return ret;
+	return devm_of_led_classdev_register(parent, np, &led_dat->cdev);
 }
 
 struct gpio_leds_priv {
 	int num_leds;
+	struct regulator *vdd_ldo_1, *vdd_ldo_2;
 	struct gpio_led_data leds[];
 };
 
@@ -136,8 +162,7 @@ static struct gpio_leds_priv *gpio_leds_create(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct fwnode_handle *child;
 	struct gpio_leds_priv *priv;
-	int count, ret;
-
+	int count, ret, error;
 	count = device_get_child_node_count(dev);
 	if (!count)
 		return ERR_PTR(-ENODEV);
@@ -150,21 +175,23 @@ static struct gpio_leds_priv *gpio_leds_create(struct platform_device *pdev)
 		struct gpio_led_data *led_dat = &priv->leds[priv->num_leds];
 		struct gpio_led led = {};
 		const char *state = NULL;
+		struct device_node *np = to_of_node(child);
 
-		/*
-		 * Acquire gpiod from DT with uninitialized label, which
-		 * will be updated after LED class device is registered,
-		 * Only then the final LED name is known.
-		 */
+		ret = fwnode_property_read_string(child, "label", &led.name);
+		if (ret && IS_ENABLED(CONFIG_OF) && np)
+			led.name = np->name;
+		if (!led.name) {
+			fwnode_handle_put(child);
+			return ERR_PTR(-EINVAL);
+		}
+
 		led.gpiod = devm_fwnode_get_gpiod_from_child(dev, NULL, child,
 							     GPIOD_ASIS,
-							     NULL);
+							     led.name);
 		if (IS_ERR(led.gpiod)) {
 			fwnode_handle_put(child);
 			return ERR_CAST(led.gpiod);
 		}
-
-		led_dat->gpiod = led.gpiod;
 
 		fwnode_property_read_string(child, "linux,default-trigger",
 					    &led.default_trigger);
@@ -186,17 +213,36 @@ static struct gpio_leds_priv *gpio_leds_create(struct platform_device *pdev)
 		if (fwnode_property_present(child, "panic-indicator"))
 			led.panic_indicator = 1;
 
-		ret = create_gpio_led(&led, led_dat, dev, child, NULL);
+		ret = create_gpio_led(&led, led_dat, dev, np, NULL);
 		if (ret < 0) {
 			fwnode_handle_put(child);
 			return ERR_PTR(ret);
 		}
-		/* Set gpiod label to match the corresponding LED name. */
-		gpiod_set_consumer_name(led_dat->gpiod,
-					led_dat->cdev.dev->kobj.name);
+		led_dat->cdev.dev->of_node = np;
 		priv->num_leds++;
 	}
-
+	priv->vdd_ldo_1 = regulator_get(&pdev->dev, "vdd_ldo_1");
+	if (IS_ERR(priv->vdd_ldo_1)) {
+		error = PTR_ERR(priv->vdd_ldo_1);
+		pr_err("%s: regulator get failed vdd_ldo_1 rc=%d\n",
+			__func__, error);
+	}
+	ret = regulator_enable(priv->vdd_ldo_1);
+	if (ret) {
+		pr_err("%s: Regulator vdd_ldo_1 enable failed rc=%d\n",
+			__func__, ret);
+	}
+	priv->vdd_ldo_2 = regulator_get(&pdev->dev, "vdd_ldo_2");
+	if (IS_ERR(priv->vdd_ldo_2)) {
+		error = PTR_ERR(priv->vdd_ldo_2);
+		pr_err("%s: regulator get failed vdd_ldo_2 rc=%d\n",
+			__func__, error);
+	}
+	ret = regulator_enable(priv->vdd_ldo_2);
+	if (ret) {
+		pr_err("%s: Regulator vdd_ldo_2 enable failed rc=%d\n",
+			__func__, ret);
+	}
 	return priv;
 }
 
@@ -207,58 +253,11 @@ static const struct of_device_id of_gpio_leds_match[] = {
 
 MODULE_DEVICE_TABLE(of, of_gpio_leds_match);
 
-static struct gpio_desc *gpio_led_get_gpiod(struct device *dev, int idx,
-					    const struct gpio_led *template)
-{
-	struct gpio_desc *gpiod;
-	unsigned long flags = GPIOF_OUT_INIT_LOW;
-	int ret;
-
-	/*
-	 * This means the LED does not come from the device tree
-	 * or ACPI, so let's try just getting it by index from the
-	 * device, this will hit the board file, if any and get
-	 * the GPIO from there.
-	 */
-	gpiod = devm_gpiod_get_index(dev, NULL, idx, flags);
-	if (!IS_ERR(gpiod)) {
-		gpiod_set_consumer_name(gpiod, template->name);
-		return gpiod;
-	}
-	if (PTR_ERR(gpiod) != -ENOENT)
-		return gpiod;
-
-	/*
-	 * This is the legacy code path for platform code that
-	 * still uses GPIO numbers. Ultimately we would like to get
-	 * rid of this block completely.
-	 */
-
-	/* skip leds that aren't available */
-	if (!gpio_is_valid(template->gpio))
-		return ERR_PTR(-ENOENT);
-
-	if (template->active_low)
-		flags |= GPIOF_ACTIVE_LOW;
-
-	ret = devm_gpio_request_one(dev, template->gpio, flags,
-				    template->name);
-	if (ret < 0)
-		return ERR_PTR(ret);
-
-	gpiod = gpio_to_desc(template->gpio);
-	if (!gpiod)
-		return ERR_PTR(-EINVAL);
-
-	return gpiod;
-}
-
 static int gpio_led_probe(struct platform_device *pdev)
 {
 	struct gpio_led_platform_data *pdata = dev_get_platdata(&pdev->dev);
 	struct gpio_leds_priv *priv;
 	int i, ret = 0;
-
 	if (pdata && pdata->num_leds) {
 		priv = devm_kzalloc(&pdev->dev,
 				sizeof_gpio_leds_priv(pdata->num_leds),
@@ -268,22 +267,7 @@ static int gpio_led_probe(struct platform_device *pdev)
 
 		priv->num_leds = pdata->num_leds;
 		for (i = 0; i < priv->num_leds; i++) {
-			const struct gpio_led *template = &pdata->leds[i];
-			struct gpio_led_data *led_dat = &priv->leds[i];
-
-			if (template->gpiod)
-				led_dat->gpiod = template->gpiod;
-			else
-				led_dat->gpiod =
-					gpio_led_get_gpiod(&pdev->dev,
-							   i, template);
-			if (IS_ERR(led_dat->gpiod)) {
-				dev_info(&pdev->dev, "Skipping unavailable LED gpio %d (%s)\n",
-					 template->gpio, template->name);
-				continue;
-			}
-
-			ret = create_gpio_led(template, led_dat,
+			ret = create_gpio_led(&pdata->leds[i], &priv->leds[i],
 					      &pdev->dev, NULL,
 					      pdata->gpio_blink_set);
 			if (ret < 0)
@@ -313,6 +297,50 @@ static void gpio_led_shutdown(struct platform_device *pdev)
 	}
 }
 
+static int gpio_led_suspend(struct platform_device *pdev, pm_message_t message)
+{
+	int ret;
+	struct gpio_leds_priv *priv = platform_get_drvdata(pdev);
+
+	if (priv->vdd_ldo_1) {
+		ret = regulator_disable(priv->vdd_ldo_1);
+		if (ret) {
+			pr_err("%s: Regulator vdd_ldo_1 disable failed rc=%d\n",
+				__func__, ret);
+			return ret;
+		}
+	}
+	if (priv->vdd_ldo_2) {
+		ret = regulator_disable(priv->vdd_ldo_2);
+		if (ret) {
+			pr_err("%s: Regulator vdd_ldo_2 disable failed rc=%d\n",
+				__func__, ret);
+			return ret;
+		}
+	}
+	return 0;
+}
+
+static int gpio_led_resume(struct platform_device *pdev)
+{
+	int ret;
+	struct gpio_leds_priv *priv = platform_get_drvdata(pdev);
+
+	ret = regulator_enable(priv->vdd_ldo_1);
+	if (ret) {
+		pr_err("%s: Regulator vdd_ldo_1 enable failed rc=%d\n",
+			__func__, ret);
+		return ret;
+	}
+	ret = regulator_enable(priv->vdd_ldo_2);
+	if (ret) {
+		pr_err("%s: Regulator vdd_ldo_2 enable failed rc=%d\n",
+			__func__, ret);
+		return ret;
+	}
+	return 0;
+}
+
 static struct platform_driver gpio_led_driver = {
 	.probe		= gpio_led_probe,
 	.shutdown	= gpio_led_shutdown,
@@ -320,6 +348,8 @@ static struct platform_driver gpio_led_driver = {
 		.name	= "leds-gpio",
 		.of_match_table = of_gpio_leds_match,
 	},
+	.suspend = gpio_led_suspend,
+	.resume = gpio_led_resume,
 };
 
 module_platform_driver(gpio_led_driver);

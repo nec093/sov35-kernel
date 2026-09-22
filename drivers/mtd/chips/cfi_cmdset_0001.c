@@ -420,25 +420,8 @@ read_pri_intelext(struct map_info *map, __u16 adr)
 		extra_size = 0;
 
 		/* Protection Register info */
-		if (extp->NumProtectionFields) {
-			struct cfi_intelext_otpinfo *otp =
-				(struct cfi_intelext_otpinfo *)&extp->extra[0];
-
-			extra_size += (extp->NumProtectionFields - 1) *
-				sizeof(struct cfi_intelext_otpinfo);
-
-			if (extp_size >= sizeof(*extp) + extra_size) {
-				int i;
-
-				/* Do some byteswapping if necessary */
-				for (i = 0; i < extp->NumProtectionFields - 1; i++) {
-					otp->ProtRegAddr = le32_to_cpu(otp->ProtRegAddr);
-					otp->FactGroups = le16_to_cpu(otp->FactGroups);
-					otp->UserGroups = le16_to_cpu(otp->UserGroups);
-					otp++;
-				}
-			}
-		}
+		extra_size += (extp->NumProtectionFields - 1) *
+			      sizeof(struct cfi_intelext_otpinfo);
 	}
 
 	if (extp->MinorVersion >= '1') {
@@ -625,9 +608,8 @@ static struct mtd_info *cfi_intelext_setup(struct mtd_info *mtd)
 	mtd->size = devsize * cfi->numchips;
 
 	mtd->numeraseregions = cfi->cfiq->NumEraseRegions * cfi->numchips;
-	mtd->eraseregions = kcalloc(mtd->numeraseregions,
-				    sizeof(struct mtd_erase_region_info),
-				    GFP_KERNEL);
+	mtd->eraseregions = kzalloc(sizeof(struct mtd_erase_region_info)
+			* mtd->numeraseregions, GFP_KERNEL);
 	if (!mtd->eraseregions)
 		goto setup_err;
 
@@ -712,16 +694,14 @@ static int cfi_intelext_partition_fixup(struct mtd_info *mtd,
 	 */
 	if (extp && extp->MajorVersion == '1' && extp->MinorVersion >= '3'
 	    && extp->FeatureSupport & (1 << 9)) {
-		int offs = 0;
 		struct cfi_private *newcfi;
 		struct flchip *chip;
 		struct flchip_shared *shared;
-		int numregions, numparts, partshift, numvirtchips, i, j;
+		int offs, numregions, numparts, partshift, numvirtchips, i, j;
 
 		/* Protection Register info */
-		if (extp->NumProtectionFields)
-			offs = (extp->NumProtectionFields - 1) *
-			       sizeof(struct cfi_intelext_otpinfo);
+		offs = (extp->NumProtectionFields - 1) *
+		       sizeof(struct cfi_intelext_otpinfo);
 
 		/* Burst Read info */
 		offs += extp->extra[offs+1]+2;
@@ -775,13 +755,10 @@ static int cfi_intelext_partition_fixup(struct mtd_info *mtd,
 		}
 
 		numvirtchips = cfi->numchips * numparts;
-		newcfi = kmalloc(struct_size(newcfi, chips, numvirtchips),
-				 GFP_KERNEL);
+		newcfi = kmalloc(sizeof(struct cfi_private) + numvirtchips * sizeof(struct flchip), GFP_KERNEL);
 		if (!newcfi)
 			return -ENOMEM;
-		shared = kmalloc_array(cfi->numchips,
-				       sizeof(struct flchip_shared),
-				       GFP_KERNEL);
+		shared = kmalloc(sizeof(struct flchip_shared) * cfi->numchips, GFP_KERNEL);
 		if (!shared) {
 			kfree(newcfi);
 			return -ENOMEM;
@@ -2039,8 +2016,20 @@ static int __xipram do_erase_oneblock(struct map_info *map, struct flchip *chip,
 
 static int cfi_intelext_erase_varsize(struct mtd_info *mtd, struct erase_info *instr)
 {
-	return cfi_varsize_frob(mtd, do_erase_oneblock, instr->addr,
-				instr->len, NULL);
+	unsigned long ofs, len;
+	int ret;
+
+	ofs = instr->addr;
+	len = instr->len;
+
+	ret = cfi_varsize_frob(mtd, do_erase_oneblock, ofs, len, NULL);
+	if (ret)
+		return ret;
+
+	instr->state = MTD_ERASE_DONE;
+	mtd_erase_callback(instr);
+
+	return 0;
 }
 
 static void cfi_intelext_sync (struct mtd_info *mtd)

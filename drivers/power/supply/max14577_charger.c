@@ -1,9 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0+
-//
-// max14577_charger.c - Battery charger driver for the Maxim 14577/77836
-//
-// Copyright (C) 2013,2014 Samsung Electronics
-// Krzysztof Kozlowski <krzk@kernel.org>
+/*
+ * max14577_charger.c - Battery charger driver for the Maxim 14577/77836
+ *
+ * Copyright (C) 2013,2014 Samsung Electronics
+ * Krzysztof Kozlowski <krzk@kernel.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -501,7 +511,7 @@ static struct max14577_charger_platform_data *max14577_charger_dt_init(
 static struct max14577_charger_platform_data *max14577_charger_dt_init(
 		struct platform_device *pdev)
 {
-	return ERR_PTR(-ENODATA);
+	return NULL;
 }
 #endif /* CONFIG_OF */
 
@@ -572,7 +582,7 @@ static int max14577_charger_probe(struct platform_device *pdev)
 	chg->max14577 = max14577;
 
 	chg->pdata = max14577_charger_dt_init(pdev);
-	if (IS_ERR(chg->pdata))
+	if (IS_ERR_OR_NULL(chg->pdata))
 		return PTR_ERR(chg->pdata);
 
 	ret = max14577_charger_reg_init(chg);

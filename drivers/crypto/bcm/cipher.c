@@ -1,6 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2016 Broadcom
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2, as
+ * published by the Free Software Foundation (the "GPL").
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License version 2 (GPLv2) for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * version 2 (GPLv2) along with this source code.
  */
 
 #include <linux/err.h>
@@ -24,13 +35,14 @@
 #include <crypto/aead.h>
 #include <crypto/internal/aead.h>
 #include <crypto/aes.h>
-#include <crypto/internal/des.h>
+#include <crypto/des.h>
 #include <crypto/hmac.h>
 #include <crypto/sha.h>
 #include <crypto/md5.h>
 #include <crypto/authenc.h>
 #include <crypto/skcipher.h>
 #include <crypto/hash.h>
+#include <crypto/aes.h>
 #include <crypto/sha3.h>
 
 #include "util.h"
@@ -85,7 +97,7 @@ MODULE_PARM_DESC(aead_pri, "Priority for AEAD algos");
  * 0x70 - ring 2
  * 0x78 - ring 3
  */
-static char BCMHEADER[] = { 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28 };
+char BCMHEADER[] = { 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28 };
 /*
  * Some SPU hw does not use BCM header on SPU messages. So BCM_HDR_LEN
  * is set dynamically after reading SPU type from device tree.
@@ -807,7 +819,7 @@ static int handle_ahash_req(struct iproc_reqctx_s *rctx)
 
 	/* AES hashing keeps key size in type field, so need to copy it here */
 	if (hash_parms.alg == HASH_ALG_AES)
-		hash_parms.type = (enum hash_type)cipher_parms.type;
+		hash_parms.type = cipher_parms.type;
 	else
 		hash_parms.type = spu->spu_hash_type(rctx->total_sent);
 
@@ -1361,11 +1373,11 @@ static int handle_aead_req(struct iproc_reqctx_s *rctx)
 		 * expects AAD to include just SPI and seqno. So
 		 * subtract off the IV len.
 		 */
-		aead_parms.assoc_size -= GCM_RFC4106_IV_SIZE;
+		aead_parms.assoc_size -= GCM_ESP_IV_SIZE;
 
 		if (rctx->is_encrypt) {
 			aead_parms.return_iv = true;
-			aead_parms.ret_iv_len = GCM_RFC4106_IV_SIZE;
+			aead_parms.ret_iv_len = GCM_ESP_IV_SIZE;
 			aead_parms.ret_iv_off = GCM_ESP_SALT_SIZE;
 		}
 	} else {
@@ -1398,7 +1410,7 @@ static int handle_aead_req(struct iproc_reqctx_s *rctx)
 						rctx->iv_ctr_len);
 
 	if (ctx->auth.alg == HASH_ALG_AES)
-		hash_parms.type = (enum hash_type)ctx->cipher_type;
+		hash_parms.type = ctx->cipher_type;
 
 	/* General case AAD padding (CCM and RFC4543 special cases below) */
 	aead_parms.aad_pad_len = spu->spu_gcm_ccm_pad_len(ctx->cipher.mode,
@@ -1802,13 +1814,24 @@ static int des_setkey(struct crypto_ablkcipher *cipher, const u8 *key,
 		      unsigned int keylen)
 {
 	struct iproc_ctx_s *ctx = crypto_ablkcipher_ctx(cipher);
-	int err;
+	u32 tmp[DES_EXPKEY_WORDS];
 
-	err = verify_ablkcipher_des_key(cipher, key);
-	if (err)
-		return err;
+	if (keylen == DES_KEY_SIZE) {
+		if (des_ekey(tmp, key) == 0) {
+			if (crypto_ablkcipher_get_flags(cipher) &
+			    CRYPTO_TFM_REQ_WEAK_KEY) {
+				u32 flags = CRYPTO_TFM_RES_WEAK_KEY;
 
-	ctx->cipher_type = CIPHER_TYPE_DES;
+				crypto_ablkcipher_set_flags(cipher, flags);
+				return -EINVAL;
+			}
+		}
+
+		ctx->cipher_type = CIPHER_TYPE_DES;
+	} else {
+		crypto_ablkcipher_set_flags(cipher, CRYPTO_TFM_RES_BAD_KEY_LEN);
+		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -1816,13 +1839,22 @@ static int threedes_setkey(struct crypto_ablkcipher *cipher, const u8 *key,
 			   unsigned int keylen)
 {
 	struct iproc_ctx_s *ctx = crypto_ablkcipher_ctx(cipher);
-	int err;
 
-	err = verify_ablkcipher_des3_key(cipher, key);
-	if (err)
-		return err;
+	if (keylen == (DES_KEY_SIZE * 3)) {
+		const u32 *K = (const u32 *)key;
+		u32 flags = CRYPTO_TFM_RES_BAD_KEY_SCHED;
 
-	ctx->cipher_type = CIPHER_TYPE_3DES;
+		if (!((K[0] ^ K[2]) | (K[1] ^ K[3])) ||
+		    !((K[2] ^ K[4]) | (K[3] ^ K[5]))) {
+			crypto_ablkcipher_set_flags(cipher, flags);
+			return -EINVAL;
+		}
+
+		ctx->cipher_type = CIPHER_TYPE_3DES;
+	} else {
+		crypto_ablkcipher_set_flags(cipher, CRYPTO_TFM_RES_BAD_KEY_LEN);
+		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -2062,7 +2094,7 @@ static int __ahash_init(struct ahash_request *req)
  * Return: true if incremental hashing is not supported
  *         false otherwise
  */
-static bool spu_no_incr_hash(struct iproc_ctx_s *ctx)
+bool spu_no_incr_hash(struct iproc_ctx_s *ctx)
 {
 	struct spu_hw *spu = &iproc_priv.spu;
 
@@ -2108,6 +2140,7 @@ static int ahash_init(struct ahash_request *req)
 			goto err_hash;
 		}
 		ctx->shash->tfm = hash;
+		ctx->shash->flags = 0;
 
 		/* Set the key using data we already have from setkey */
 		if (ctx->authkeylen > 0) {
@@ -2478,7 +2511,6 @@ static int ahash_hmac_setkey(struct crypto_ahash *ahash, const u8 *key,
 
 static int ahash_hmac_init(struct ahash_request *req)
 {
-	int ret;
 	struct iproc_reqctx_s *rctx = ahash_request_ctx(req);
 	struct crypto_ahash *tfm = crypto_ahash_reqtfm(req);
 	struct iproc_ctx_s *ctx = crypto_ahash_ctx(tfm);
@@ -2488,9 +2520,7 @@ static int ahash_hmac_init(struct ahash_request *req)
 	flow_log("ahash_hmac_init()\n");
 
 	/* init the context as a hash */
-	ret = ahash_init(req);
-	if (ret)
-		return ret;
+	ahash_init(req);
 
 	if (!spu_no_incr_hash(ctx)) {
 		/* SPU-M can do incr hashing but needs sw for outer HMAC */
@@ -2608,19 +2638,6 @@ static int aead_need_fallback(struct aead_request *req)
 	    (req->assoclen == 0)) {
 		flow_log("%s() AES_CCM needs fallback for 0 len AAD on NSP\n",
 			 __func__);
-		return 1;
-	}
-
-	/*
-	 * RFC4106 and RFC4543 cannot handle the case where AAD is other than
-	 * 16 or 20 bytes long. So use fallback in this case.
-	 */
-	if (ctx->cipher.mode == CIPHER_MODE_GCM &&
-	    ctx->cipher.alg == CIPHER_ALG_AES &&
-	    rctx->iv_ctr_len == GCM_RFC4106_IV_SIZE &&
-	    req->assoclen != 16 && req->assoclen != 20) {
-		flow_log("RFC4106/RFC4543 needs fallback for assoclen"
-			 " other than 16 or 20 bytes\n");
 		return 1;
 	}
 
@@ -2850,16 +2867,40 @@ static int aead_authenc_setkey(struct crypto_aead *cipher,
 
 	switch (ctx->alg->cipher_info.alg) {
 	case CIPHER_ALG_DES:
-		if (verify_aead_des_key(cipher, keys.enckey, keys.enckeylen))
-			return -EINVAL;
+		if (ctx->enckeylen == DES_KEY_SIZE) {
+			u32 tmp[DES_EXPKEY_WORDS];
+			u32 flags = CRYPTO_TFM_RES_WEAK_KEY;
 
-		ctx->cipher_type = CIPHER_TYPE_DES;
+			if (des_ekey(tmp, keys.enckey) == 0) {
+				if (crypto_aead_get_flags(cipher) &
+				    CRYPTO_TFM_REQ_WEAK_KEY) {
+					crypto_aead_set_flags(cipher, flags);
+					return -EINVAL;
+				}
+			}
+
+			ctx->cipher_type = CIPHER_TYPE_DES;
+		} else {
+			goto badkey;
+		}
 		break;
 	case CIPHER_ALG_3DES:
-		if (verify_aead_des3_key(cipher, keys.enckey, keys.enckeylen))
-			return -EINVAL;
+		if (ctx->enckeylen == (DES_KEY_SIZE * 3)) {
+			const u32 *K = (const u32 *)keys.enckey;
+			u32 flags = CRYPTO_TFM_RES_BAD_KEY_SCHED;
 
-		ctx->cipher_type = CIPHER_TYPE_3DES;
+			if (!((K[0] ^ K[2]) | (K[1] ^ K[3])) ||
+			    !((K[2] ^ K[4]) | (K[3] ^ K[5]))) {
+				crypto_aead_set_flags(cipher, flags);
+				return -EINVAL;
+			}
+
+			ctx->cipher_type = CIPHER_TYPE_3DES;
+		} else {
+			crypto_aead_set_flags(cipher,
+					      CRYPTO_TFM_RES_BAD_KEY_LEN);
+			return -EINVAL;
+		}
 		break;
 	case CIPHER_ALG_AES:
 		switch (ctx->enckeylen) {
@@ -3196,7 +3237,7 @@ static struct iproc_alg_s driver_algs[] = {
 			.cra_flags = CRYPTO_ALG_NEED_FALLBACK
 		 },
 		 .setkey = aead_gcm_esp_setkey,
-		 .ivsize = GCM_RFC4106_IV_SIZE,
+		 .ivsize = GCM_ESP_IV_SIZE,
 		 .maxauthsize = AES_BLOCK_SIZE,
 	 },
 	 .cipher_info = {
@@ -3242,7 +3283,7 @@ static struct iproc_alg_s driver_algs[] = {
 			.cra_flags = CRYPTO_ALG_NEED_FALLBACK
 		 },
 		 .setkey = rfc4543_gcm_esp_setkey,
-		 .ivsize = GCM_RFC4106_IV_SIZE,
+		 .ivsize = GCM_ESP_IV_SIZE,
 		 .maxauthsize = AES_BLOCK_SIZE,
 	 },
 	 .cipher_info = {
@@ -3819,6 +3860,7 @@ static struct iproc_alg_s driver_algs[] = {
 			.cra_driver_name = "ctr-aes-iproc",
 			.cra_blocksize = AES_BLOCK_SIZE,
 			.cra_ablkcipher = {
+					   /* .geniv = "chainiv", */
 					   .min_keysize = AES_MIN_KEY_SIZE,
 					   .max_keysize = AES_MAX_KEY_SIZE,
 					   .ivsize = AES_BLOCK_SIZE,
@@ -3864,7 +3906,8 @@ static struct iproc_alg_s driver_algs[] = {
 				    .cra_name = "md5",
 				    .cra_driver_name = "md5-iproc",
 				    .cra_blocksize = MD5_BLOCK_WORDS * 4,
-				    .cra_flags = CRYPTO_ALG_ASYNC,
+				    .cra_flags = CRYPTO_ALG_TYPE_AHASH |
+					     CRYPTO_ALG_ASYNC,
 				}
 		      },
 	 .cipher_info = {
@@ -4555,6 +4598,7 @@ static int spu_register_ablkcipher(struct iproc_alg_s *driver_alg)
 	crypto->cra_priority = cipher_pri;
 	crypto->cra_alignmask = 0;
 	crypto->cra_ctxsize = sizeof(struct iproc_ctx_s);
+	INIT_LIST_HEAD(&crypto->cra_list);
 
 	crypto->cra_init = ablkcipher_cra_init;
 	crypto->cra_exit = generic_cra_exit;
@@ -4597,7 +4641,8 @@ static int spu_register_ahash(struct iproc_alg_s *driver_alg)
 	hash->halg.base.cra_ctxsize = sizeof(struct iproc_ctx_s);
 	hash->halg.base.cra_init = ahash_cra_init;
 	hash->halg.base.cra_exit = generic_cra_exit;
-	hash->halg.base.cra_flags = CRYPTO_ALG_ASYNC;
+	hash->halg.base.cra_type = &crypto_ahash_type;
+	hash->halg.base.cra_flags = CRYPTO_ALG_TYPE_AHASH | CRYPTO_ALG_ASYNC;
 	hash->halg.statesize = sizeof(struct spu_hash_export_s);
 
 	if (driver_alg->auth_info.mode != HASH_MODE_HMAC) {
@@ -4640,8 +4685,9 @@ static int spu_register_aead(struct iproc_alg_s *driver_alg)
 	aead->base.cra_priority = aead_pri;
 	aead->base.cra_alignmask = 0;
 	aead->base.cra_ctxsize = sizeof(struct iproc_ctx_s);
+	INIT_LIST_HEAD(&aead->base.cra_list);
 
-	aead->base.cra_flags |= CRYPTO_ALG_ASYNC;
+	aead->base.cra_flags |= CRYPTO_ALG_TYPE_AEAD | CRYPTO_ALG_ASYNC;
 	/* setkey set in alg initialization */
 	aead->setauthsize = aead_setauthsize;
 	aead->encrypt = aead_encrypt;
@@ -4758,6 +4804,7 @@ static int spu_dt_read(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct spu_hw *spu = &iproc_priv.spu;
 	struct resource *spu_ctrl_regs;
+	const struct of_device_id *match;
 	const struct spu_type_subtype *matched_spu_type;
 	struct device_node *dn = pdev->dev.of_node;
 	int err, i;
@@ -4765,11 +4812,13 @@ static int spu_dt_read(struct platform_device *pdev)
 	/* Count number of mailbox channels */
 	spu->num_chan = of_count_phandle_with_args(dn, "mboxes", "#mbox-cells");
 
-	matched_spu_type = of_device_get_match_data(dev);
-	if (!matched_spu_type) {
+	match = of_match_device(of_match_ptr(bcm_spu_dt_ids), dev);
+	if (!match) {
 		dev_err(&pdev->dev, "Failed to match device\n");
 		return -ENODEV;
 	}
+
+	matched_spu_type = match->data;
 
 	spu->spu_type = matched_spu_type->type;
 	spu->spu_subtype = matched_spu_type->subtype;
@@ -4793,7 +4842,7 @@ static int spu_dt_read(struct platform_device *pdev)
 	return 0;
 }
 
-static int bcm_spu_probe(struct platform_device *pdev)
+int bcm_spu_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct spu_hw *spu = &iproc_priv.spu;
@@ -4837,7 +4886,7 @@ failure:
 	return err;
 }
 
-static int bcm_spu_remove(struct platform_device *pdev)
+int bcm_spu_remove(struct platform_device *pdev)
 {
 	int i;
 	struct device *dev = &pdev->dev;

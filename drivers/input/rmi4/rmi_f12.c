@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2016 Synaptics Incorporated
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 #include <linux/input.h>
 #include <linux/input/mt.h>
@@ -73,6 +76,7 @@ static int rmi_f12_read_sensor_tuning(struct f12_data *f12)
 	int pitch_y = 0;
 	int rx_receivers = 0;
 	int tx_receivers = 0;
+	int sensor_flags = 0;
 
 	item = rmi_get_register_desc_item(&f12->control_reg_desc, 8);
 	if (!item) {
@@ -128,9 +132,10 @@ static int rmi_f12_read_sensor_tuning(struct f12_data *f12)
 		offset += 2;
 	}
 
-	/* Skip over sensor flags */
-	if (rmi_register_desc_has_subpacket(item, 4))
+	if (rmi_register_desc_has_subpacket(item, 4)) {
+		sensor_flags = buf[offset];
 		offset += 1;
+	}
 
 	sensor->x_mm = (pitch_x * rx_receivers) >> 12;
 	sensor->y_mm = (pitch_y * tx_receivers) >> 12;
@@ -195,10 +200,10 @@ static void rmi_f12_process_objects(struct f12_data *f12, u8 *data1, int size)
 		rmi_2d_sensor_abs_report(sensor, &sensor->objs[i], i);
 }
 
-static irqreturn_t rmi_f12_attention(int irq, void *ctx)
+static int rmi_f12_attention(struct rmi_function *fn,
+			     unsigned long *irq_nr_regs)
 {
 	int retval;
-	struct rmi_function *fn = ctx;
 	struct rmi_device *rmi_dev = fn->rmi_dev;
 	struct rmi_driver_data *drvdata = dev_get_drvdata(&rmi_dev->dev);
 	struct f12_data *f12 = dev_get_drvdata(&fn->dev);
@@ -220,7 +225,7 @@ static irqreturn_t rmi_f12_attention(int irq, void *ctx)
 		if (retval < 0) {
 			dev_err(&fn->dev, "Failed to read object data. Code: %d.\n",
 				retval);
-			return IRQ_RETVAL(retval);
+			return retval;
 		}
 	}
 
@@ -230,7 +235,7 @@ static irqreturn_t rmi_f12_attention(int irq, void *ctx)
 
 	input_mt_sync_frame(sensor->input);
 
-	return IRQ_HANDLED;
+	return 0;
 }
 
 static int rmi_f12_write_control_regs(struct rmi_function *fn)
@@ -521,15 +526,14 @@ static int rmi_f12_probe(struct rmi_function *fn)
 	}
 
 	/* allocate the in-kernel tracking buffers */
-	sensor->tracking_pos = devm_kcalloc(&fn->dev,
-			sensor->nbr_fingers, sizeof(struct input_mt_pos),
+	sensor->tracking_pos = devm_kzalloc(&fn->dev,
+			sizeof(struct input_mt_pos) * sensor->nbr_fingers,
 			GFP_KERNEL);
-	sensor->tracking_slots = devm_kcalloc(&fn->dev,
-			sensor->nbr_fingers, sizeof(int), GFP_KERNEL);
-	sensor->objs = devm_kcalloc(&fn->dev,
-			sensor->nbr_fingers,
-			sizeof(struct rmi_2d_sensor_abs_object),
-			GFP_KERNEL);
+	sensor->tracking_slots = devm_kzalloc(&fn->dev,
+			sizeof(int) * sensor->nbr_fingers, GFP_KERNEL);
+	sensor->objs = devm_kzalloc(&fn->dev,
+			sizeof(struct rmi_2d_sensor_abs_object)
+			* sensor->nbr_fingers, GFP_KERNEL);
 	if (!sensor->tracking_pos || !sensor->tracking_slots || !sensor->objs)
 		return -ENOMEM;
 

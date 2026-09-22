@@ -80,16 +80,12 @@ static inline void bit_putcs_aligned(struct vc_data *vc, struct fb_info *info,
 				     struct fb_image *image, u8 *buf, u8 *dst)
 {
 	u16 charmask = vc->vc_hi_font_mask ? 0x1ff : 0xff;
-	unsigned int charcnt = vc->vc_font.charcount;
 	u32 idx = vc->vc_font.width >> 3;
 	u8 *src;
 
 	while (cnt--) {
-		u16 ch = scr_readw(s++) & charmask;
-
-		if (ch >= charcnt)
-			ch = 0;
-		src = vc->vc_font.data + (unsigned int)ch * cellsize;
+		src = vc->vc_font.data + (scr_readw(s++)&
+					  charmask)*cellsize;
 
 		if (attr) {
 			update_attr(buf, src, attr, vc);
@@ -117,18 +113,14 @@ static inline void bit_putcs_unaligned(struct vc_data *vc,
 				       u8 *dst)
 {
 	u16 charmask = vc->vc_hi_font_mask ? 0x1ff : 0xff;
-	unsigned int charcnt = vc->vc_font.charcount;
 	u32 shift_low = 0, mod = vc->vc_font.width % 8;
 	u32 shift_high = 8;
 	u32 idx = vc->vc_font.width >> 3;
 	u8 *src;
 
 	while (cnt--) {
-		u16 ch = scr_readw(s++) & charmask;
-
-		if (ch >= charcnt)
-			ch = 0;
-		src = vc->vc_font.data + (unsigned int)ch * cellsize;
+		src = vc->vc_font.data + (scr_readw(s++)&
+					  charmask)*cellsize;
 
 		if (attr) {
 			update_attr(buf, src, attr, vc);
@@ -169,11 +161,6 @@ static void bit_putcs(struct vc_data *vc, struct fb_info *info,
 	image.height = vc->vc_font.height;
 	image.depth = 1;
 
-	if (image.dy >= info->var.yres)
-		return;
-
-	image.height = min(image.height, info->var.yres - image.dy);
-
 	if (attribute) {
 		buf = kmalloc(cellsize, GFP_ATOMIC);
 		if (!buf)
@@ -187,18 +174,6 @@ static void bit_putcs(struct vc_data *vc, struct fb_info *info,
 			cnt = count;
 
 		image.width = vc->vc_font.width * cnt;
-
-		if (image.dx >= info->var.xres)
-			break;
-
-		if (image.dx + image.width > info->var.xres) {
-			image.width = info->var.xres - image.dx;
-			cnt = image.width / vc->vc_font.width;
-			if (cnt == 0)
-				break;
-			image.width = cnt * vc->vc_font.width;
-		}
-
 		pitch = DIV_ROUND_UP(image.width, 8) + scan_align;
 		pitch &= ~scan_align;
 		size = pitch * image.height + buf_align;
@@ -288,7 +263,7 @@ static void bit_cursor(struct vc_data *vc, struct fb_info *info, int mode,
 	if (attribute) {
 		u8 *dst;
 
-		dst = kmalloc_array(w, vc->vc_font.height, GFP_ATOMIC);
+		dst = kmalloc(w * vc->vc_font.height, GFP_ATOMIC);
 		if (!dst)
 			return;
 		kfree(ops->cursor_data);
@@ -331,7 +306,7 @@ static void bit_cursor(struct vc_data *vc, struct fb_info *info, int mode,
 	    vc->vc_cursor_type != ops->p->cursor_shape ||
 	    ops->cursor_state.mask == NULL ||
 	    ops->cursor_reset) {
-		char *mask = kmalloc_array(w, vc->vc_font.height, GFP_ATOMIC);
+		char *mask = kmalloc(w*vc->vc_font.height, GFP_ATOMIC);
 		int cur_height, size, i = 0;
 		u8 msk = 0xff;
 

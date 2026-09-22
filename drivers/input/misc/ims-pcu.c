@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for IMS Passenger Control Unit Devices
  *
  * Copyright (C) 2013 The IMS Company
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2
+ * as published by the Free Software Foundation.
  */
 
 #include <linux/completion.h>
@@ -36,14 +39,16 @@ struct ims_pcu_gamepad {
 
 struct ims_pcu_backlight {
 	struct led_classdev cdev;
+	struct work_struct work;
+	enum led_brightness desired_brightness;
 	char name[32];
 };
 
 #define IMS_PCU_PART_NUMBER_LEN		15
 #define IMS_PCU_SERIAL_NUMBER_LEN	8
 #define IMS_PCU_DOM_LEN			8
-#define IMS_PCU_FW_VERSION_LEN		16
-#define IMS_PCU_BL_VERSION_LEN		16
+#define IMS_PCU_FW_VERSION_LEN		(9 + 1)
+#define IMS_PCU_BL_VERSION_LEN		(9 + 1)
 #define IMS_PCU_BL_RESET_REASON_LEN	(2 + 1)
 
 #define IMS_PCU_PCU_B_DEVICE_ID		5
@@ -845,12 +850,6 @@ static int ims_pcu_flash_firmware(struct ims_pcu *pcu,
 		addr = be32_to_cpu(rec->addr) / 2;
 		len = be16_to_cpu(rec->len);
 
-		if (len > sizeof(pcu->cmd_buf) - 1 - sizeof(*fragment)) {
-			dev_err(pcu->dev,
-				"Invalid record length in firmware: %d\n", len);
-			return -EINVAL;
-		}
-
 		fragment = (void *)&pcu->cmd_buf[1];
 		put_unaligned_le32(addr, &fragment->addr);
 		fragment->len = len;
@@ -950,14 +949,14 @@ out:
 
 #define IMS_PCU_MAX_BRIGHTNESS		31998
 
-static int ims_pcu_backlight_set_brightness(struct led_classdev *cdev,
-					    enum led_brightness value)
+static void ims_pcu_backlight_work(struct work_struct *work)
 {
 	struct ims_pcu_backlight *backlight =
-			container_of(cdev, struct ims_pcu_backlight, cdev);
+			container_of(work, struct ims_pcu_backlight, work);
 	struct ims_pcu *pcu =
 			container_of(backlight, struct ims_pcu, backlight);
-	__le16 br_val = cpu_to_le16(value);
+	int desired_brightness = backlight->desired_brightness;
+	__le16 br_val = cpu_to_le16(desired_brightness);
 	int error;
 
 	mutex_lock(&pcu->cmd_mutex);
@@ -967,11 +966,19 @@ static int ims_pcu_backlight_set_brightness(struct led_classdev *cdev,
 	if (error && error != -ENODEV)
 		dev_warn(pcu->dev,
 			 "Failed to set desired brightness %u, error: %d\n",
-			 value, error);
+			 desired_brightness, error);
 
 	mutex_unlock(&pcu->cmd_mutex);
+}
 
-	return error;
+static void ims_pcu_backlight_set_brightness(struct led_classdev *cdev,
+					     enum led_brightness value)
+{
+	struct ims_pcu_backlight *backlight =
+			container_of(cdev, struct ims_pcu_backlight, cdev);
+
+	backlight->desired_brightness = value;
+	schedule_work(&backlight->work);
 }
 
 static enum led_brightness
@@ -1008,14 +1015,14 @@ static int ims_pcu_setup_backlight(struct ims_pcu *pcu)
 	struct ims_pcu_backlight *backlight = &pcu->backlight;
 	int error;
 
+	INIT_WORK(&backlight->work, ims_pcu_backlight_work);
 	snprintf(backlight->name, sizeof(backlight->name),
 		 "pcu%d::kbd_backlight", pcu->device_no);
 
 	backlight->cdev.name = backlight->name;
 	backlight->cdev.max_brightness = IMS_PCU_MAX_BRIGHTNESS;
 	backlight->cdev.brightness_get = ims_pcu_backlight_get_brightness;
-	backlight->cdev.brightness_set_blocking =
-					 ims_pcu_backlight_set_brightness;
+	backlight->cdev.brightness_set = ims_pcu_backlight_set_brightness;
 
 	error = led_classdev_register(pcu->dev, &backlight->cdev);
 	if (error) {
@@ -1033,6 +1040,7 @@ static void ims_pcu_destroy_backlight(struct ims_pcu *pcu)
 	struct ims_pcu_backlight *backlight = &pcu->backlight;
 
 	led_classdev_unregister(&backlight->cdev);
+	cancel_work_sync(&backlight->work);
 }
 
 
@@ -1643,7 +1651,7 @@ ims_pcu_get_cdc_union_desc(struct usb_interface *intf)
 				return union_desc;
 
 			dev_err(&intf->dev,
-				"Union descriptor too short (%d vs %zd)\n",
+				"Union descriptor to short (%d vs %zd\n)",
 				union_desc->bLength, sizeof(*union_desc));
 			return NULL;
 		}

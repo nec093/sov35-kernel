@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2016 Intel Corporation
  *
@@ -9,6 +8,11 @@
  *
  * This file contains TPM2 protocol implementations of the commands
  * used by the kernel internally.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; version 2
+ * of the License.
  */
 
 #include <linux/gfp.h>
@@ -34,7 +38,9 @@ static void tpm2_flush_sessions(struct tpm_chip *chip, struct tpm_space *space)
 
 	for (i = 0; i < ARRAY_SIZE(space->session_tbl); i++) {
 		if (space->session_tbl[i])
-			tpm2_flush_context(chip, space->session_tbl[i]);
+			tpm2_flush_context_cmd(chip, space->session_tbl[i],
+					       TPM_TRANSMIT_UNLOCKED |
+					       TPM_TRANSMIT_RAW);
 	}
 }
 
@@ -58,12 +64,9 @@ int tpm2_init_space(struct tpm_space *space, unsigned int buf_size)
 
 void tpm2_del_space(struct tpm_chip *chip, struct tpm_space *space)
 {
-
-	if (tpm_try_get_ops(chip) == 0) {
-		tpm2_flush_sessions(chip, space);
-		tpm_put_ops(chip);
-	}
-
+	mutex_lock(&chip->tpm_mutex);
+	tpm2_flush_sessions(chip, space);
+	mutex_unlock(&chip->tpm_mutex);
 	kfree(space->context_buf);
 	kfree(space->session_buf);
 }
@@ -84,7 +87,8 @@ static int tpm2_load_context(struct tpm_chip *chip, u8 *buf,
 	body_size = sizeof(*ctx) + be16_to_cpu(ctx->blob_size);
 	tpm_buf_append(&tbuf, &buf[*offset], body_size);
 
-	rc = tpm_transmit_cmd(chip, &tbuf, 4, NULL);
+	rc = tpm_transmit_cmd(chip, NULL, tbuf.data, PAGE_SIZE, 4,
+			      TPM_TRANSMIT_UNLOCKED | TPM_TRANSMIT_RAW, NULL);
 	if (rc < 0) {
 		dev_warn(&chip->dev, "%s: failed with a system error %d\n",
 			 __func__, rc);
@@ -132,7 +136,8 @@ static int tpm2_save_context(struct tpm_chip *chip, u32 handle, u8 *buf,
 
 	tpm_buf_append_u32(&tbuf, handle);
 
-	rc = tpm_transmit_cmd(chip, &tbuf, 0, NULL);
+	rc = tpm_transmit_cmd(chip, NULL, tbuf.data, PAGE_SIZE, 0,
+			      TPM_TRANSMIT_UNLOCKED | TPM_TRANSMIT_RAW, NULL);
 	if (rc < 0) {
 		dev_warn(&chip->dev, "%s: failed with a system error %d\n",
 			 __func__, rc);
@@ -161,17 +166,16 @@ static int tpm2_save_context(struct tpm_chip *chip, u32 handle, u8 *buf,
 	return 0;
 }
 
-void tpm2_flush_space(struct tpm_chip *chip)
+static void tpm2_flush_space(struct tpm_chip *chip)
 {
 	struct tpm_space *space = &chip->work_space;
 	int i;
 
-	if (!space)
-		return;
-
 	for (i = 0; i < ARRAY_SIZE(space->context_tbl); i++)
 		if (space->context_tbl[i] && ~space->context_tbl[i])
-			tpm2_flush_context(chip, space->context_tbl[i]);
+			tpm2_flush_context_cmd(chip, space->context_tbl[i],
+					       TPM_TRANSMIT_UNLOCKED |
+					       TPM_TRANSMIT_RAW);
 
 	tpm2_flush_sessions(chip, space);
 }
@@ -244,7 +248,7 @@ static int tpm2_map_command(struct tpm_chip *chip, u32 cc, u8 *cmd)
 	struct tpm_space *space = &chip->work_space;
 	unsigned int nr_handles;
 	u32 attrs;
-	__be32 *handle;
+	u32 *handle;
 	int i;
 
 	i = tpm2_find_cc(chip, cc);
@@ -254,7 +258,7 @@ static int tpm2_map_command(struct tpm_chip *chip, u32 cc, u8 *cmd)
 	attrs = chip->cc_attrs_tbl[i];
 	nr_handles = (attrs >> TPM2_CC_ATTR_CHANDLES) & GENMASK(2, 0);
 
-	handle = (__be32 *)&cmd[TPM_HEADER_SIZE];
+	handle = (u32 *)&cmd[TPM_HEADER_SIZE];
 	for (i = 0; i < nr_handles; i++, handle++) {
 		if ((be32_to_cpu(*handle) & 0xFF000000) == TPM2_HT_TRANSIENT) {
 			if (!tpm2_map_to_phandle(space, handle))
@@ -265,53 +269,13 @@ static int tpm2_map_command(struct tpm_chip *chip, u32 cc, u8 *cmd)
 	return 0;
 }
 
-static int tpm_find_and_validate_cc(struct tpm_chip *chip,
-				    struct tpm_space *space,
-				    const void *cmd, size_t len)
-{
-	const struct tpm_header *header = (const void *)cmd;
-	int i;
-	u32 cc;
-	u32 attrs;
-	unsigned int nr_handles;
-
-	if (len < TPM_HEADER_SIZE || !chip->nr_commands)
-		return -EINVAL;
-
-	cc = be32_to_cpu(header->ordinal);
-
-	i = tpm2_find_cc(chip, cc);
-	if (i < 0) {
-		dev_dbg(&chip->dev, "0x%04X is an invalid command\n",
-			cc);
-		return -EOPNOTSUPP;
-	}
-
-	attrs = chip->cc_attrs_tbl[i];
-	nr_handles =
-		4 * ((attrs >> TPM2_CC_ATTR_CHANDLES) & GENMASK(2, 0));
-	if (len < TPM_HEADER_SIZE + 4 * nr_handles)
-		goto err_len;
-
-	return cc;
-err_len:
-	dev_dbg(&chip->dev, "%s: insufficient command length %zu", __func__,
-		len);
-	return -EINVAL;
-}
-
-int tpm2_prepare_space(struct tpm_chip *chip, struct tpm_space *space, u8 *cmd,
-		       size_t cmdsiz)
+int tpm2_prepare_space(struct tpm_chip *chip, struct tpm_space *space, u32 cc,
+		       u8 *cmd)
 {
 	int rc;
-	int cc;
 
 	if (!space)
 		return 0;
-
-	cc = tpm_find_and_validate_cc(chip, space, cmd, cmdsiz);
-	if (cc < 0)
-		return cc;
 
 	memcpy(&chip->work_space.context_tbl, &space->context_tbl,
 	       sizeof(space->context_tbl));
@@ -334,7 +298,6 @@ int tpm2_prepare_space(struct tpm_chip *chip, struct tpm_space *space, u8 *cmd,
 		return rc;
 	}
 
-	chip->last_cc = cc;
 	return 0;
 }
 
@@ -378,7 +341,7 @@ static int tpm2_map_response_header(struct tpm_chip *chip, u32 cc, u8 *rsp,
 				    size_t len)
 {
 	struct tpm_space *space = &chip->work_space;
-	struct tpm_header *header = (struct tpm_header *)rsp;
+	struct tpm_output_header *header = (void *)rsp;
 	u32 phandle;
 	u32 phandle_type;
 	u32 vhandle;
@@ -417,11 +380,12 @@ static int tpm2_map_response_header(struct tpm_chip *chip, u32 cc, u8 *rsp,
 		dev_err(&chip->dev, "%s: unknown handle 0x%08X\n",
 			__func__, phandle);
 		break;
-	}
+	};
 
 	return 0;
 out_no_slots:
-	tpm2_flush_context(chip, phandle);
+	tpm2_flush_context_cmd(chip, phandle,
+			       TPM_TRANSMIT_UNLOCKED | TPM_TRANSMIT_RAW);
 	dev_warn(&chip->dev, "%s: out of slots for 0x%08X\n", __func__,
 		 phandle);
 	return -ENOMEM;
@@ -438,7 +402,7 @@ static int tpm2_map_response_body(struct tpm_chip *chip, u32 cc, u8 *rsp,
 				  size_t len)
 {
 	struct tpm_space *space = &chip->work_space;
-	struct tpm_header *header = (struct tpm_header *)rsp;
+	struct tpm_output_header *header = (void *)rsp;
 	struct tpm2_cap_handles *data;
 	u32 phandle;
 	u32 phandle_type;
@@ -511,7 +475,9 @@ static int tpm2_save_space(struct tpm_chip *chip)
 		} else if (rc)
 			return rc;
 
-		tpm2_flush_context(chip, space->context_tbl[i]);
+		tpm2_flush_context_cmd(chip, space->context_tbl[i],
+				       TPM_TRANSMIT_UNLOCKED |
+				       TPM_TRANSMIT_RAW);
 		space->context_tbl[i] = ~0;
 	}
 
@@ -535,30 +501,30 @@ static int tpm2_save_space(struct tpm_chip *chip)
 }
 
 int tpm2_commit_space(struct tpm_chip *chip, struct tpm_space *space,
-		      void *buf, size_t *bufsiz)
+		      u32 cc, u8 *buf, size_t *bufsiz)
 {
-	struct tpm_header *header = buf;
+	struct tpm_output_header *header = (void *)buf;
 	int rc;
 
 	if (!space)
 		return 0;
 
-	rc = tpm2_map_response_header(chip, chip->last_cc, buf, *bufsiz);
+	rc = tpm2_map_response_header(chip, cc, buf, *bufsiz);
 	if (rc) {
 		tpm2_flush_space(chip);
-		goto out;
+		return rc;
 	}
 
-	rc = tpm2_map_response_body(chip, chip->last_cc, buf, *bufsiz);
+	rc = tpm2_map_response_body(chip, cc, buf, *bufsiz);
 	if (rc) {
 		tpm2_flush_space(chip);
-		goto out;
+		return rc;
 	}
 
 	rc = tpm2_save_space(chip);
 	if (rc) {
 		tpm2_flush_space(chip);
-		goto out;
+		return rc;
 	}
 
 	*bufsiz = be32_to_cpu(header->length);
@@ -573,9 +539,6 @@ int tpm2_commit_space(struct tpm_chip *chip, struct tpm_space *space,
 	       space->buf_size);
 
 	return 0;
-out:
-	dev_err(&chip->dev, "%s: error %d\n", __func__, rc);
-	return rc;
 }
 
 /*
