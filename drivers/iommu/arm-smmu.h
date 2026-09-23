@@ -274,6 +274,18 @@ struct arm_smmu_device {
 
 	spinlock_t			global_sync_lock;
 
+	/*
+	 * CAF/QCOM "qcom,skip-init" DT property: this instance's stream-
+	 * match-register / context-bank configuration is owned by another
+	 * entity (bootloader/TrustZone) and must not be rewritten by us --
+	 * doing so anyway (this property was silently dropped during the
+	 * 4.14->5.4 rebase, see port-4.14's ARM_SMMU_OPT_SKIP_INIT) leaves
+	 * the SMMU in a state where the following TLBIALLH/TLBIALLNSNH
+	 * invalidate-all writes in arm_smmu_device_reset() hang the bus
+	 * forever (confirmed via binary-patch bisection for smmu-anoc1).
+	 */
+	bool				skip_init;
+
 	/* IOMMU core code handle */
 	struct iommu_device		iommu;
 };

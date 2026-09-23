@@ -1589,14 +1589,22 @@ static void arm_smmu_device_reset(struct arm_smmu_device *smmu)
 	/*
 	 * Reset stream mapping groups: Initial values mark all SMRn as
 	 * invalid and all S2CRn as bypass unless overridden.
+	 *
+	 * qcom,skip-init: some SMMU instances have their SMR/context-bank
+	 * configuration owned by another entity (bootloader/TrustZone) and
+	 * must not have these registers rewritten by us -- doing so anyway
+	 * leaves the SMMU in a state where the TLBIALLH/TLBIALLNSNH writes
+	 * below hang the bus forever (see struct arm_smmu_device::skip_init).
 	 */
-	for (i = 0; i < smmu->num_mapping_groups; ++i)
-		arm_smmu_write_sme(smmu, i);
+	if (!smmu->skip_init) {
+		for (i = 0; i < smmu->num_mapping_groups; ++i)
+			arm_smmu_write_sme(smmu, i);
 
-	/* Make sure all context banks are disabled and clear CB_FSR  */
-	for (i = 0; i < smmu->num_context_banks; ++i) {
-		arm_smmu_write_context_bank(smmu, i);
-		arm_smmu_cb_write(smmu, i, ARM_SMMU_CB_FSR, FSR_FAULT);
+		/* Make sure all context banks are disabled and clear CB_FSR */
+		for (i = 0; i < smmu->num_context_banks; ++i) {
+			arm_smmu_write_context_bank(smmu, i);
+			arm_smmu_cb_write(smmu, i, ARM_SMMU_CB_FSR, FSR_FAULT);
+		}
 	}
 
 	/* Invalidate the TLB, just in case */
@@ -1980,6 +1988,9 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 
 	if (of_dma_is_coherent(dev->of_node))
 		smmu->features |= ARM_SMMU_FEAT_COHERENT_WALK;
+
+	/* CAF/QCOM extension, see struct arm_smmu_device::skip_init */
+	smmu->skip_init = of_property_read_bool(dev->of_node, "qcom,skip-init");
 
 	return 0;
 }
