@@ -429,6 +429,10 @@ struct usb_gadget {
 	unsigned			connected:1;
 	unsigned			lpm_capable:1;
 	int				irq;
+	/* CAF additions (not in mainline). */
+	u32				extra_buf_alloc;
+	bool				l1_supported;
+	bool				is_chipidea;
 };
 #define work_to_gadget(w)	(container_of((w), struct usb_gadget, work))
 
@@ -562,6 +566,8 @@ static inline int gadget_is_otg(struct usb_gadget *g)
 #if IS_ENABLED(CONFIG_USB_GADGET)
 int usb_gadget_frame_number(struct usb_gadget *gadget);
 int usb_gadget_wakeup(struct usb_gadget *gadget);
+/* CAF addition (not in mainline), defined in udc/core.c. */
+int usb_gadget_func_wakeup(struct usb_gadget *gadget, int interface_id);
 int usb_gadget_set_selfpowered(struct usb_gadget *gadget);
 int usb_gadget_clear_selfpowered(struct usb_gadget *gadget);
 int usb_gadget_vbus_connect(struct usb_gadget *gadget);
@@ -575,6 +581,9 @@ int usb_gadget_activate(struct usb_gadget *gadget);
 static inline int usb_gadget_frame_number(struct usb_gadget *gadget)
 { return 0; }
 static inline int usb_gadget_wakeup(struct usb_gadget *gadget)
+{ return 0; }
+static inline int usb_gadget_func_wakeup(struct usb_gadget *gadget,
+					 int interface_id)
 { return 0; }
 static inline int usb_gadget_set_selfpowered(struct usb_gadget *gadget)
 { return 0; }

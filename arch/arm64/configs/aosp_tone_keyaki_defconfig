@@ -424,7 +424,15 @@ CONFIG_MSM_BCL_PERIPHERAL_CTL=y
 CONFIG_MSM_BCL_PERIPHERAL_CTL_LEGACY=y
 CONFIG_LIMITS_MONITOR=y
 CONFIG_LIMITS_LITE_HW=y
-CONFIG_QTI_THERMAL_LIMITS_DCVS_LEGACY=y
+# CONFIG_QTI_THERMAL_LIMITS_DCVS_LEGACY (drivers/thermal/qcom/
+# msm_lmh_dcvs_legacy.c) is disabled for Phase A: it depends on
+# sched_update_cpu_freq_min_max() (a WALT-scheduler hook, not ported --
+# see the 4.14 port's "Phase A: mainline CFS, no WALT/EAS" decision)
+# and CAF's cpu_cooling_ops API (dropped when cpu_cooling.c was
+# switched to pristine's simpler, WALT-free implementation). Hardware
+# LMH power/thermal limiting is a safety margin, not a boot
+# requirement; TODO for Phase B alongside WALT.
+# CONFIG_QTI_THERMAL_LIMITS_DCVS_LEGACY is not set
 CONFIG_QTI_VIRTUAL_SENSOR=y
 CONFIG_QTI_QMI_COOLING_DEVICE=y
 CONFIG_REGULATOR_COOLING_DEVICE=y

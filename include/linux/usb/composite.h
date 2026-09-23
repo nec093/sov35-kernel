@@ -190,6 +190,7 @@ struct usb_os_desc_table {
 
 struct usb_function {
 	const char			*name;
+	int				intf_id;	/* CAF addition, not in mainline. */
 	struct usb_gadget_strings	**strings;
 	struct usb_descriptor_header	**fs_descriptors;
 	struct usb_descriptor_header	**hs_descriptors;
@@ -233,6 +234,10 @@ struct usb_function {
 	int			(*get_status)(struct usb_function *);
 	int			(*func_suspend)(struct usb_function *,
 						u8 suspend_opt);
+	/* CAF additions (not in mainline). */
+	unsigned		func_is_suspended:1;
+	unsigned		func_wakeup_allowed:1;
+	unsigned		func_wakeup_pending:1;
 	/* private: */
 	/* internals */
 	struct list_head		list;
@@ -332,6 +337,13 @@ struct usb_configuration {
 	unsigned		fullspeed:1;
 	unsigned		superspeed_plus:1;
 	struct usb_function	*interface[MAX_CONFIG_INTERFACES];
+
+	/*
+	 * CAF addition (not in mainline): number of in and out eps used in
+	 * this configuration.
+	 */
+	int			num_ineps_used;
+	int			num_outeps_used;
 };
 
 int usb_add_config(struct usb_composite_dev *,
