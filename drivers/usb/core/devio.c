@@ -76,7 +76,9 @@ struct usb_dev_state {
 	unsigned int discsignr;
 	struct pid *disc_pid;
 	const struct cred *cred;
-	void __user *disccontext;
+	/* sigval_t, not void __user *: matches kill_pid_usb_asyncio()'s
+	 * "addr" parameter upstream. */
+	sigval_t disccontext;
 	unsigned long ifclaimed;
 	u32 secid;
 	u32 disabled_bulk_eps;
@@ -150,7 +152,7 @@ static int usbfs_increase_memory_usage(u64 amount)
 {
 	u64 lim;
 
-	lim = ACCESS_ONCE(usbfs_memory_mb);
+	lim = READ_ONCE(usbfs_memory_mb);
 	lim <<= 20;
 
 	atomic64_add(amount, &usbfs_memory_usage);
@@ -597,25 +599,23 @@ static void async_completed(struct urb *urb)
 {
 	struct async *as = urb->context;
 	struct usb_dev_state *ps = as->ps;
-	struct siginfo sinfo;
 	struct pid *pid = NULL;
-	u32 secid = 0;
 	const struct cred *cred = NULL;
-	int signr;
+	sigval_t addr;
+	int signr, errno = 0;
 
 	spin_lock(&ps->lock);
 	list_move_tail(&as->asynclist, &ps->async_completed);
 	as->status = urb->status;
 	signr = as->signr;
 	if (signr) {
-		memset(&sinfo, 0, sizeof(sinfo));
-		sinfo.si_signo = as->signr;
-		sinfo.si_errno = as->status;
-		sinfo.si_code = SI_ASYNCIO;
-		sinfo.si_addr = as->userurb;
+		errno = as->status;
+		/* kill_pid_usb_asyncio() (replaces the old, LSM-secid-aware
+		 * kill_pid_info_as_cred()) takes the userspace URB pointer
+		 * as a plain sigval_t. */
+		addr.sival_ptr = as->userurb;
 		pid = get_pid(as->pid);
 		cred = get_cred(as->cred);
-		secid = as->secid;
 	}
 	snoop(&urb->dev->dev, "urb complete\n");
 	snoop_urb(urb->dev, as->userurb, urb->pipe, urb->actual_length,
@@ -631,7 +631,7 @@ static void async_completed(struct urb *urb)
 	spin_unlock(&ps->lock);
 
 	if (signr) {
-		kill_pid_info_as_cred(sinfo.si_signo, &sinfo, pid, cred, secid);
+		kill_pid_usb_asyncio(signr, errno, addr, pid, cred);
 		put_pid(pid);
 		put_cred(cred);
 	}
@@ -727,6 +727,24 @@ static int driver_resume(struct usb_interface *intf)
 {
 	return 0;
 }
+
+#ifdef CONFIG_PM
+/*
+ * Called by generic.c's suspend/resume. Pristine mainline uses these to
+ * unblock usbfs ioctls that were waiting out a device-level suspend via
+ * a per-ps "not_yet_resumed"/"wait_for_resume" pair; this driver's
+ * struct usb_dev_state doesn't track that (no such ioctl-blocking
+ * behavior was ported), so both are no-ops -- functionally equivalent to
+ * pristine's own usbfs_notify_suspend(), which is a no-op already.
+ */
+void usbfs_notify_suspend(struct usb_device *udev)
+{
+}
+
+void usbfs_notify_resume(struct usb_device *udev)
+{
+}
+#endif
 
 struct usb_driver usbfs_driver = {
 	.name =		"usbfs",
@@ -976,17 +994,14 @@ error:
 	return ret;
 }
 
-static int match_devt(struct device *dev, void *data)
-{
-	return dev->devt == (dev_t) (unsigned long) data;
-}
-
 static struct usb_device *usbdev_lookup_by_devt(dev_t devt)
 {
 	struct device *dev;
 
-	dev = bus_find_device(&usb_bus_type, NULL,
-			      (void *) (unsigned long) devt, match_devt);
+	/* bus_find_device_by_devt() is the mainline helper that replaced
+	 * the open-coded bus_find_device() + match callback (whose match
+	 * signature also gained a const on its data argument upstream). */
+	dev = bus_find_device_by_devt(&usb_bus_type, devt);
 	if (!dev)
 		return NULL;
 	return to_usb_device(dev);
@@ -1124,7 +1139,7 @@ static int proc_control(struct usb_dev_state *ps, void __user *arg)
 		ctrl.bRequestType, ctrl.bRequest, ctrl.wValue,
 		ctrl.wIndex, ctrl.wLength);
 	if (ctrl.bRequestType & 0x80) {
-		if (ctrl.wLength && !access_ok(VERIFY_WRITE, ctrl.data,
+		if (ctrl.wLength && !access_ok(ctrl.data,
 					       ctrl.wLength)) {
 			ret = -EINVAL;
 			goto done;
@@ -1213,7 +1228,7 @@ static int proc_bulk(struct usb_dev_state *ps, void __user *arg)
 	}
 	tmo = bulk.timeout;
 	if (bulk.ep & 0x80) {
-		if (len1 && !access_ok(VERIFY_WRITE, bulk.data, len1)) {
+		if (len1 && !access_ok(bulk.data, len1)) {
 			ret = -EINVAL;
 			goto done;
 		}
@@ -1614,8 +1629,7 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
 	}
 
 	if (uurb->buffer_length > 0 &&
-			!access_ok(is_in ? VERIFY_WRITE : VERIFY_READ,
-				uurb->buffer, uurb->buffer_length)) {
+			!access_ok(uurb->buffer, uurb->buffer_length)) {
 		ret = -EFAULT;
 		goto error;
 	}
@@ -1720,8 +1734,10 @@ static int proc_do_submiturb(struct usb_dev_state *ps, struct usbdevfs_urb *uurb
 		u |= URB_ISO_ASAP;
 	if (allow_short && uurb->flags & USBDEVFS_URB_SHORT_NOT_OK)
 		u |= URB_SHORT_NOT_OK;
-	if (uurb->flags & USBDEVFS_URB_NO_FSBR)
-		u |= URB_NO_FSBR;
+	/* URB_NO_FSBR (the "full-speed bulk reads" workaround this flag
+	 * selected) was removed from the USB core upstream; the userspace
+	 * flag is still accepted (see mask above) but is now a no-op,
+	 * matching pristine v5.4.302's own behavior. */
 	if (allow_zero && uurb->flags & USBDEVFS_URB_ZERO_PACKET)
 		u |= URB_ZERO_PACKET;
 	if (uurb->flags & USBDEVFS_URB_NO_INTERRUPT)
@@ -2010,7 +2026,7 @@ static int proc_disconnectsignal_compat(struct usb_dev_state *ps, void __user *a
 	if (copy_from_user(&ds, arg, sizeof(ds)))
 		return -EFAULT;
 	ps->discsignr = ds.signr;
-	ps->disccontext = compat_ptr(ds.context);
+	ps->disccontext.sival_int = ds.context;
 	return 0;
 }
 
@@ -2018,7 +2034,7 @@ static int get_urb32(struct usbdevfs_urb *kurb,
 		     struct usbdevfs_urb32 __user *uurb)
 {
 	__u32  uptr;
-	if (!access_ok(VERIFY_READ, uurb, sizeof(*uurb)) ||
+	if (!access_ok(uurb, sizeof(*uurb)) ||
 	    __get_user(kurb->type, &uurb->type) ||
 	    __get_user(kurb->endpoint, &uurb->endpoint) ||
 	    __get_user(kurb->status, &uurb->status) ||
@@ -2131,7 +2147,7 @@ static int proc_disconnectsignal(struct usb_dev_state *ps, void __user *arg)
 	if (copy_from_user(&ds, arg, sizeof(ds)))
 		return -EFAULT;
 	ps->discsignr = ds.signr;
-	ps->disccontext = ds.context;
+	ps->disccontext.sival_ptr = ds.context;
 	return 0;
 }
 
@@ -2255,7 +2271,7 @@ static int proc_ioctl_compat(struct usb_dev_state *ps, compat_uptr_t arg)
 	u32 udata;
 
 	uioc = compat_ptr((long)arg);
-	if (!access_ok(VERIFY_READ, uioc, sizeof(*uioc)) ||
+	if (!access_ok(uioc, sizeof(*uioc)) ||
 	    __get_user(ctrl.ifno, &uioc->ifno) ||
 	    __get_user(ctrl.ioctl_code, &uioc->ioctl_code) ||
 	    __get_user(udata, &uioc->data))
@@ -2654,22 +2670,16 @@ const struct file_operations usbdev_file_operations = {
 static void usbdev_remove(struct usb_device *udev)
 {
 	struct usb_dev_state *ps;
-	struct siginfo sinfo;
 
 	while (!list_empty(&udev->filelist)) {
 		ps = list_entry(udev->filelist.next, struct usb_dev_state, list);
 		destroy_all_async(ps);
 		wake_up_all(&ps->wait);
 		list_del_init(&ps->list);
-		if (ps->discsignr) {
-			memset(&sinfo, 0, sizeof(sinfo));
-			sinfo.si_signo = ps->discsignr;
-			sinfo.si_errno = EPIPE;
-			sinfo.si_code = SI_ASYNCIO;
-			sinfo.si_addr = ps->disccontext;
-			kill_pid_info_as_cred(ps->discsignr, &sinfo,
-					ps->disc_pid, ps->cred, ps->secid);
-		}
+		if (ps->discsignr)
+			kill_pid_usb_asyncio(ps->discsignr, EPIPE,
+					ps->disccontext, ps->disc_pid,
+					ps->cred);
 	}
 }
 

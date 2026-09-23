@@ -20,6 +20,7 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/list.h>
+#include <linux/pm_runtime.h>
 #include <linux/slab.h>
 #include <linux/scatterlist.h>
 #include <linux/types.h>
@@ -29,6 +30,79 @@
 #define UDC_TRACE_STR_MAX	512
 
 struct usb_ep;
+
+/* CAF addition (not in mainline): h/w accelerated (GSI) endpoints. */
+enum ep_type {
+	EP_TYPE_NORMAL = 0,
+	EP_TYPE_GSI,
+};
+
+/* CAF addition (not in mainline): operation codes for GSI-enabled EPs. */
+enum gsi_ep_op {
+	GSI_EP_OP_CONFIG = 0,
+	GSI_EP_OP_STARTXFER,
+	GSI_EP_OP_STORE_DBL_INFO,
+	GSI_EP_OP_ENABLE_GSI,
+	GSI_EP_OP_UPDATEXFER,
+	GSI_EP_OP_RING_DB,
+	GSI_EP_OP_ENDXFER,
+	GSI_EP_OP_GET_CH_INFO,
+	GSI_EP_OP_GET_XFER_IDX,
+	GSI_EP_OP_PREPARE_TRBS,
+	GSI_EP_OP_FREE_TRBS,
+	GSI_EP_OP_SET_CLR_BLOCK_DBL,
+	GSI_EP_OP_CHECK_FOR_SUSPEND,
+	GSI_EP_OP_DISABLE,
+};
+
+/*
+ * struct usb_gsi_request - CAF addition (not in mainline): describes a
+ * request on a GSI (h/w accelerated) endpoint.
+ * @buf_base_addr: base pointer to buffer allocated for each GSI EP.
+ * @dma: DMA address corresponding to buf_base_addr.
+ * @num_bufs: number of buffers associated with the GSI EP.
+ * @buf_len: size of each individual buffer.
+ * @db_reg_phs_addr_lsb: IPA channel doorbell register's physical address LSB.
+ * @mapped_db_reg_phs_addr_lsb: doorbell LSB IOVA address mapped with IOMMU.
+ * @db_reg_phs_addr_msb: IPA channel doorbell register's physical address MSB.
+ * @sgt_trb_xfer_ring: USB TRB ring related sgtable entries.
+ * @sgt_data_buff: data buffer related sgtable entries.
+ */
+struct usb_gsi_request {
+	void *buf_base_addr;
+	dma_addr_t dma;
+	size_t num_bufs;
+	size_t buf_len;
+	u32 db_reg_phs_addr_lsb;
+	dma_addr_t mapped_db_reg_phs_addr_lsb;
+	u32 db_reg_phs_addr_msb;
+	struct sg_table sgt_trb_xfer_ring;
+	struct sg_table sgt_data_buff;
+};
+
+/*
+ * struct gsi_channel_info - CAF addition (not in mainline).
+ * @last_trb_addr: address (LSB) of last TRB in queue, for rollover.
+ * @const_buffer_size: TRB buffer size in KB.
+ * @depcmd_low_addr: used by GSI hardware to write "Update Transfer" cmd.
+ * @depcmd_hi_addr: used to write "Update Transfer" command.
+ * @gevntcount_low_addr: GEVNCOUNT low address.
+ * @gevntcount_hi_addr: GEVNCOUNT high address.
+ * @xfer_ring_len: length of transfer ring in bytes.
+ * @xfer_ring_base_addr: physical base address of transfer ring.
+ * @ch_req: request-specific info for certain GSI EP operations.
+ */
+struct gsi_channel_info {
+	u16 last_trb_addr;
+	u8 const_buffer_size;
+	u32 depcmd_low_addr;
+	u8 depcmd_hi_addr;
+	u32 gevntcount_low_addr;
+	u8 gevntcount_hi_addr;
+	u16 xfer_ring_len;
+	u64 xfer_ring_base_addr;
+	struct usb_gsi_request *ch_req;
+};
 
 /**
  * struct usb_request - describes one i/o request
@@ -148,6 +222,9 @@ struct usb_ep_ops {
 
 	int (*fifo_status) (struct usb_ep *ep);
 	void (*fifo_flush) (struct usb_ep *ep);
+	/* CAF addition (not in mainline): h/w accelerated (GSI) endpoints. */
+	int (*gsi_ep_op)(struct usb_ep *ep, void *op_data,
+		enum gsi_ep_op op);
 };
 
 /**
@@ -236,6 +313,10 @@ struct usb_ep {
 	u8			address;
 	const struct usb_endpoint_descriptor	*desc;
 	const struct usb_ss_ep_comp_descriptor	*comp_desc;
+	/* CAF additions (not in mainline). */
+	enum ep_type		ep_type;
+	u8			ep_num;
+	bool			endless;
 };
 
 /*-------------------------------------------------------------------------*/
@@ -253,6 +334,9 @@ int usb_ep_clear_halt(struct usb_ep *ep);
 int usb_ep_set_wedge(struct usb_ep *ep);
 int usb_ep_fifo_status(struct usb_ep *ep);
 void usb_ep_fifo_flush(struct usb_ep *ep);
+/* CAF addition (not in mainline), defined in udc/core.c. */
+int usb_gsi_ep_op(struct usb_ep *ep,
+		struct usb_gsi_request *req, enum gsi_ep_op op);
 #else
 static inline void usb_ep_set_maxpacket_limit(struct usb_ep *ep,
 		unsigned maxpacket_limit)
@@ -282,6 +366,9 @@ static inline int usb_ep_fifo_status(struct usb_ep *ep)
 { return 0; }
 static inline void usb_ep_fifo_flush(struct usb_ep *ep)
 { }
+static inline int usb_gsi_ep_op(struct usb_ep *ep,
+		struct usb_gsi_request *req, enum gsi_ep_op op)
+{ return 0; }
 #endif /* USB_GADGET */
 
 /*-------------------------------------------------------------------------*/
@@ -322,6 +409,9 @@ struct usb_gadget_ops {
 	struct usb_ep *(*match_ep)(struct usb_gadget *,
 			struct usb_endpoint_descriptor *,
 			struct usb_ss_ep_comp_descriptor *);
+	/* CAF additions (not in mainline). */
+	int	(*restart)(struct usb_gadget *);
+	int	(*func_wakeup)(struct usb_gadget *, int interface_id);
 };
 
 /**
@@ -433,6 +523,7 @@ struct usb_gadget {
 	u32				extra_buf_alloc;
 	bool				l1_supported;
 	bool				is_chipidea;
+	bool				remote_wakeup;
 };
 #define work_to_gadget(w)	(container_of((w), struct usb_gadget, work))
 
@@ -566,8 +657,9 @@ static inline int gadget_is_otg(struct usb_gadget *g)
 #if IS_ENABLED(CONFIG_USB_GADGET)
 int usb_gadget_frame_number(struct usb_gadget *gadget);
 int usb_gadget_wakeup(struct usb_gadget *gadget);
-/* CAF addition (not in mainline), defined in udc/core.c. */
+/* CAF additions (not in mainline), defined in udc/core.c. */
 int usb_gadget_func_wakeup(struct usb_gadget *gadget, int interface_id);
+int usb_gadget_restart(struct usb_gadget *gadget);
 int usb_gadget_set_selfpowered(struct usb_gadget *gadget);
 int usb_gadget_clear_selfpowered(struct usb_gadget *gadget);
 int usb_gadget_vbus_connect(struct usb_gadget *gadget);
@@ -584,6 +676,8 @@ static inline int usb_gadget_wakeup(struct usb_gadget *gadget)
 { return 0; }
 static inline int usb_gadget_func_wakeup(struct usb_gadget *gadget,
 					 int interface_id)
+{ return 0; }
+static inline int usb_gadget_restart(struct usb_gadget *gadget)
 { return 0; }
 static inline int usb_gadget_set_selfpowered(struct usb_gadget *gadget)
 { return 0; }
@@ -886,6 +980,137 @@ extern int usb_gadget_ep_match_desc(struct usb_gadget *gadget,
 
 /* utility to update vbus status for udc core, it may be scheduled */
 extern void usb_udc_vbus_handler(struct usb_gadget *gadget, bool status);
+
+/*-------------------------------------------------------------------------*/
+
+/*
+ * CAF additions (not in mainline): runtime-PM helpers for gadget function
+ * drivers to keep the gadget's parent device awake while in use. Ported
+ * unmodified from port-4.14's gadget.h (all self-contained static inlines
+ * over pm_runtime_*(), no other dependencies).
+ */
+
+/**
+ * usb_gadget_autopm_get - increment PM-usage counter of usb gadget's parent
+ * device.
+ * @gadget: usb gadget whose parent device counter is incremented
+ *
+ * This routine should be called by function driver when it wants to use
+ * gadget's parent device and needs to guarantee that it is not suspended. In
+ * addition, the routine prevents subsequent autosuspends of gadget's parent
+ * device. However if the autoresume fails then the counter is re-decremented.
+ *
+ * This routine can run only in process context.
+ */
+static inline int usb_gadget_autopm_get(struct usb_gadget *gadget)
+{
+	int status = -ENODEV;
+
+	if (!gadget || !gadget->dev.parent)
+		return status;
+
+	status = pm_runtime_get_sync(gadget->dev.parent);
+	if (status < 0)
+		pm_runtime_put_sync(gadget->dev.parent);
+
+	if (status > 0)
+		status = 0;
+	return status;
+}
+
+/**
+ * usb_gadget_autopm_get_async - increment PM-usage counter of usb gadget's
+ * parent device.
+ * @gadget: usb gadget whose parent device counter is incremented
+ *
+ * This routine increments @gadget parent device PM usage counter and queue an
+ * autoresume request if the device is suspended. It does not autoresume device
+ * directly (it only queues a request). After a successful call, the device may
+ * not yet be resumed.
+ *
+ * This routine can run in atomic context.
+ */
+static inline int usb_gadget_autopm_get_async(struct usb_gadget *gadget)
+{
+	int status = -ENODEV;
+
+	if (!gadget || !gadget->dev.parent)
+		return status;
+
+	status = pm_runtime_get(gadget->dev.parent);
+	if (status < 0 && status != -EINPROGRESS)
+		pm_runtime_put_noidle(gadget->dev.parent);
+
+	if (status > 0 || status == -EINPROGRESS)
+		status = 0;
+	return status;
+}
+
+/**
+ * usb_gadget_autopm_get_noresume - increment PM-usage counter of usb gadget's
+ * parent device.
+ * @gadget: usb gadget whose parent device counter is incremented
+ *
+ * This routine increments PM-usage count of @gadget parent device but does not
+ * carry out an autoresume.
+ *
+ * This routine can run in atomic context.
+ */
+static inline void usb_gadget_autopm_get_noresume(struct usb_gadget *gadget)
+{
+	if (gadget && gadget->dev.parent)
+		pm_runtime_get_noresume(gadget->dev.parent);
+}
+
+/**
+ * usb_gadget_autopm_put - decrement PM-usage counter of usb gadget's parent
+ * device.
+ * @gadget: usb gadget whose parent device counter is decremented.
+ *
+ * This routine should be called by function driver when it is finished using
+ * @gadget parent device and wants to allow it to autosuspend. It decrements
+ * PM-usage counter of @gadget parent device, when the counter reaches 0, a
+ * delayed autosuspend request is attempted.
+ *
+ * This routine can run only in process context.
+ */
+static inline void usb_gadget_autopm_put(struct usb_gadget *gadget)
+{
+	if (gadget && gadget->dev.parent)
+		pm_runtime_put_sync(gadget->dev.parent);
+}
+
+/**
+ * usb_gadget_autopm_put_async - decrement PM-usage counter of usb gadget's
+ * parent device.
+ * @gadget: usb gadget whose parent device counter is decremented.
+ *
+ * This routine decrements PM-usage counter of @gadget parent device and
+ * schedules a delayed autosuspend request if the counter is <= 0.
+ *
+ * This routine can run in atomic context.
+ */
+static inline void usb_gadget_autopm_put_async(struct usb_gadget *gadget)
+{
+	if (gadget && gadget->dev.parent)
+		pm_runtime_put(gadget->dev.parent);
+}
+
+/**
+ * usb_gadget_autopm_put_no_suspend - decrement PM-usage counter of usb gadget's
+ * parent device.
+ * @gadget: usb gadget whose parent device counter is decremented.
+ *
+ * This routine decrements PM-usage counter of @gadget parent device but does
+ * not carry out an autosuspend.
+ *
+ * This routine can run in atomic context.
+ */
+static inline void usb_gadget_autopm_put_no_suspend(struct usb_gadget *gadget)
+{
+	if (gadget && gadget->dev.parent)
+		pm_runtime_put_noidle(gadget->dev.parent);
+}
 
 /*-------------------------------------------------------------------------*/
 

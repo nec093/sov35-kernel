@@ -29,6 +29,7 @@
 #include <linux/nvmem-consumer.h>
 #include <linux/debugfs.h>
 #include <linux/hrtimer.h>
+#include <linux/pinctrl/consumer.h>
 
 /* QUSB2PHY_PWR_CTRL1 register related bits */
 #define PWR_CTRL1_POWR_DOWN		BIT(0)

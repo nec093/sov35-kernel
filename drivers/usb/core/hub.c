@@ -1523,7 +1523,7 @@ static int hub_configure(struct usb_hub *hub,
 	/* power budgeting mostly matters with bus-powered hubs,
 	 * and battery-powered root hubs (may provide just 8 mA).
 	 */
-	ret = usb_get_status(hdev, USB_RECIP_DEVICE, 0, &hubstatus);
+	ret = usb_get_std_status(hdev, USB_RECIP_DEVICE, 0, &hubstatus);
 	if (ret) {
 		message = "can't get hub status";
 		goto fail;
@@ -3333,7 +3333,7 @@ static int finish_port_resume(struct usb_device *udev)
 	 */
 	if (status == 0) {
 		devstatus = 0;
-		status = usb_get_status(udev, USB_RECIP_DEVICE, 0, &devstatus);
+		status = usb_get_std_status(udev, USB_RECIP_DEVICE, 0, &devstatus);
 
 		/* If a normal resume failed, try doing a reset-resume */
 		if (status && !udev->reset_resume && udev->persist_enabled) {
@@ -3357,7 +3357,7 @@ static int finish_port_resume(struct usb_device *udev)
 			if (devstatus & (1 << USB_DEVICE_REMOTE_WAKEUP))
 				status = usb_disable_remote_wakeup(udev);
 		} else {
-			status = usb_get_status(udev, USB_RECIP_INTERFACE, 0,
+			status = usb_get_std_status(udev, USB_RECIP_INTERFACE, 0,
 					&devstatus);
 			if (!status && devstatus & (USB_INTRF_STAT_FUNC_RW_CAP
 					| USB_INTRF_STAT_FUNC_RW))
@@ -4339,7 +4339,8 @@ static int hub_set_address(struct usb_device *udev, int devnum)
 	if (udev->state != USB_STATE_DEFAULT)
 		return -EINVAL;
 	if (hcd->driver->address_device)
-		retval = hcd->driver->address_device(hcd, udev);
+		retval = hcd->driver->address_device(hcd, udev,
+				USB_CTRL_SET_TIMEOUT);
 	else
 		retval = usb_control_msg(udev, usb_sndaddr0pipe(),
 				USB_REQ_SET_ADDRESS, 0, devnum, 0,
@@ -4921,7 +4922,7 @@ retry_enum:
 				&& udev->bus_mA <= unit_load) {
 			u16	devstat;
 
-			status = usb_get_status(udev, USB_RECIP_DEVICE, 0,
+			status = usb_get_std_status(udev, USB_RECIP_DEVICE, 0,
 					&devstat);
 			if (status) {
 				dev_dbg(&udev->dev, "get status %d ?\n", status);

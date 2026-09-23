@@ -478,7 +478,9 @@ static int dwc3_alloc_trb_pool(struct dwc3_ep *dep)
 	if (dep->trb_pool)
 		return 0;
 
-	dep->trb_pool = dma_zalloc_coherent(dwc->sysdev,
+	/* dma_alloc_coherent() always zeroes; dma_zalloc_coherent() was
+	 * removed upstream as redundant. */
+	dep->trb_pool = dma_alloc_coherent(dwc->sysdev,
 			sizeof(struct dwc3_trb) * num_trbs,
 			&dep->trb_pool_dma, GFP_KERNEL);
 	if (!dep->trb_pool) {

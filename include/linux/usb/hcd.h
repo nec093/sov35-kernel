@@ -119,6 +119,8 @@ struct usb_hcd {
 	 */
 	struct phy		*phy;
 	struct usb_phy_roothub	*phy_roothub;
+	/* CAF addition (not in mainline): auto-remove the above ->phy. */
+	unsigned		remove_phy:1;
 
 	/* Flags that need to be manipulated atomically because they can
 	 * change while the host controller is running.  Always use
