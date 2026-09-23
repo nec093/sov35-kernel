@@ -10,6 +10,7 @@
 #include <asm/cputype.h>
 #include <asm/cpufeature.h>
 #include <asm/fpsimd.h>
+#include <asm/system_misc.h>
 
 #include <linux/bitops.h>
 #include <linux/bug.h>
@@ -24,6 +25,11 @@
 #include <linux/sched.h>
 #include <linux/smp.h>
 #include <linux/delay.h>
+#include <linux/export.h>
+
+/* CAF addition (not in mainline); see asm/system_misc.h. */
+char *(*arch_read_hardware_id)(void);
+EXPORT_SYMBOL(arch_read_hardware_id);
 
 /*
  * In case the boot CPU is hotpluggable, we record its initial state and

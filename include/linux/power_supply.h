@@ -289,8 +289,9 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_PD,		/* Power Delivery Port */
 	POWER_SUPPLY_TYPE_USB_PD_DRP,		/* PD Dual Role Port */
 	POWER_SUPPLY_TYPE_APPLE_BRICK_ID,	/* Apple Charging Method */
-	/* CAF addition (not in mainline). */
+	/* CAF additions (not in mainline). */
 	POWER_SUPPLY_TYPE_USB_FLOAT,		/* Floating charger */
+	POWER_SUPPLY_TYPE_BMS,			/* Battery Monitor System */
 };
 
 enum power_supply_usb_type {

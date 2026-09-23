@@ -34,6 +34,15 @@ extern void __show_regs(struct pt_regs *);
 
 extern void (*arm_pm_restart)(enum reboot_mode reboot_mode, const char *cmd);
 
+/*
+ * CAF addition (not in mainline): optional hook a platform driver can set
+ * to override the hardware-id string reported to userspace (originally
+ * used to also print a "Hardware:" line in /proc/cpuinfo, a display
+ * mainline itself has since dropped entirely for arm64; kept here as a
+ * bare hook since drivers/soc/qcom/socinfo.c still assigns it).
+ */
+extern char *(*arch_read_hardware_id)(void);
+
 #endif	/* __ASSEMBLY__ */
 
 #endif	/* __ASM_SYSTEM_MISC_H */

@@ -30,6 +30,19 @@ struct clk_rpmrs_data;
 extern const struct clk_ops clk_ops_rpm;
 extern const struct clk_ops clk_ops_rpm_branch;
 
+/*
+ * struct rpm_clk and everything using it below embed a legacy CAF
+ * "struct clk" (from linux/clk/msm-clk-provider.h), whose definition is
+ * itself entirely conditional on CONFIG_COMMON_CLK_MSM. That legacy clk
+ * framework is unused on this platform (drivers/clk/qcom/clk-smd-rpm.c,
+ * the actual RPM clock driver in use, is a modern common-clk-framework
+ * (struct clk_hw) driver and only needs the key/id macros above from
+ * this header) -- guard this section the same way msm-clk-provider.h
+ * guards struct clk itself, so this header stays usable by consumers
+ * that don't need the legacy struct.
+ */
+#if defined(CONFIG_COMMON_CLK_MSM)
+
 struct rpm_clk {
 	int rpm_res_type;
 	int rpm_key;
@@ -177,4 +190,7 @@ extern struct clk_rpmrs_data clk_rpmrs_data_smd;
 #define DEFINE_CLK_RPM_SMD_XO_BUFFER_PINCTRL(name, active, r_id) \
 	__DEFINE_CLK_RPM_BRANCH(name, active, RPM_CLK_BUFFER_A_REQ, r_id, 0, \
 	1000, RPM_KEY_PIN_CTRL_CLK_BUFFER_ENABLE_KEY, &clk_rpmrs_data_smd)
+
+#endif /* CONFIG_COMMON_CLK_MSM */
+
 #endif

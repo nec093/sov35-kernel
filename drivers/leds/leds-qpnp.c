@@ -3713,7 +3713,7 @@ static int qpnp_get_config_pwm(struct pwm_config_data *pwm_cfg,
 	u8 *temp_cfg;
 	const char *led_label;
 
-	pwm_cfg->pwm_dev = of_pwm_get(node, NULL);
+	pwm_cfg->pwm_dev = of_pwm_get(&pdev->dev, node, NULL);
 
 	if (IS_ERR(pwm_cfg->pwm_dev)) {
 		rc = PTR_ERR(pwm_cfg->pwm_dev);

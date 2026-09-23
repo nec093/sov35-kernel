@@ -23,6 +23,13 @@
 #include "tsens.h"
 #include "qcom/qti_virtual_sensor.h"
 
+/*
+ * Not defined anywhere visible to this file (only in the separate
+ * tsens1xxx.c/tsens2xxx.c drivers); matches this driver's own
+ * tsens_tm_driver.driver.name below.
+ */
+#define TSENS_DRIVER_NAME			"msm-tsens"
+
 LIST_HEAD(tsens_device_list);
 
 static int tsens_get_temp(void *data, int *temp)

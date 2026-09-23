@@ -334,10 +334,10 @@ static int devfreq_cooling_get_requested_power(struct thermal_cooling_device *cd
 	/* Get static power */
 	static_power = get_static_power(dfc, freq);
 
-	trace_thermal_power_devfreq_get_power(cdev, status, freq, dyn_power,
-					      static_power);
-
 	*power = dyn_power + static_power;
+
+	trace_thermal_power_devfreq_get_power(cdev, status, freq, dyn_power,
+					      static_power, *power);
 
 	return 0;
 }

@@ -48,7 +48,7 @@ enum debug_cc {
 };
 
 /**
- * struct clk_src - Structure of clock source for debug mux
+ * struct debug_clk_src - Structure of clock source for debug mux
  *
  * @parents:		clock name to be used as parent for debug mux.
  * @prim_mux_sel:	debug mux index at global clock controller.
@@ -69,7 +69,7 @@ enum debug_cc {
  * @cbcr_offset:	branch register to turn on debug mux.
  * @misc_div_val:	includes any pre-set dividers in the measurement logic.
  */
-struct clk_src {
+struct debug_clk_src {
 	const char *parents;
 	int prim_mux_sel;
 	u32 prim_mux_div_val;
@@ -87,13 +87,13 @@ struct clk_src {
 };
 
 #define MUX_SRC_LIST(...) \
-	.parent = (struct clk_src[]){__VA_ARGS__}, \
-	.num_parents = ARRAY_SIZE(((struct clk_src[]){__VA_ARGS__}))
+	.parent = (struct debug_clk_src[]){__VA_ARGS__}, \
+	.num_parents = ARRAY_SIZE(((struct debug_clk_src[]){__VA_ARGS__}))
 
 /**
  * struct clk_debug_mux - Structure of clock debug mux
  *
- * @parent:		structure of clk_src
+ * @parent:		structure of debug_clk_src
  * @num_parents:	number of parents
  * @regmap:		regmaps of debug mux
  * @priv:		private measure_clk_data to be used by debug mux
@@ -111,7 +111,7 @@ struct clk_src {
  * @hw:			handle between common and hardware-specific interfaces.
  */
 struct clk_debug_mux {
-	struct clk_src *parent;
+	struct debug_clk_src *parent;
 	int num_parents;
 	struct regmap **regmap;
 	void *priv;

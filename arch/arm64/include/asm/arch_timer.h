@@ -205,6 +205,21 @@ static __always_inline u64 __arch_counter_get_cntvct(void)
 	return cnt;
 }
 
+/*
+ * CAF addition (not in mainline): mainline made the equivalent function
+ * in drivers/clocksource/arm_arch_timer.c file-static and exposed
+ * arch_timer_read_counter() (an indirect function pointer, to also
+ * support mem-mapped counter variants) as the new public API instead.
+ * Several CAF SoC drivers outside the clocksource subsystem still call
+ * this by its original name for a direct (non-mem-mapped) counter read;
+ * reintroduced here as a thin wrapper so those callers don't all need
+ * touching individually.
+ */
+static __always_inline u64 arch_counter_get_cntvct(void)
+{
+	return __arch_counter_get_cntvct();
+}
+
 static inline int arch_timer_arch_init(void)
 {
 	return 0;

@@ -1272,13 +1272,6 @@ static blk_status_t crypt_convert(struct crypt_config *cc,
 		}
 	}
 
-	/*
-	 * dm-crypt performance can vary greatly depending on which crypto
-	 * algorithm implementation is used.  Help people debug performance
-	 * problems by logging the ->cra_driver_name.
-	 */
-	DMINFO("%s using implementation \"%s\"", ciphermode,
-	       crypto_skcipher_alg(any_tfm(cc))->base.cra_driver_name);
 	return 0;
 }
 

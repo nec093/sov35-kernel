@@ -211,6 +211,16 @@ static struct attribute_group cpu_isolated_attr_group = {
 
 #endif
 
+/*
+ * CAF addition (not in mainline): per-CPU scheduler load-boost knob,
+ * originally consumed by CAF's WALT/EAS scheduler extensions. This
+ * project made the standing decision not to port WALT/EAS (Phase A), so
+ * the per-cpu variable is defined here purely to back the sysfs knob
+ * below -- it is not read anywhere in the scheduler, i.e. writing to it
+ * currently has no effect.
+ */
+static DEFINE_PER_CPU(int, sched_load_boost);
+
 static ssize_t show_sched_load_boost(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {

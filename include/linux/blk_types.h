@@ -332,6 +332,12 @@ enum req_flag_bits {
 
 	__REQ_HIPRI,
 
+	/*
+	 * CAF addition (not in mainline): Android-specific flag, ok to not
+	 * encrypt (already encrypted at fs level).
+	 */
+	__REQ_NOENCRYPT,
+
 	/* for driver use */
 	__REQ_DRV,
 	__REQ_SWAP,		/* swapping request. */
@@ -357,6 +363,8 @@ enum req_flag_bits {
 
 #define REQ_NOUNMAP		(1ULL << __REQ_NOUNMAP)
 #define REQ_HIPRI		(1ULL << __REQ_HIPRI)
+
+#define REQ_NOENCRYPT		(1ULL << __REQ_NOENCRYPT)
 
 #define REQ_DRV			(1ULL << __REQ_DRV)
 #define REQ_SWAP		(1ULL << __REQ_SWAP)

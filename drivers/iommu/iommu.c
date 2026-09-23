@@ -1913,7 +1913,7 @@ int __iommu_map(struct iommu_domain *domain, unsigned long iova,
 	if (ret)
 		iommu_unmap(domain, orig_iova, orig_size - size);
 	else
-		trace_map(orig_iova, orig_paddr, orig_size);
+		trace_map(domain, orig_iova, orig_paddr, orig_size, prot);
 
 	return ret;
 }
@@ -1983,7 +1983,7 @@ static size_t __iommu_unmap(struct iommu_domain *domain,
 		unmapped += unmapped_page;
 	}
 
-	trace_unmap(orig_iova, size, unmapped);
+	trace_unmap(domain, orig_iova, size, unmapped);
 	return unmapped;
 }
 
