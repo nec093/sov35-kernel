@@ -1420,6 +1420,55 @@ static inline u64 pcm_format_to_bits(snd_pcm_format_t pcm_format)
 	return 1ULL << (__force int) pcm_format;
 }
 
+/*
+ * CAF additions (not in mainline): PCM Volume control API and PCM User
+ * control API, matching the vol_kctl/usr_kctl members of struct
+ * snd_pcm_str and the hw_no_buffer member of struct snd_pcm_substream
+ * above.
+ */
+
+/* array element of volume */
+struct snd_pcm_volume_elem {
+	int volume;
+};
+
+/* pp information; retrieved via snd_kcontrol_chip() */
+struct snd_pcm_volume {
+	struct snd_pcm *pcm;	/* assigned PCM instance */
+	int stream;		/* PLAYBACK or CAPTURE */
+	struct snd_kcontrol *kctl;
+	const struct snd_pcm_volume_elem *volume;
+	int max_length;
+	void *private_data;	/* optional: private data pointer */
+};
+
+int snd_pcm_add_volume_ctls(struct snd_pcm *pcm, int stream,
+			   const struct snd_pcm_volume_elem *volume,
+			   int max_length,
+			   unsigned long private_value,
+			   struct snd_pcm_volume **info_ret);
+
+/* array element of usr elem */
+struct snd_pcm_usr_elem {
+	int val[128];
+};
+
+/* pp information; retrieved via snd_kcontrol_chip() */
+struct snd_pcm_usr {
+	struct snd_pcm *pcm;	/* assigned PCM instance */
+	int stream;		/* PLAYBACK or CAPTURE */
+	struct snd_kcontrol *kctl;
+	const struct snd_pcm_usr_elem *usr;
+	int max_length;
+	void *private_data;	/* optional: private data pointer */
+};
+
+int snd_pcm_add_usr_ctls(struct snd_pcm *pcm, int stream,
+			 const struct snd_pcm_usr_elem *usr,
+			 int max_length, int max_control_str_len,
+			 unsigned long private_value,
+			 struct snd_pcm_usr **info_ret);
+
 /* printk helpers */
 #define pcm_err(pcm, fmt, args...) \
 	dev_err((pcm)->card->dev, fmt, ##args)
