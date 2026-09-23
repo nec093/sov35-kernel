@@ -205,7 +205,7 @@ do {								\
 	ret += length;						\
 } while (0)
 
-static void drain_timer_func(unsigned long data)
+static void drain_timer_func(struct timer_list *t)
 {
 	queue_work(driver->diag_wq, &(driver->diag_drain_work));
 }
@@ -612,15 +612,16 @@ void diag_record_stats(int type, int flag)
 
 void diag_get_timestamp(char *time_str)
 {
-	struct timeval t;
+	struct timespec64 t;
 	struct tm broken_tm;
 
-	do_gettimeofday(&t);
+	ktime_get_real_ts64(&t);
 	if (!time_str)
 		return;
-	time_to_tm(t.tv_sec, 0, &broken_tm);
+	time64_to_tm(t.tv_sec, 0, &broken_tm);
 	scnprintf(time_str, DIAG_TS_SIZE, "%d:%d:%d:%ld", broken_tm.tm_hour,
-				broken_tm.tm_min, broken_tm.tm_sec, t.tv_usec);
+				broken_tm.tm_min, broken_tm.tm_sec,
+				t.tv_nsec / NSEC_PER_USEC);
 }
 
 int diag_get_remote(int remote_info)
@@ -1358,9 +1359,8 @@ int diag_md_session_create(int mode, int peripheral_mask, int proc)
 		driver->md_session_map[i] = new_session;
 		driver->md_session_mask |= MD_PERIPHERAL_MASK(i);
 	}
-	setup_timer(&new_session->hdlc_reset_timer,
-		diag_md_hdlc_reset_timer_func,
-		new_session->pid);
+	timer_setup(&new_session->hdlc_reset_timer,
+		diag_md_hdlc_reset_timer_func, 0);
 
 	driver->md_session_mode = DIAG_MD_PERIPHERAL;
 	mutex_unlock(&driver->md_session_lock);
@@ -4031,7 +4031,8 @@ static int diagchar_setup_cdev(dev_t devno)
 	if (!driver->diag_dev)
 		return -EIO;
 
-	driver->diag_dev->power.wakeup = wakeup_source_register("DIAG_WS");
+	driver->diag_dev->power.wakeup =
+		wakeup_source_register(driver->diag_dev, "DIAG_WS");
 	return 0;
 
 }
@@ -4069,7 +4070,7 @@ static int __init diagchar_init(void)
 	driver->delayed_rsp_id = 0;
 	driver->hdlc_disabled = 0;
 	driver->dci_state = DIAG_DCI_NO_ERROR;
-	setup_timer(&drain_timer, drain_timer_func, 1234);
+	timer_setup(&drain_timer, drain_timer_func, 0);
 	driver->supports_sockets = 1;
 	driver->time_sync_enabled = 0;
 	driver->uses_time_api = 0;

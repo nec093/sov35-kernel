@@ -264,6 +264,12 @@ int regcache_lookup_reg(struct regmap *map, unsigned int reg);
 
 int _regmap_raw_write(struct regmap *map, unsigned int reg,
 		      const void *val, size_t val_len, bool noinc);
+/* CAF: made non-static so regcache_sync_block_raw_multi_reg() in
+ * regcache.c can call it directly instead of going through public API.
+ */
+int _regmap_raw_multi_reg_write(struct regmap *map,
+				 const struct reg_sequence *regs,
+				 size_t num_regs);
 
 void regmap_async_complete_cb(struct regmap_async *async, int ret);
 

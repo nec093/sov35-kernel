@@ -1537,7 +1537,7 @@ static void diag_md_timer_work_fn(struct work_struct *work)
 	mutex_unlock(&driver->hdlc_disable_mutex);
 }
 
-static void hdlc_reset_timer_func(unsigned long data)
+static void hdlc_reset_timer_func(struct timer_list *t)
 {
 	pr_debug("diag: In %s, re-enabling HDLC encoding\n",
 		       __func__);
@@ -1549,9 +1549,12 @@ static void hdlc_reset_timer_func(unsigned long data)
 	hdlc_timer_in_progress = 0;
 }
 
-void diag_md_hdlc_reset_timer_func(unsigned long pid)
+void diag_md_hdlc_reset_timer_func(struct timer_list *t)
 {
+	struct diag_md_session_t *session = from_timer(session, t,
+							hdlc_reset_timer);
 	struct diag_md_hdlc_reset_work *hdlc_reset_work = NULL;
+	unsigned long pid = session->pid;
 
 	pr_debug("diag: In %s, re-enabling HDLC encoding\n",
 		       __func__);
@@ -1877,7 +1880,7 @@ int diagfwd_init(void)
 			      GFP_KERNEL);
 	if (!hdlc_decode)
 		goto err;
-	setup_timer(&driver->hdlc_reset_timer, hdlc_reset_timer_func, 0);
+	timer_setup(&driver->hdlc_reset_timer, hdlc_reset_timer_func, 0);
 	kmemleak_not_leak(hdlc_decode);
 	driver->encoded_rsp_len = 0;
 	driver->rsp_buf_busy = 0;

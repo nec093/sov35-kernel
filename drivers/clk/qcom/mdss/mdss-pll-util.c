@@ -402,7 +402,11 @@ pnode_err:
 	if (pnode)
 		of_node_put(pnode);
 
-	dma_release_declared_memory(&pdev->dev);
+	/*
+	 * dma_release_declared_memory() was removed from mainline; this
+	 * device never calls dma_declare_coherent_memory() in this file,
+	 * so it was a no-op safety net even on kernels that had it.
+	 */
 	return rc;
 }
 
