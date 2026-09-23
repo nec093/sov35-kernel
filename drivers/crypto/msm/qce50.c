@@ -3043,9 +3043,9 @@ static void _qce_req_complete(struct qce_device *pce_dev, unsigned int req_info)
 	}
 }
 
-static void qce_multireq_timeout(unsigned long data)
+static void qce_multireq_timeout(struct timer_list *t)
 {
-	struct qce_device *pce_dev = (struct qce_device *)data;
+	struct qce_device *pce_dev = from_timer(pce_dev, t, timer);
 	int ret = 0;
 	int last_seq;
 	unsigned long flags;
@@ -6082,9 +6082,7 @@ void *qce_open(struct platform_device *pdev, int *rc)
 	setup_dummy_req(pce_dev);
 	atomic_set(&pce_dev->no_of_queued_req, 0);
 	pce_dev->mode = IN_INTERRUPT_MODE;
-	init_timer(&(pce_dev->timer));
-	pce_dev->timer.function = qce_multireq_timeout;
-	pce_dev->timer.data = (unsigned long)pce_dev;
+	timer_setup(&pce_dev->timer, qce_multireq_timeout, 0);
 	pce_dev->timer.expires = jiffies + DELAY_IN_JIFFIES;
 	pce_dev->intr_cadence = 0;
 	pce_dev->dev_no = pcedev_no;

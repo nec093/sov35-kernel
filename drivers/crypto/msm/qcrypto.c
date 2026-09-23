@@ -672,17 +672,16 @@ static void qcrypto_ce_set_bus(struct crypto_engine *pengine,
 	}
 }
 
-static void qcrypto_bw_reaper_timer_callback(unsigned long data)
+static void qcrypto_bw_reaper_timer_callback(struct timer_list *t)
 {
-	struct crypto_engine *pengine = (struct crypto_engine *)data;
+	struct crypto_engine *pengine = from_timer(pengine, t,
+						    bw_reaper_timer);
 
 	schedule_work(&pengine->bw_reaper_ws);
 }
 
 static void qcrypto_bw_set_timeout(struct crypto_engine *pengine)
 {
-	pengine->bw_reaper_timer.data =
-			(unsigned long)(pengine);
 	pengine->bw_reaper_timer.expires = jiffies +
 			msecs_to_jiffies(QCRYPTO_HIGH_BANDWIDTH_TIMEOUT);
 	mod_timer(&(pengine->bw_reaper_timer),
@@ -1492,15 +1491,22 @@ static int _qcrypto_setkey_des(struct crypto_ablkcipher *cipher, const u8 *key,
 {
 	struct crypto_tfm *tfm = crypto_ablkcipher_tfm(cipher);
 	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(tfm);
-	u32 tmp[DES_EXPKEY_WORDS];
+	/*
+	 * des_ekey() itself (the raw weak-key test) is a static helper
+	 * private to lib/crypto/des.c upstream; des_expand_key() is its
+	 * public replacement, doing the same key-schedule expansion plus
+	 * weak-key rejection (-ENOKEY) in one call. The expanded schedule
+	 * itself is unused here (this driver only needs the validation
+	 * side-effect -- the raw key is what's programmed into the HW
+	 * engine below), so a scratch struct des_ctx is fine.
+	 */
+	struct des_ctx tmp;
 	int ret;
 
 	if (!key) {
 		pr_err("%s Inavlid key pointer\n", __func__);
 		return -EINVAL;
 	}
-
-	ret = des_ekey(tmp, key);
 
 	if ((ctx->flags & QCRYPTO_CTX_USE_HW_KEY) == QCRYPTO_CTX_USE_HW_KEY) {
 		pr_err("%s HW KEY usage not supported for DES algorithm\n",
@@ -1513,8 +1519,13 @@ static int _qcrypto_setkey_des(struct crypto_ablkcipher *cipher, const u8 *key,
 		return -EINVAL;
 	};
 
-	if (unlikely(ret == 0) && (tfm->crt_flags & CRYPTO_TFM_REQ_WEAK_KEY)) {
-		tfm->crt_flags |= CRYPTO_TFM_RES_WEAK_KEY;
+	ret = des_expand_key(&tmp, key, len);
+	if (ret == -ENOKEY) {
+		/* CRYPTO_TFM_RES_WEAK_KEY: still defined upstream, but the
+		 * matching CRYPTO_TFM_REQ_WEAK_KEY opt-in flag that used to
+		 * gate this rejection was removed -- des_expand_key() now
+		 * always rejects weak keys unconditionally, so just mirror
+		 * that here. */
 		return -EINVAL;
 	}
 
@@ -2475,35 +2486,54 @@ static int _qcrypto_queue_req(struct crypto_priv *cp,
 	return ret;
 }
 
+/*
+ * SKCIPHER_REQUEST_ON_STACK() was replaced upstream by
+ * SYNC_SKCIPHER_REQUEST_ON_STACK(), which requires a
+ * struct crypto_sync_skcipher * tfm -- but ctx->cipher_aes192_fb is a
+ * struct crypto_skcipher * (the type every other user of this field in
+ * this driver, e.g. crypto_skcipher_setkey()/skcipher_request_alloc(),
+ * expects), so switching its type isn't a local fix here. These two
+ * fallback paths are used synchronously anyway (callback is NULL
+ * below), so just heap-allocate the request instead of using the
+ * on-stack macro; functionally equivalent, one extra allocation on an
+ * already-uncommon fallback path (AES-192, which most HW engines,
+ * including this one, don't support natively).
+ */
 static int _qcrypto_enc_aes_192_fallback(struct ablkcipher_request *req)
 {
 	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
+	struct skcipher_request *subreq;
 	int err;
 
-	SKCIPHER_REQUEST_ON_STACK(subreq, ctx->cipher_aes192_fb);
+	subreq = skcipher_request_alloc(ctx->cipher_aes192_fb, GFP_ATOMIC);
+	if (!subreq)
+		return -ENOMEM;
 	skcipher_request_set_tfm(subreq, ctx->cipher_aes192_fb);
 	skcipher_request_set_callback(subreq, req->base.flags,
 					NULL, NULL);
 	skcipher_request_set_crypt(subreq, req->src, req->dst,
 					req->nbytes, req->info);
 	err = crypto_skcipher_encrypt(subreq);
-	skcipher_request_zero(subreq);
+	skcipher_request_free(subreq);
 	return err;
 }
 
 static int _qcrypto_dec_aes_192_fallback(struct ablkcipher_request *req)
 {
 	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
+	struct skcipher_request *subreq;
 	int err;
 
-	SKCIPHER_REQUEST_ON_STACK(subreq, ctx->cipher_aes192_fb);
+	subreq = skcipher_request_alloc(ctx->cipher_aes192_fb, GFP_ATOMIC);
+	if (!subreq)
+		return -ENOMEM;
 	skcipher_request_set_tfm(subreq, ctx->cipher_aes192_fb);
 	skcipher_request_set_callback(subreq, req->base.flags,
 					NULL, NULL);
 	skcipher_request_set_crypt(subreq, req->src, req->dst,
 					req->nbytes, req->info);
 	err = crypto_skcipher_decrypt(subreq);
-	skcipher_request_zero(subreq);
+	skcipher_request_free(subreq);
 	return err;
 }
 
@@ -4962,10 +4992,9 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	pengine->pdev = pdev;
 	pengine->signature = 0xdeadbeef;
 
-	init_timer(&(pengine->bw_reaper_timer));
+	timer_setup(&pengine->bw_reaper_timer,
+			qcrypto_bw_reaper_timer_callback, 0);
 	INIT_WORK(&pengine->bw_reaper_ws, qcrypto_bw_reaper_work);
-	pengine->bw_reaper_timer.function =
-			qcrypto_bw_reaper_timer_callback;
 	INIT_WORK(&pengine->bw_allocate_ws, qcrypto_bw_allocate_work);
 	pengine->high_bw_req = false;
 	pengine->active_seq = 0;
