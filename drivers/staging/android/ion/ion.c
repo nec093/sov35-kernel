@@ -1151,24 +1151,22 @@ static void ion_buffer_sync_for_device(struct ion_buffer *buffer,
 	mutex_unlock(&buffer->lock);
 }
 
-static int ion_vm_fault(struct vm_fault *vmf)
+static vm_fault_t ion_vm_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct ion_buffer *buffer = vma->vm_private_data;
 	unsigned long pfn;
-	int ret;
+	vm_fault_t ret;
 
 	mutex_lock(&buffer->lock);
 	ion_buffer_page_dirty(buffer->pages + vmf->pgoff);
 	BUG_ON(!buffer->pages || !buffer->pages[vmf->pgoff]);
 
 	pfn = page_to_pfn(ion_buffer_page(buffer->pages[vmf->pgoff]));
-	ret = vm_insert_pfn(vma, vmf->address, pfn);
+	ret = vmf_insert_pfn(vma, vmf->address, pfn);
 	mutex_unlock(&buffer->lock);
-	if (ret)
-		return VM_FAULT_ERROR;
 
-	return VM_FAULT_NOPAGE;
+	return ret;
 }
 
 static void ion_vm_open(struct vm_area_struct *vma)
@@ -1302,8 +1300,12 @@ static struct dma_buf_ops dma_buf_ops = {
 	.release = ion_dma_buf_release,
 	.begin_cpu_access = ion_dma_buf_begin_cpu_access,
 	.end_cpu_access = ion_dma_buf_end_cpu_access,
-	.map_atomic = ion_dma_buf_kmap,
-	.unmap_atomic = ion_dma_buf_kunmap,
+	/*
+	 * .map_atomic/.unmap_atomic (the non-sleeping kmap variant) were
+	 * removed from struct dma_buf_ops upstream; .map/.unmap (below)
+	 * already point at the same functions and cover the
+	 * functionality.
+	 */
 	.map = ion_dma_buf_kmap,
 	.unmap = ion_dma_buf_kunmap,
 };
@@ -2056,9 +2058,11 @@ void __init ion_reserve(struct ion_platform_data *data)
 		if (data->heaps[i].base == 0) {
 			phys_addr_t paddr;
 
-			paddr = memblock_alloc_base(data->heaps[i].size,
-						    data->heaps[i].align,
-						    MEMBLOCK_ALLOC_ANYWHERE);
+			/* memblock_alloc_base() removed upstream; the
+			 * MEMBLOCK_ALLOC_ANYWHERE case is memblock_phys_alloc().
+			 */
+			paddr = memblock_phys_alloc(data->heaps[i].size,
+						    data->heaps[i].align);
 			if (!paddr) {
 				pr_err("%s: error allocating memblock for heap %d\n",
 				       __func__, i);

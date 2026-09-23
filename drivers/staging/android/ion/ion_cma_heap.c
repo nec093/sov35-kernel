@@ -92,7 +92,7 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	}
 
 	if (!ION_IS_CACHED(flags))
-		info->cpu_addr = dma_alloc_writecombine(dev, len,
+		info->cpu_addr = dma_alloc_wc(dev, len,
 							&info->handle,
 							GFP_KERNEL);
 	else
@@ -125,7 +125,7 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 
 free_mem:
 	if (!ION_IS_CACHED(flags))
-		dma_free_writecombine(dev, len, info->cpu_addr, info->handle);
+		dma_free_wc(dev, len, info->cpu_addr, info->handle);
 	else
 		dma_free_attrs(dev, len, info->cpu_addr, info->handle,
 			       DMA_ATTR_FORCE_COHERENT);
@@ -190,7 +190,7 @@ static int ion_cma_mmap(struct ion_heap *mapper, struct ion_buffer *buffer,
 				info->handle, buffer->size,
 				DMA_ATTR_FORCE_COHERENT);
 	else
-		return dma_mmap_writecombine(dev, vma, info->cpu_addr,
+		return dma_mmap_wc(dev, vma, info->cpu_addr,
 				info->handle, buffer->size);
 }
 

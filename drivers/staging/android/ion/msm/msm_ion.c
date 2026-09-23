@@ -192,12 +192,12 @@ static int ion_no_pages_cache_ops(
 				if (ptr) {
 					switch (cmd) {
 					case ION_IOC_CLEAN_CACHES:
-						__dma_clean_area(
+						__dma_flush_area(
 							ptr,
 							size_to_vmap);
 						break;
 					case ION_IOC_INV_CACHES:
-						__dma_inv_area(
+						__dma_flush_area(
 							ptr,
 							size_to_vmap);
 						break;
@@ -223,10 +223,10 @@ static int ion_no_pages_cache_ops(
 	} else {
 		switch (cmd) {
 		case ION_IOC_CLEAN_CACHES:
-			__dma_clean_area(vaddr, length);
+			__dma_flush_area(vaddr, length);
 			break;
 		case ION_IOC_INV_CACHES:
-			__dma_inv_area(vaddr, length);
+			__dma_flush_area(vaddr, length);
 			break;
 		case ION_IOC_CLEAN_INV_CACHES:
 			__dma_flush_area(vaddr, length);
@@ -297,10 +297,10 @@ static int ion_pages_cache_ops(
 
 	switch (cmd) {
 	case ION_IOC_CLEAN_CACHES:
-		op = __dma_clean_area;
+		op = __dma_flush_area;
 		break;
 	case ION_IOC_INV_CACHES:
-		op = __dma_inv_area;
+		op = __dma_flush_area;
 		break;
 	case ION_IOC_CLEAN_INV_CACHES:
 		op = __dma_flush_area;
