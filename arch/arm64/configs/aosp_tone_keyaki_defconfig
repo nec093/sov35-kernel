@@ -44,6 +44,13 @@ CONFIG_BPF_SYSCALL=y
 CONFIG_EMBEDDED=y
 # CONFIG_SLUB_DEBUG is not set
 # CONFIG_COMPAT_BRK is not set
+# XZ debug: catch list/page-allocator corruption (free_pcppages_bulk
+# LIST_POISON crash investigation) at its actual source instead of only
+# when a corrupted list is later walked. (DEBUG_VM/DEBUG_VM_PGFLAGS
+# tried too, but introduced a NEW hang inside deferred_probe_initcall's
+# flush_work() -- dropped to isolate whether DEBUG_LIST alone still
+# reproduces the original crash cleanly.)
+CONFIG_DEBUG_LIST=y
 CONFIG_PROFILING=y
 CONFIG_KPROBES=y
 CONFIG_JUMP_LABEL=y

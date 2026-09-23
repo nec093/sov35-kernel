@@ -488,6 +488,33 @@
 	qcom,usbin-vadc = <&pmi8994_vadc>;
 	usb_switch_sel = <&pmi8994_gpios 9 0>;
 	usb_id_discharge = <&pmi8994_mpps 1 0>;
+
+	/*
+	 * XZ Phase-A workaround: the inherited "extcon = <&smbcharger...>"
+	 * phandle (added by some upstream/base .dtsi in the include chain --
+	 * not directly overridden by any tone/keyaki file, confirmed present
+	 * in the compiled DTB but not found via source grep) makes
+	 * dwc3_msm_extcon_register() call extcon_get_edev_by_phandle(),
+	 * which returns -EPROBE_DEFER until qpnp-smbcharger has successfully
+	 * probed. Every dwc3_msm_probe()/-EPROBE_DEFER retry destroys and
+	 * recreates the child "dwc3" core platform device (via
+	 * of_platform_populate()/of_platform_depopulate()); repeated cycles
+	 * of this were confirmed (via dwc3_probe/dwc3_remove diagnostic
+	 * printks) to reuse the exact same `struct dwc3 *` kzalloc address
+	 * across attempts, and correlate with a genuine heap/list corruption
+	 * crash (free_pcppages_bulk() hitting LIST_POISON1/2, "nonzero
+	 * mapcount") a few retries in -- almost certainly a stale
+	 * async-work/GSI-endpoint reference surviving a dwc3_remove() that
+	 * fires against memory already reused by the next attempt. Dropping
+	 * "extcon" here lets dwc3_msm_probe() succeed on its first real
+	 * attempt (no retry cycle, no reuse, no corruption), at the cost of
+	 * losing automatic VBUS/charger-state-driven USB mode switching for
+	 * now. Revisit in a dedicated USB/charging-integration session:
+	 * either root-cause why qpnp-smbcharger isn't ready in time, or find
+	 * and fix the actual missing dwc3 probe/remove cleanup so repeated
+	 * EPROBE_DEFER cycles are safe again (they generally should be).
+	 */
+	/delete-property/ extcon;
 };
 
 &pm8994_vadc {
