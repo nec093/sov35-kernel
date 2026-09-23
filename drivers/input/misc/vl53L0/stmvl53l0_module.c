@@ -29,6 +29,7 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/time.h>
+#include <linux/timekeeping.h>
 #include <linux/platform_device.h>
 #include <linux/kobject.h>
 #include <linux/kthread.h>
@@ -495,7 +496,8 @@ static void stmvl53l0_write_offset_calibration_file(struct stmvl53l0_data *data)
 	f = filp_open("/data/calibration/offset", O_WRONLY|O_CREAT, 0644);
 	if (f != NULL) {
 		fs = get_fs();
-		set_fs(get_ds());
+		/* get_ds() was removed upstream; it was always just KERNEL_DS. */
+		set_fs(KERNEL_DS);
 		snprintf(buf, UINT_MAX_LEN, "%u", offset_calib);
 		vl53l0_dbgmsg("write offset as:%s, buf[0]:%c\n", buf, buf[0]);
 		f->f_op->write(f, buf, UINT_MAX_LEN, &f->f_pos);
@@ -514,7 +516,7 @@ static void stmvl53l0_write_xtalk_calibration_file(struct stmvl53l0_data *data)
 	f = filp_open("/data/calibration/xtalk", O_WRONLY|O_CREAT, 0644);
 	if (f != NULL) {
 		fs = get_fs();
-		set_fs(get_ds());
+		set_fs(KERNEL_DS);
 		snprintf(buf, UINT_MAX_LEN, "%u", xtalk_calib);
 		vl53l0_dbgmsg("write xtalk as:%s, buf[0]:%c\n", buf, buf[0]);
 		f->f_op->write(f, buf, UINT_MAX_LEN, &f->f_pos);
@@ -863,18 +865,20 @@ VL53L0_GetLinearityCorrectiveGain;
 
 static void stmvl53l0_ps_read_measurement(struct stmvl53l0_data *data)
 {
-	struct timeval tv;
+	struct timespec64 tv;
 	VL53L0_DEV vl53l0_dev = data;
 	VL53L0_Error Status = VL53L0_ERROR_NONE;
 	FixPoint1616_t LimitCheckCurrent;
 
-	do_gettimeofday(&tv);
+	/* do_gettimeofday()/struct timeval removed upstream; use the
+	 * timespec64-based replacement (same wall-clock semantics). */
+	ktime_get_real_ts64(&tv);
 
 	data->ps_data = data->rangeData.RangeMilliMeter;
 	input_report_abs(data->input_dev_ps, ABS_DISTANCE,
 		(int)(data->ps_data + 5) / 10);
 	input_report_abs(data->input_dev_ps, ABS_HAT0X, tv.tv_sec);
-	input_report_abs(data->input_dev_ps, ABS_HAT0Y, tv.tv_usec);
+	input_report_abs(data->input_dev_ps, ABS_HAT0Y, tv.tv_nsec / NSEC_PER_USEC);
 	input_report_abs(data->input_dev_ps, ABS_HAT1X,
 		data->rangeData.RangeMilliMeter);
 	input_report_abs(data->input_dev_ps, ABS_HAT1Y,
@@ -2105,11 +2109,12 @@ static int stmvl53l0_ioctl_handler(struct file *file,
 						(uint8_t)parameter.value,
 						(uint8_t)parameter.value2);
 			} else {
-				if (data->enableDebug)
+				if (data->enableDebug) {
 					vl53l0_dbgmsg(
 					"Set Ref : Vhv:%u, PhaseCal:%u\n",
 					(uint8_t)parameter.value,
 					(uint8_t)parameter.value2);
+				}
 					parameter.status =
 					    papi_func_tbl->SetRefCalibration(
 					    vl53l0_dev,
@@ -2879,10 +2884,10 @@ static int stmvl53l0_stop(struct stmvl53l0_data *data)
 
 	return rc;
 }
-static void stmvl53l0_timer_fn(unsigned long data)
+static void stmvl53l0_timer_fn(struct timer_list *t)
 {
 
-	VL53L0_DEV vl53l0_dev = (VL53L0_DEV)data;
+	VL53L0_DEV vl53l0_dev = from_timer(vl53l0_dev, t, timer);
 
 	vl53l0_dev->flushCount++;
 
@@ -3041,9 +3046,7 @@ int stmvl53l0_setup(struct stmvl53l0_data *data)
 		goto exit_unregister_dev_ps_1;
 	}
 
-	setup_timer(&data->timer,
-				 stmvl53l0_timer_fn,
-				(unsigned long)data);
+	timer_setup(&data->timer, stmvl53l0_timer_fn, 0);
 
 	/* to register as a misc device */
 	data->miscdev.minor = MISC_DYNAMIC_MINOR;
