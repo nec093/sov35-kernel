@@ -21,6 +21,7 @@
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
 #include <linux/extcon.h>
+#include <linux/extcon-provider.h>
 #include <linux/regulator/consumer.h>
 
 struct gpio_usbdetect {
@@ -51,10 +52,10 @@ static irqreturn_t gpio_usbdetect_vbus_irq(int irq, void *data)
 		val.intval = true;
 		extcon_set_property(usb->extcon_dev, EXTCON_USB,
 					EXTCON_PROP_USB_SS, val);
-		extcon_set_cable_state_(usb->extcon_dev, EXTCON_USB, 1);
+		extcon_set_state_sync(usb->extcon_dev, EXTCON_USB, 1);
 	} else {
 		dev_dbg(&usb->pdev->dev, "setting vbus removed notification\n");
-		extcon_set_cable_state_(usb->extcon_dev, EXTCON_USB, 0);
+		extcon_set_state_sync(usb->extcon_dev, EXTCON_USB, 0);
 	}
 
 	return IRQ_HANDLED;
@@ -90,7 +91,7 @@ static irqreturn_t gpio_usbdetect_id_irq_thread(int irq, void *data)
 
 	if (curr_id_state) {
 		dev_dbg(&usb->pdev->dev, "stopping usb host\n");
-		extcon_set_cable_state_(usb->extcon_dev, EXTCON_USB_HOST, 0);
+		extcon_set_state_sync(usb->extcon_dev, EXTCON_USB_HOST, 0);
 		enable_irq(usb->vbus_det_irq);
 	} else {
 		dev_dbg(&usb->pdev->dev, "starting usb HOST\n");
@@ -98,14 +99,12 @@ static irqreturn_t gpio_usbdetect_id_irq_thread(int irq, void *data)
 		val.intval = true;
 		extcon_set_property(usb->extcon_dev, EXTCON_USB_HOST,
 					EXTCON_PROP_USB_SS, val);
-		extcon_set_cable_state_(usb->extcon_dev, EXTCON_USB_HOST, 1);
+		extcon_set_state_sync(usb->extcon_dev, EXTCON_USB_HOST, 1);
 	}
 
 	prev_id_state = curr_id_state;
 	return IRQ_HANDLED;
 }
-
-static const u32 gpio_usb_extcon_exclusive[] = {0x3, 0};
 
 static int gpio_usbdetect_probe(struct platform_device *pdev)
 {
@@ -125,7 +124,14 @@ static int gpio_usbdetect_probe(struct platform_device *pdev)
 		return PTR_ERR(usb->extcon_dev);
 	}
 
-	usb->extcon_dev->mutually_exclusive = gpio_usb_extcon_exclusive;
+	/*
+	 * struct extcon_dev (and its mutually_exclusive field) moved to a
+	 * private header (drivers/extcon/extcon.h) upstream, no longer
+	 * driver-accessible. This isn't required for correctness: the
+	 * irq handlers above already enforce USB-device/USB-host mutual
+	 * exclusion themselves via enable_irq()/disable_irq() on the
+	 * companion irq when switching modes.
+	 */
 	rc = devm_extcon_dev_register(&pdev->dev, usb->extcon_dev);
 	if (rc) {
 		dev_err(&pdev->dev, "failed to register extcon device\n");

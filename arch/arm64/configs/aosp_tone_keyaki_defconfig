@@ -638,7 +638,7 @@ CONFIG_QPNP_COINCELL=y
 CONFIG_QPNP_REVID=y
 CONFIG_GPIO_USB_DETECT=y
 CONFIG_USB_BAM=y
-CONFIG_MSM_EXT_DISPLAY=y
+# CONFIG_MSM_EXT_DISPLAY is not set  # Phase A: HDMI/DisplayPort external-display audio-extcon notifier (drivers/platform/msm/msm_ext_display.c) -- XZs (SOV35) has no HDMI/DP output hardware; also uses the pre-refactor embeddable struct extcon_dev API (raw .supported_cable/.state/.max_supported field access + extcon_dev_register(&embedded_struct)), a deeper mismatch than the provider-API rename fixed in gpio-usbdetect.c
 # CONFIG_COMMON_CLK_XGENE is not set
 CONFIG_QCOM_CLK_SMD_RPM=y
 CONFIG_MSM_MMCC_8996=y
