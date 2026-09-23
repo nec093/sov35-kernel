@@ -847,8 +847,8 @@ void xhci_free_stream_info(struct xhci_hcd *xhci,
 static void xhci_init_endpoint_timer(struct xhci_hcd *xhci,
 		struct xhci_virt_ep *ep)
 {
-	setup_timer(&ep->stop_cmd_timer, xhci_stop_endpoint_command_watchdog,
-		    (unsigned long)ep);
+	timer_setup(&ep->stop_cmd_timer,
+		    xhci_stop_endpoint_command_watchdog, 0);
 	ep->xhci = xhci;
 }
 
@@ -1744,7 +1744,7 @@ static int scratchpad_alloc(struct xhci_hcd *xhci, gfp_t flags)
 	xhci->dcbaa->dev_context_ptrs[0] = cpu_to_le64(xhci->scratchpad->sp_dma);
 	for (i = 0; i < num_sp; i++) {
 		dma_addr_t dma;
-		void *buf = dma_zalloc_coherent(dev, xhci->page_size, &dma,
+		void *buf = dma_alloc_coherent(dev, xhci->page_size, &dma,
 				flags);
 		if (!buf)
 			goto fail_sp5;

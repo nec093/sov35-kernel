@@ -1907,7 +1907,8 @@ int xhci_alloc_streams(struct usb_hcd *hcd, struct usb_device *udev,
 int xhci_free_streams(struct usb_hcd *hcd, struct usb_device *udev,
 		struct usb_host_endpoint **eps, unsigned int num_eps,
 		gfp_t mem_flags);
-int xhci_address_device(struct usb_hcd *hcd, struct usb_device *udev);
+int xhci_address_device(struct usb_hcd *hcd, struct usb_device *udev,
+			 unsigned int timeout_ms);
 int xhci_enable_device(struct usb_hcd *hcd, struct usb_device *udev);
 int xhci_update_device(struct usb_hcd *hcd, struct usb_device *udev);
 int xhci_set_usb2_hardware_lpm(struct usb_hcd *hcd,
@@ -1968,7 +1969,7 @@ void xhci_cleanup_stalled_ring(struct xhci_hcd *xhci,
 void xhci_queue_config_ep_quirk(struct xhci_hcd *xhci,
 		unsigned int slot_id, unsigned int ep_index,
 		struct xhci_dequeue_state *deq_state);
-void xhci_stop_endpoint_command_watchdog(unsigned long arg);
+void xhci_stop_endpoint_command_watchdog(struct timer_list *t);
 void xhci_handle_command_timeout(struct work_struct *work);
 
 void xhci_ring_ep_doorbell(struct xhci_hcd *xhci, unsigned int slot_id,

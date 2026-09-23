@@ -475,14 +475,14 @@ static inline void xhci_msix_sync_irqs(struct xhci_hcd *xhci)
 
 #endif
 
-static void compliance_mode_recovery(unsigned long arg)
+static void compliance_mode_recovery(struct timer_list *t)
 {
 	struct xhci_hcd *xhci;
 	struct usb_hcd *hcd;
 	u32 temp;
 	int i;
 
-	xhci = (struct xhci_hcd *)arg;
+	xhci = from_timer(xhci, t, comp_mode_recovery_timer);
 
 	for (i = 0; i < xhci->num_usb3_ports; i++) {
 		temp = readl(xhci->usb3_ports[i]);
@@ -523,8 +523,8 @@ static void compliance_mode_recovery(unsigned long arg)
 static void compliance_mode_recovery_timer_init(struct xhci_hcd *xhci)
 {
 	xhci->port_status_u0 = 0;
-	setup_timer(&xhci->comp_mode_recovery_timer,
-		    compliance_mode_recovery, (unsigned long)xhci);
+	timer_setup(&xhci->comp_mode_recovery_timer,
+		    compliance_mode_recovery, 0);
 	xhci->comp_mode_recovery_timer.expires = jiffies +
 			msecs_to_jiffies(COMP_MODE_RCVRY_MSECS);
 
@@ -4035,8 +4035,16 @@ out:
 	return ret;
 }
 
-int xhci_address_device(struct usb_hcd *hcd, struct usb_device *udev)
+int xhci_address_device(struct usb_hcd *hcd, struct usb_device *udev,
+			 unsigned int timeout_ms)
 {
+	/*
+	 * timeout_ms: the mainline hc_driver.address_device signature
+	 * gained this parameter upstream, but xhci_setup_device() (this
+	 * driver's own implementation) doesn't have a configurable
+	 * timeout to plumb it through to -- accepted but unused, same as
+	 * every other caller of this hook in this tree.
+	 */
 	return xhci_setup_device(hcd, udev, SETUP_CONTEXT_ADDRESS);
 }
 

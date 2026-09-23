@@ -20,6 +20,10 @@ bool of_usb_host_tpl_support(struct device_node *np);
 int of_usb_update_otg_caps(struct device_node *np,
 			struct usb_otg_caps *otg_caps);
 struct device_node *usb_of_get_device_node(struct usb_device *hub, int port1);
+/* CAF addition (not in mainline), defined+exported in
+ * drivers/usb/core/of.c. */
+struct device_node *usb_of_get_child_node(struct device_node *parent,
+			int portnum);
 bool usb_of_has_combined_node(struct usb_device *udev);
 struct device_node *usb_of_get_interface_node(struct usb_device *udev,
 		u8 config, u8 ifnum);
@@ -41,6 +45,11 @@ static inline int of_usb_update_otg_caps(struct device_node *np,
 }
 static inline struct device_node *
 usb_of_get_device_node(struct usb_device *hub, int port1)
+{
+	return NULL;
+}
+static inline struct device_node *
+usb_of_get_child_node(struct device_node *parent, int portnum)
 {
 	return NULL;
 }

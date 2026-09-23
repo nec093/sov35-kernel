@@ -901,14 +901,14 @@ static void xhci_kill_endpoint_urbs(struct xhci_hcd *xhci,
  * stop endpoint command, and the endpoint's command is still pending, we assume
  * the host is dying.
  */
-void xhci_stop_endpoint_command_watchdog(unsigned long arg)
+void xhci_stop_endpoint_command_watchdog(struct timer_list *t)
 {
 	struct xhci_hcd *xhci;
 	struct xhci_virt_ep *ep;
 	int ret, i, j;
 	unsigned long flags;
 
-	ep = (struct xhci_virt_ep *) arg;
+	ep = from_timer(ep, t, stop_cmd_timer);
 	xhci = ep->xhci;
 
 	spin_lock_irqsave(&xhci->lock, flags);
