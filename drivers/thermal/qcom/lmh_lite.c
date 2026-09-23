@@ -29,6 +29,20 @@
 #include <linux/dma-mapping.h>
 #include <linux/regulator/consumer.h>
 
+/*
+ * dmac_flush_range()/dmac_inv_range() are arm32-only macros, undefined on
+ * arm64; alias to the arm64 equivalent (same pattern used elsewhere this
+ * session).
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+#ifndef dmac_inv_range
+#define dmac_inv_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+
 //#define CREATE_TRACE_POINTS
 //#define TRACE_MSM_LMH
 //#include <trace/trace_thermal.h>

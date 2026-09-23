@@ -32,6 +32,14 @@
 #include "governor.h"
 #include "governor_cache_hwmon.h"
 
+/*
+ * CAF addition (not in mainline): genuinely missing TRACE_EVENT()
+ * definitions (same situation as governor_bw_hwmon.c). Stubbed out as
+ * no-ops.
+ */
+#define trace_cache_hwmon_meas(name, high, med, low, busy, us) do {} while (0)
+#define trace_cache_hwmon_update(name, freq) do {} while (0)
+
 struct cache_hwmon_node {
 	unsigned int cycles_per_low_req;
 	unsigned int cycles_per_med_req;

@@ -24,6 +24,15 @@
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 
+/*
+ * dmac_flush_range() is an arm32-only macro, undefined on arm64; alias to
+ * the arm64 equivalent (same pattern used elsewhere this session).
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+
 #define MSM_DUMP_TABLE_VERSION		MSM_DUMP_MAKE_VERSION(2, 0)
 
 #define SCM_CMD_DEBUG_LAR_UNLOCK	0x4

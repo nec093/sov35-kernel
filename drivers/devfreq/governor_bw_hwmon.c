@@ -33,6 +33,17 @@
 #include "governor.h"
 #include "governor_bw_hwmon.h"
 
+/*
+ * CAF addition (not in mainline): these tracepoints' TRACE_EVENT()
+ * definitions were never present anywhere in this tree (genuinely
+ * missing, not mainline drift -- confirmed by searching the whole
+ * source tree). Stubbed out as no-ops, same approach already used by
+ * drivers/thermal/qcom/lmh_lite.c for its own missing tracepoints, since
+ * this is debug/tracing-only and not needed for functional correctness.
+ */
+#define trace_bw_hwmon_meas(name, mbps, us, wake) do {} while (0)
+#define trace_bw_hwmon_update(name, bw, freq, up, down) do {} while (0)
+
 #define NUM_MBPS_ZONES		10
 struct hwmon_node {
 	unsigned int guard_band_mbps;

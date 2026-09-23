@@ -35,6 +35,7 @@
 #endif
 #include <linux/sched.h>
 #include <linux/time.h>
+#include <linux/timekeeping32.h>
 #include <linux/timer.h>
 #ifdef CONFIG_FB
 #include <linux/notifier.h>

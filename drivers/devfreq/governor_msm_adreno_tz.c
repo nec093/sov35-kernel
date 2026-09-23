@@ -24,6 +24,16 @@
 #include <soc/qcom/scm.h>
 #include "governor.h"
 
+/*
+ * dmac_flush_range()/dmac_inv_range()/dmac_clean_range() are arm32-only
+ * macros, undefined on arm64; alias to the arm64 equivalent (same pattern
+ * used in drivers/gpu/msm/kgsl_sharedmem.h and elsewhere this session).
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+
 static DEFINE_SPINLOCK(tz_lock);
 static DEFINE_SPINLOCK(sample_lock);
 static DEFINE_SPINLOCK(suspend_lock);

@@ -20,8 +20,18 @@
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
+#include <asm/cacheflush.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/secure_buffer.h>
+
+/*
+ * dmac_flush_range() is an arm32-only macro, undefined on arm64; alias to
+ * the arm64 equivalent (same pattern used elsewhere this session).
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
 
 DEFINE_MUTEX(secure_buffer_mutex);
 

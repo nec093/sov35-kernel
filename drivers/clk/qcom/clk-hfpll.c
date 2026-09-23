@@ -21,6 +21,7 @@
 #include <linux/err.h>
 #include <linux/clk-provider.h>
 #include <linux/spinlock.h>
+#include <linux/io.h>
 
 #include "common.h"
 #include "clk-regmap.h"

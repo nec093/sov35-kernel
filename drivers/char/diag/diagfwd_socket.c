@@ -28,11 +28,32 @@
 #include <net/sock.h>
 #include <linux/ipc_router.h>
 #include <linux/notifier.h>
+#include <linux/uaccess.h>
 #include "diagchar.h"
 #include "diagfwd.h"
 #include "diagfwd_peripheral.h"
 #include "diagfwd_socket.h"
 #include "diag_ipc_logging.h"
+
+/*
+ * kernel_sock_ioctl() was removed upstream; it was a thin wrapper that
+ * temporarily switched to KERNEL_DS so the ioctl handler's
+ * copy_to/from_user() calls would accept the kernel-space arg pointer
+ * kernel callers pass here. Reimplemented locally (same pattern as
+ * drivers/input/misc/vl53L0/stmvl53l0_module.c's get_ds()->KERNEL_DS fix
+ * earlier this session).
+ */
+static int kernel_sock_ioctl(struct socket *sock, int cmd, unsigned long arg)
+{
+	mm_segment_t oldfs = get_fs();
+	int err;
+
+	set_fs(KERNEL_DS);
+	err = sock->ops->ioctl(sock, cmd, arg);
+	set_fs(oldfs);
+
+	return err;
+}
 
 #include <soc/qcom/subsystem_notif.h>
 #include <soc/qcom/subsystem_restart.h>

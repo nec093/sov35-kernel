@@ -1895,7 +1895,6 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 			sdhci_send_command(host, mrq->cmd);
 	}
 
-	mmiowb();
 	spin_unlock_irqrestore(&host->lock, flags);
 	return;
 end_req:
@@ -2184,7 +2183,6 @@ static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		sdhci_cfg_irq(host, true, false);
 	spin_unlock_irqrestore(&host->lock, flags);
 
-	mmiowb();
 }
 
 static int sdhci_get_cd(struct mmc_host *mmc)
@@ -2288,7 +2286,6 @@ static void sdhci_enable_sdio_irq_nolock(struct sdhci_host *host, int enable)
 
 	sdhci_writel(host, host->ier, SDHCI_INT_ENABLE);
 	sdhci_writel(host, host->ier, SDHCI_SIGNAL_ENABLE);
-	mmiowb();
 }
 
 static void sdhci_enable_sdio_irq(struct mmc_host *mmc, int enable)
@@ -2909,7 +2906,6 @@ static bool sdhci_request_done(struct sdhci_host *host)
 	host->mrqs_done[i] = NULL;
 	host->auto_cmd_err_sts = 0;
 
-	mmiowb();
 	spin_unlock_irqrestore(&host->lock, flags);
 
 	sdhci_crypto_cfg_end(host, mrq);
@@ -2926,12 +2922,10 @@ static void sdhci_tasklet_finish(unsigned long param)
 		;
 }
 
-static void sdhci_timeout_timer(unsigned long data)
+static void sdhci_timeout_timer(struct timer_list *t)
 {
-	struct sdhci_host *host;
+	struct sdhci_host *host = from_timer(host, t, timer);
 	unsigned long flags;
-
-	host = (struct sdhci_host*)data;
 
 	spin_lock_irqsave(&host->lock, flags);
 
@@ -2946,16 +2940,13 @@ static void sdhci_timeout_timer(unsigned long data)
 		sdhci_finish_mrq(host, host->cmd->mrq);
 	}
 
-	mmiowb();
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
-static void sdhci_timeout_data_timer(unsigned long data)
+static void sdhci_timeout_data_timer(struct timer_list *t)
 {
-	struct sdhci_host *host;
+	struct sdhci_host *host = from_timer(host, t, data_timer);
 	unsigned long flags;
-
-	host = (struct sdhci_host *)data;
 
 	spin_lock_irqsave(&host->lock, flags);
 
@@ -2984,7 +2975,6 @@ static void sdhci_timeout_data_timer(unsigned long data)
 		}
 	}
 
-	mmiowb();
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
@@ -3604,7 +3594,6 @@ int sdhci_resume_host(struct sdhci_host *host)
 		mmc->ops->set_ios(mmc, &mmc->ios);
 	} else {
 		sdhci_init(host, (host->mmc->pm_flags & MMC_PM_KEEP_POWER));
-		mmiowb();
 	}
 
 	if (!device_may_wakeup(mmc_dev(host->mmc))) {
@@ -4565,9 +4554,8 @@ int __sdhci_add_host(struct sdhci_host *host)
 	tasklet_init(&host->finish_tasklet,
 		sdhci_tasklet_finish, (unsigned long)host);
 
-	setup_timer(&host->timer, sdhci_timeout_timer, (unsigned long)host);
-	setup_timer(&host->data_timer, sdhci_timeout_data_timer,
-		    (unsigned long)host);
+	timer_setup(&host->timer, sdhci_timeout_timer, 0);
+	timer_setup(&host->data_timer, sdhci_timeout_data_timer, 0);
 
 	init_waitqueue_head(&host->buf_ready_int);
 
@@ -4596,7 +4584,6 @@ int __sdhci_add_host(struct sdhci_host *host)
 		}
 	}
 
-	mmiowb();
 
 	if (host->quirks2 & SDHCI_QUIRK2_IGN_DATA_END_BIT_ERROR) {
 		host->ier = (host->ier & ~SDHCI_INT_DATA_END_BIT);

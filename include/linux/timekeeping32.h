@@ -43,4 +43,19 @@ static inline void getboottime(struct timespec *ts)
 	*ts = timespec64_to_timespec(ts64);
 }
 
+/*
+ * CAF addition (not in mainline): get_monotonic_boottime() (monotonic
+ * time since boot, i.e. including suspend) was removed upstream in
+ * favor of ktime_get_boottime_ts64(); reintroduced here as a struct
+ * timespec-based compat wrapper, same pattern as the other shims in
+ * this file.
+ */
+static inline void get_monotonic_boottime(struct timespec *ts)
+{
+	struct timespec64 ts64;
+
+	ktime_get_boottime_ts64(&ts64);
+	*ts = timespec64_to_timespec(ts64);
+}
+
 #endif

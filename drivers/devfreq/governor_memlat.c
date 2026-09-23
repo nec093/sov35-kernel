@@ -33,6 +33,16 @@
 
 #include <trace/events/power.h>
 
+/*
+ * CAF addition (not in mainline): genuinely missing TRACE_EVENT()
+ * definitions (same situation as governor_bw_hwmon.c). Stubbed out as
+ * no-ops.
+ */
+#define trace_memlat_dev_meas(name, id, inst, mem, freq, stall, ratio) \
+	do {} while (0)
+#define trace_memlat_dev_update(name, id, inst, mem, freq, stall) \
+	do {} while (0)
+
 struct memlat_node {
 	unsigned int ratio_ceil;
 	unsigned int stall_floor;

@@ -27,6 +27,15 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/scm.h>
 
+/*
+ * dmac_inv_range() is an arm32-only macro, undefined on arm64; alias to
+ * the arm64 equivalent (same pattern used elsewhere this session).
+ */
+#ifndef dmac_inv_range
+#define dmac_inv_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+
 #define SCM_ENOMEM		-5
 #define SCM_EOPNOTSUPP		-4
 #define SCM_EINVAL_ADDR		-3
