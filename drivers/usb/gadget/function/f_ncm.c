@@ -1658,7 +1658,10 @@ static void ncm_free_inst(struct usb_function_instance *f)
 	/* release _ncm_setup_desc related resource */
 	device_destroy(_ncm_setup_desc->device->class,
 		_ncm_setup_desc->device->devt);
-	cancel_work(&_ncm_setup_desc->work);
+	/* cancel_work() doesn't exist in this kernel version; use the
+	 * synchronous variant, which is also more correct here since this
+	 * is teardown code. */
+	cancel_work_sync(&_ncm_setup_desc->work);
 	kfree(_ncm_setup_desc);
 #endif
 
