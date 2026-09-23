@@ -51,6 +51,18 @@ CONFIG_EMBEDDED=y
 # flush_work() -- dropped to isolate whether DEBUG_LIST alone still
 # reproduces the original crash cleanly.)
 CONFIG_DEBUG_LIST=y
+# XZ debug: KASAN was tried here to catch the actual out-of-bounds/UAF
+# write that corrupts struct page (mapcount) well before
+# free_pcppages_bulk() notices it much later, but a KASAN-enabled build
+# never even reached deferred_probe_initcall (a point every non-KASAN
+# build reaches within ~40-90s) after 150s+ of waiting -- either a new
+# KASAN-specific hang/incompatibility (likely: older CAF-modified
+# assembly/inline-asm not properly KASAN-annotated) or overhead far
+# beyond the normal ~2-3x slowdown. Reverted rather than chase a second
+# hard problem on top of the first; a future session could retry with
+# CONFIG_KASAN_INLINE or narrow instrumentation (KASAN_SANITIZE_foo.o
+# := n on suspect files) if this route is worth revisiting.
+# CONFIG_KASAN is not set
 CONFIG_PROFILING=y
 CONFIG_KPROBES=y
 CONFIG_JUMP_LABEL=y
