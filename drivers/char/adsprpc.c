@@ -13,6 +13,25 @@
  */
 #include <linux/dma-buf.h>
 #include <linux/dma-mapping.h>
+#include <asm/cacheflush.h>
+
+/*
+ * dmac_flush_range()/dmac_inv_range() (CAF's arm64 cacheflush.h
+ * macros wrapping __dma_flush_area()/__dma_inv_area()) don't exist in
+ * mainline: __dma_inv_area() was folded into a single
+ * __dma_flush_area() (which does a full clean+invalidate). Alias both
+ * to it here, scoped to this driver rather than the shared arch
+ * header -- functionally safe (a full flush covers the invalidate-only
+ * case too), just not maximally optimal.
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+#ifndef dmac_inv_range
+#define dmac_inv_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
 #include <linux/slab.h>
 #include <linux/completion.h>
 #include <linux/pagemap.h>
@@ -105,10 +124,10 @@
 
 #define PERF(enb, cnt, ff) \
 	{\
-		struct timespec startT = {0};\
+		struct timespec64 startT = {0};\
 		int64_t *counter = cnt;\
 		if (enb && counter) {\
-			getnstimeofday(&startT);\
+			ktime_get_real_ts64(&startT);\
 		} \
 		ff ;\
 		if (enb && counter) {\
@@ -442,14 +461,14 @@ static struct fastrpc_channel_ctx gcinfo[NUM_CHANNELS] = {
 static int hlosvm[1] = {VMID_HLOS};
 static int hlosvmperm[1] = {PERM_READ | PERM_WRITE | PERM_EXEC};
 
-static inline int64_t getnstimediff(struct timespec *start)
+static inline int64_t getnstimediff(struct timespec64 *start)
 {
 	int64_t ns;
-	struct timespec ts, b;
+	struct timespec64 ts, b;
 
-	getnstimeofday(&ts);
-	b = timespec_sub(ts, *start);
-	ns = timespec_to_ns(&b);
+	ktime_get_real_ts64(&ts);
+	b = timespec64_sub(ts, *start);
+	ns = timespec64_to_ns(&b);
 	return ns;
 }
 
@@ -1929,11 +1948,11 @@ static int fastrpc_internal_invoke(struct fastrpc_file *fl, uint32_t mode,
 	int cid = fl->cid;
 	int interrupted = 0;
 	int err = 0;
-	struct timespec invoket = {0};
+	struct timespec64 invoket = {0};
 	int64_t *perf_counter = getperfcounter(fl, PERF_COUNT);
 
 	if (fl->profile)
-		getnstimeofday(&invoket);
+		ktime_get_real_ts64(&invoket);
 
 
 	VERIFY(err, fl->sctx != NULL);
@@ -2110,7 +2129,7 @@ static int fastrpc_init_process(struct fastrpc_file *fl,
 		inbuf.filelen = init->filelen;
 		fl->pd = 1;
 
-		VERIFY(err, access_ok(0, (void __user *)init->file,
+		VERIFY(err, access_ok((void __user *)init->file,
 			init->filelen));
 		if (err)
 			goto bail;

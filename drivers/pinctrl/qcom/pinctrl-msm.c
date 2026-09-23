@@ -855,8 +855,8 @@ static void msm_gpio_domain_set_info(struct irq_domain *d, unsigned int irq,
 {
 	struct gpio_chip *gc = d->host_data;
 
-	irq_domain_set_info(d, irq, hwirq, gc->irqchip, d->host_data,
-		gc->irq_handler, NULL, NULL);
+	irq_domain_set_info(d, irq, hwirq, gc->irq.chip, d->host_data,
+		gc->irq.handler, NULL, NULL);
 
 	if (gc->can_sleep)
 		irq_set_nested_thread(irq, 1);
@@ -990,7 +990,7 @@ static void gpio_muxed_to_pdc(struct irq_domain *pdc_domain, struct irq_data *d)
 			pdc_out->mux = gpio;
 			irq = irq_find_mapping(pdc_domain, pdc_out->hwirq + 32);
 			/* setup the IRQ parent for the GPIO */
-			setup_pdc_gpio(pctrl->chip.irqdomain, irq, gpio);
+			setup_pdc_gpio(pctrl->chip.irq.domain, irq, gpio);
 			/* program pdc select grp register */
 			writel_relaxed((mux & 0x3F), pctrl->pdc_regs +
 				(0x14 * j));
@@ -1363,7 +1363,7 @@ static void msm_gpio_irq_handler(struct irq_desc *desc)
 		g = &pctrl->soc->groups[i];
 		val = readl(pctrl->regs + g->intr_status_reg);
 		if (val & BIT(g->intr_status_bit)) {
-			irq_pin = irq_find_mapping(gc->irqdomain, i);
+			irq_pin = irq_find_mapping(gc->irq.domain, i);
 			generic_handle_irq(irq_pin);
 			handled++;
 		}
@@ -1393,7 +1393,7 @@ static void msm_gpio_setup_dir_connects(struct msm_pinctrl *pctrl)
 	for (i = 0; i < pctrl->soc->n_dir_conns; i++) {
 		const struct msm_dir_conn *dirconn = &pctrl->soc->dir_conn[i];
 
-		request_dc_interrupt(pctrl->chip.irqdomain, pdc_domain,
+		request_dc_interrupt(pctrl->chip.irq.domain, pdc_domain,
 					dirconn->hwirq, dirconn->gpio);
 	}
 
@@ -1401,7 +1401,7 @@ static void msm_gpio_setup_dir_connects(struct msm_pinctrl *pctrl)
 		struct msm_pdc_mux_output *pdc_out =
 					&pctrl->soc->pdc_mux_out[i];
 
-		request_dc_interrupt(pctrl->chip.irqdomain, pdc_domain,
+		request_dc_interrupt(pctrl->chip.irq.domain, pdc_domain,
 					pdc_out->hwirq, 0);
 	}
 
@@ -1417,7 +1417,7 @@ static void msm_gpio_setup_dir_connects(struct msm_pinctrl *pctrl)
 		if (!gpio_in->init)
 			continue;
 
-		irq = irq_find_mapping(pctrl->chip.irqdomain, gpio_in->gpio);
+		irq = irq_find_mapping(pctrl->chip.irq.domain, gpio_in->gpio);
 		d = irq_get_irq_data(irq);
 		if (!d)
 			continue;
@@ -1429,7 +1429,7 @@ static void msm_gpio_setup_dir_connects(struct msm_pinctrl *pctrl)
 static int msm_gpiochip_to_irq(struct gpio_chip *chip, unsigned int offset)
 {
 	struct irq_fwspec fwspec;
-	struct irq_domain *domain = chip->irqdomain;
+	struct irq_domain *domain = chip->irq.domain;
 	int virq;
 
 	virq = irq_find_mapping(domain, offset);
@@ -1491,11 +1491,11 @@ static int msm_gpio_init(struct msm_pinctrl *pctrl)
 
 	irq_parent = of_irq_find_parent(chip->of_node);
 	if (of_device_is_compatible(irq_parent, "qcom,mpm-gpio")) {
-		chip->irqchip = &msm_gpio_irq_chip;
-		chip->irq_handler = handle_fasteoi_irq;
-		chip->irq_default_type = IRQ_TYPE_NONE;
+		chip->irq.chip = &msm_gpio_irq_chip;
+		chip->irq.handler = handle_fasteoi_irq;
+		chip->irq.default_type = IRQ_TYPE_NONE;
 		chip->to_irq = msm_gpiochip_to_irq;
-		chip->lock_key = NULL;
+		chip->irq.lock_key = NULL;
 		domain_parent = irq_find_host(irq_parent);
 		if (!domain_parent) {
 			pr_err("unable to find parent domain\n");
@@ -1503,14 +1503,14 @@ static int msm_gpio_init(struct msm_pinctrl *pctrl)
 			return -ENXIO;
 		}
 
-		chip->irqdomain = irq_domain_add_hierarchy(domain_parent, 0,
+		chip->irq.domain = irq_domain_add_hierarchy(domain_parent, 0,
 							chip->ngpio,
 							chip->of_node,
 							&msm_gpio_domain_ops,
 							chip);
-		if (!chip->irqdomain) {
+		if (!chip->irq.domain) {
 			dev_err(pctrl->dev, "Failed to add irqchip to gpiochip\n");
-			chip->irqchip = NULL;
+			chip->irq.chip = NULL;
 			gpiochip_remove(&pctrl->chip);
 			return -ENXIO;
 		}
@@ -1592,7 +1592,7 @@ static void msm_pinctrl_resume(void)
 		g = &pctrl->soc->groups[i];
 		val = readl_relaxed(pctrl->regs + g->intr_status_reg);
 		if (val & BIT(g->intr_status_bit)) {
-			irq = irq_find_mapping(pctrl->chip.irqdomain, i);
+			irq = irq_find_mapping(pctrl->chip.irq.domain, i);
 			desc = irq_to_desc(irq);
 			if (desc == NULL)
 				name = "stray irq";

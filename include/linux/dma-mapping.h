@@ -70,6 +70,23 @@
  */
 #define DMA_ATTR_PRIVILEGED		(1UL << 9)
 
+/* CAF additions (not in mainline), bits 10-15 free here. */
+/* DMA_ATTR_SKIP_ZEROING: Do not zero mapping. */
+#define DMA_ATTR_SKIP_ZEROING		(1UL << 10)
+/* DMA_ATTR_EXEC_MAPPING: The mapping has executable permissions. */
+#define DMA_ATTR_EXEC_MAPPING		(1UL << 12)
+/*
+ * When passed to a DMA map call the DMA_ATTR_FORCE_COHERENT DMA
+ * attribute can be used to force a buffer to be mapped as IO coherent.
+ */
+#define DMA_ATTR_FORCE_COHERENT			(1UL << 14)
+/*
+ * When passed to a DMA map call the DMA_ATTR_FORCE_NON_COHERENT DMA
+ * attribute can be used to force a buffer to not be mapped as IO
+ * coherent.
+ */
+#define DMA_ATTR_FORCE_NON_COHERENT		(1UL << 15)
+
 /*
  * A dma_addr_t can hold any valid DMA or bus address for the platform.
  * It can be given to a device to use as a DMA source or target.  A CPU cannot
