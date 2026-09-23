@@ -3766,8 +3766,20 @@ static int mmcc_msm8996_probe(struct platform_device *pdev)
 	clk_alpha_pll_configure(&mmpll8_early, regmap, &mmpll8_config);
 	clk_alpha_pll_configure(&mmpll9_early, regmap, &mmpll9_config);
 
-	/* Register the hws */
+	/* Register the hws.
+	 * mmcc_msm8996_hws[] is a sparse array (indexed by clock ID, e.g.
+	 * GPLL0_DIV=206) with only a handful of entries actually assigned --
+	 * every other slot is an implicit NULL. Skip those, matching the
+	 * exact same guard qcom_cc_really_probe() (drivers/clk/qcom/common.c)
+	 * already uses for this identical pattern; without it,
+	 * devm_clk_hw_register(dev, NULL) crashes in __clk_register() on a
+	 * NULL clk_hw dereference (confirmed via a real, unforced boot
+	 * crash: "Unable to handle kernel read from unreadable memory at
+	 * virtual address 0000000000000010", mmcc_msm8996_probe -> __clk_register).
+	 */
 	for (i = 0; i < ARRAY_SIZE(mmcc_msm8996_hws); i++) {
+		if (!mmcc_msm8996_hws[i])
+			continue;
 		ret = devm_clk_hw_register(&pdev->dev, mmcc_msm8996_hws[i]);
 		if (ret)
 			return ret;

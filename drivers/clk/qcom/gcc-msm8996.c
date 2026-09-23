@@ -3579,8 +3579,13 @@ static int gcc_msm8996_probe(struct platform_device *pdev)
 		return PTR_ERR(vdd_dig.regulator[0]);
 	}
 
-	/* Register the hws */
+	/* Register the hws. gcc_msm8996_hws[] is a sparse array (same
+	 * pattern/bug as mmcc-msm8996.c's mmcc_msm8996_hws[], see that
+	 * file's comment) -- skip implicit-NULL slots, matching
+	 * qcom_cc_really_probe()'s own guard for this identical pattern. */
 	for (i = 0; i < ARRAY_SIZE(gcc_msm8996_hws); i++) {
+		if (!gcc_msm8996_hws[i])
+			continue;
 		ret = devm_clk_hw_register(&pdev->dev, gcc_msm8996_hws[i]);
 		if (ret)
 			return ret;
