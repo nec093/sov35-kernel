@@ -17,6 +17,7 @@
 #include <linux/leds.h>
 #include <linux/list.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/timer.h>
@@ -328,6 +329,35 @@ int of_led_classdev_register(struct device *parent, struct device_node *np,
 }
 EXPORT_SYMBOL_GPL(of_led_classdev_register);
 
+/*
+ * CAF addition (not in mainline): mainline renamed/replaced
+ * of_led_classdev_register()'s raw struct device_node * parameter with a
+ * struct led_init_data * wrapper (which also drives its own name-
+ * composition logic via led_compose_name(), not present in this older
+ * driver). None of this tree's current callers (via the led_classdev_
+ * register()/devm_led_classdev_register() inline wrappers in leds.h,
+ * which always pass init_data == NULL) need that composition path, so
+ * this only handles init_data == NULL by delegating to
+ * of_led_classdev_register(); a non-NULL init_data falls back to using
+ * the fwnode's device_node with led_cdev->name unmodified rather than
+ * composing a name, which is not equivalent to mainline's behavior.
+ */
+int led_classdev_register_ext(struct device *parent,
+			      struct led_classdev *led_cdev,
+			      struct led_init_data *init_data)
+{
+	struct device_node *np = NULL;
+
+	if (init_data) {
+		WARN(1, "led_classdev_register_ext: init_data name composition not ported, using led_cdev->name as-is\n");
+		if (init_data->fwnode)
+			np = to_of_node(init_data->fwnode);
+	}
+
+	return of_led_classdev_register(parent, np, led_cdev);
+}
+EXPORT_SYMBOL_GPL(led_classdev_register_ext);
+
 /**
  * led_classdev_unregister - unregisters a object of led_properties class.
  * @led_cdev: the led device to unregister
@@ -399,6 +429,24 @@ int devm_of_led_classdev_register(struct device *parent,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(devm_of_led_classdev_register);
+
+/* CAF addition (not in mainline); see led_classdev_register_ext() above
+ * for the same init_data caveat. */
+int devm_led_classdev_register_ext(struct device *parent,
+				   struct led_classdev *led_cdev,
+				   struct led_init_data *init_data)
+{
+	struct device_node *np = NULL;
+
+	if (init_data) {
+		WARN(1, "devm_led_classdev_register_ext: init_data name composition not ported, using led_cdev->name as-is\n");
+		if (init_data->fwnode)
+			np = to_of_node(init_data->fwnode);
+	}
+
+	return devm_of_led_classdev_register(parent, np, led_cdev);
+}
+EXPORT_SYMBOL_GPL(devm_led_classdev_register_ext);
 
 static int devm_led_classdev_match(struct device *dev, void *res, void *data)
 {

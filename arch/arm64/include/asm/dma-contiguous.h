@@ -18,7 +18,18 @@
 
 #include <linux/types.h>
 
-void dma_contiguous_early_fixup(phys_addr_t base, unsigned long size);
+/*
+ * CAF addition (not in mainline): declared but never given a body
+ * anywhere in this tree. The "early fixup" this hooked was an arm32-era
+ * workaround (remapping memory attributes for CMA regions on SoCs with
+ * non-coherent DMA); arm64's cache/memory-attribute handling doesn't
+ * need it, matching how include/asm-generic/dma-contiguous.h (the
+ * fallback for archs that don't need special handling) implements it.
+ */
+static inline void dma_contiguous_early_fixup(phys_addr_t base,
+					       unsigned long size)
+{
+}
 
 #endif
 #endif

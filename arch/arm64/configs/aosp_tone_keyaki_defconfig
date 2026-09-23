@@ -84,6 +84,11 @@ CONFIG_ARM64_SW_TTBR0_PAN=y
 # CONFIG_ARM64_PAN is not set
 # CONFIG_EFI is not set
 CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y
+# Matches Part 1 (4.14)'s working boot image: both keyaki_generic DTB
+# hardware-revision variants concatenated (see
+# investigation/kernel_4.14_port_HANDOFF.md's "DTBs (v3 + v3.0
+# keyaki_generic) build" note).
+CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES="msm8996-v3-pmi8996-tone-keyaki_generic msm8996-v3.0-pmi8996-tone-keyaki_generic"
 # CONFIG_CORE_DUMP_DEFAULT_ELF_HEADERS is not set
 CONFIG_COMPAT=y
 CONFIG_PM_AUTOSLEEP=y
@@ -344,8 +349,13 @@ CONFIG_USB_USBNET=y
 # CONFIG_USB_NET_ZAURUS is not set
 CONFIG_WLAN=y
 CONFIG_WLAN_VENDOR_BROADCOM=y
-CONFIG_BRCMFMAC=y
-CONFIG_BRCMFMAC_PCIE=y
+# CONFIG_BRCMFMAC is not set (Phase A): brcmfmac/sdio.c calls
+# sdio_retune_crc_disable()/sdio_retune_hold_now()/sdio_retune_release()/
+# sdio_retune_crc_enable(), mainline MMC-core bus-retuning-during-transfer
+# APIs that don't exist anywhere in this tree -- a real feature gap
+# needing actual drivers/mmc/core content ported, not a one-line fix.
+# WiFi is already known-unwired from the Part 1 4.14 milestone; deferred
+# the same way MSM_PM/QCOM_EUD/MSM_EXT_DISPLAY/MSM_PERFORMANCE were.
 CONFIG_CFG80211=y
 CONFIG_INPUT_EVDEV=y
 CONFIG_INPUT_KEYRESET=y
@@ -387,7 +397,12 @@ CONFIG_SPI=y
 CONFIG_SPI_QUP=y
 CONFIG_SPI_SPIDEV=y
 CONFIG_SLIMBUS=y
-CONFIG_SLIMBUS_MSM_CTRL=y
+# CONFIG_SLIMBUS_MSM_CTRL is not set (Phase A): this is the older-
+# generation (pre-NGD) SLIMbus controller, not used on msm8996 (NGD is
+# the standard interface from 8994/8996 onward -- slim-msm-ngd.c, kept
+# enabled below, doesn't need this). Also pulls in apr_get_q6_state()
+# from the entirely-unwired techpack/audio subsystem (deferred along
+# with CONFIG_SND_SOC_WCD9335 above).
 CONFIG_SLIMBUS_MSM_NGD=y
 CONFIG_SPMI=y
 CONFIG_PINCTRL_MSM8996=y
@@ -791,7 +806,14 @@ CONFIG_SND_SOC_WSA881X=y
 CONFIG_SND_SOC_WCD_DSP_MGR=y
 CONFIG_SND_SOC_WCD_SPI=y
 CONFIG_SND_SOC_WCD_CPE=y
-CONFIG_SND_SOC_WCD9335=y
+# CONFIG_SND_SOC_WCD9335 is not set (Phase A): needs the modern
+# mainline slimbus core (core.c/messaging.c/sched.c/stream.c, using
+# <linux/slimbus.h>), which conflicts at the framework level with the
+# separate, older CAF slimbus stack (slimbus.c + slim-msm*.c, using
+# <linux/slimbus/slimbus.h>) that this platform's SLIMbus *controller*
+# drivers (and Bluetooth's btfm_slim*) still use -- reconciling the two
+# needs a dedicated audio-subsystem session, deferred like other
+# complex/non-boot-critical features (camera, USB-PD, WiFi, ...).
 CONFIG_SND_SOC_WCD934X=y
 CONFIG_SND_SOC_WCD934X_MBHC=y
 CONFIG_SND_SOC_WCD934X_DSD=y

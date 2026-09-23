@@ -1135,12 +1135,18 @@ static inline void usb_gadget_autopm_put_no_suspend(struct usb_gadget *gadget)
 /*-------------------------------------------------------------------------*/
 
 /*
- * CAF addition (not in mainline), defined+exported in
- * drivers/usb/dwc3/dwc3-msm.c: undo the BAM2BAM/GSI-specific endpoint
- * configuration done by the controller driver, used by gadget function
- * drivers built on top of it (u_data_ipa.c, u_qdss.c, f_qc_rndis.c).
+ * CAF additions (not in mainline), defined+exported in
+ * drivers/usb/dwc3/dwc3-msm.c: BAM2BAM/GSI-specific endpoint
+ * configuration/teardown done by the controller driver, used by gadget
+ * function drivers built on top of it (u_data_ipa.c, u_qdss.c,
+ * f_qc_rndis.c).
  */
+extern int msm_ep_config(struct usb_ep *ep, struct usb_request *request);
 extern int msm_ep_unconfig(struct usb_ep *ep);
+extern int msm_data_fifo_config(struct usb_ep *ep, unsigned long addr,
+	u32 size, u8 dst_pipe_idx);
+extern bool msm_dwc3_reset_ep_after_lpm(struct usb_gadget *gadget);
+extern int msm_dwc3_reset_dbm_ep(struct usb_ep *ep);
 
 /* utility wrapping a simple endpoint selection policy */
 

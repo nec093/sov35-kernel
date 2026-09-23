@@ -112,6 +112,11 @@ source "drivers/memstick/Kconfig"
 
 source "drivers/leds/Kconfig"
 
+# CAF addition (not in mainline): was missing from this file entirely,
+# leaving CONFIG_SWITCH unreachable from Kconfig despite the defconfig
+# setting it and drivers/switch/{switch_class,switch_gpio}.c existing.
+source "drivers/switch/Kconfig"
+
 source "drivers/accessibility/Kconfig"
 
 source "drivers/infiniband/Kconfig"

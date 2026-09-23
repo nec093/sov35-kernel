@@ -740,7 +740,7 @@ int pinctrl_get_group_selector(struct pinctrl_dev *pctldev,
  * as part of their gpio_request() semantics, platforms and individual drivers
  * shall *NOT* request GPIO pins to be muxed in.
  */
-int pinctrl_request_gpio(unsigned gpio)
+int pinctrl_gpio_request(unsigned gpio)
 {
 	struct pinctrl_dev *pctldev;
 	struct pinctrl_gpio_range *range;
@@ -765,7 +765,7 @@ int pinctrl_request_gpio(unsigned gpio)
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(pinctrl_request_gpio);
+EXPORT_SYMBOL_GPL(pinctrl_gpio_request);
 
 /**
  * pinctrl_free_gpio() - free control on a single pin, currently used as GPIO
@@ -775,7 +775,7 @@ EXPORT_SYMBOL_GPL(pinctrl_request_gpio);
  * as part of their gpio_free() semantics, platforms and individual drivers
  * shall *NOT* request GPIO pins to be muxed out.
  */
-void pinctrl_free_gpio(unsigned gpio)
+void pinctrl_gpio_free(unsigned gpio)
 {
 	struct pinctrl_dev *pctldev;
 	struct pinctrl_gpio_range *range;
@@ -795,7 +795,43 @@ void pinctrl_free_gpio(unsigned gpio)
 
 	mutex_unlock(&pctldev->mutex);
 }
-EXPORT_SYMBOL_GPL(pinctrl_free_gpio);
+EXPORT_SYMBOL_GPL(pinctrl_gpio_free);
+
+/**
+ * pinctrl_gpio_can_use_line() - check if a specific pin is usable for GPIO
+ * @gpio: the GPIO pin number from the GPIO subsystem number space
+ *
+ * This function should *ONLY* be used from gpiolib-based GPIO drivers,
+ * as part of their gpio_request() semantics, platforms and individual
+ * drivers shall *NOT* request GPIO pins to be muxed in.
+ */
+bool pinctrl_gpio_can_use_line(unsigned gpio)
+{
+	struct pinctrl_dev *pctldev;
+	struct pinctrl_gpio_range *range;
+	bool result;
+	int pin;
+
+	/*
+	 * Try to obtain GPIO range, if it fails
+	 * we're probably dealing with GPIO driver
+	 * without a backing pin controller - bail out.
+	 */
+	if (pinctrl_get_device_gpio_range(gpio, &pctldev, &range))
+		return true;
+
+	mutex_lock(&pctldev->mutex);
+
+	/* Convert to the pin controllers number space */
+	pin = gpio_to_pin(range, gpio);
+
+	result = pinmux_can_be_used_for_gpio(pctldev, pin);
+
+	mutex_unlock(&pctldev->mutex);
+
+	return result;
+}
+EXPORT_SYMBOL_GPL(pinctrl_gpio_can_use_line);
 
 static int pinctrl_gpio_direction(unsigned gpio, bool input)
 {

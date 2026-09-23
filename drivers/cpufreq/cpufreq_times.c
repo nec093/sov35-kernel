@@ -419,13 +419,15 @@ void cpufreq_task_times_remove_uids(uid_t uid_start, uid_t uid_end)
 void cpufreq_times_record_transition(struct cpufreq_freqs *freq)
 {
 	int index;
-	struct cpu_freqs *freqs = all_freqs[freq->cpu];
+	/* mainline's struct cpufreq_freqs now carries a policy pointer
+	 * instead of a bare cpu number. */
+	struct cpu_freqs *freqs = all_freqs[freq->policy->cpu];
 	struct cpufreq_policy *policy;
 
 	if (!freqs)
 		return;
 
-	policy = cpufreq_cpu_get(freq->cpu);
+	policy = cpufreq_cpu_get(freq->policy->cpu);
 	if (!policy)
 		return;
 

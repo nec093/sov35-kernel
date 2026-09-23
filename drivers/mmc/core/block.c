@@ -3130,6 +3130,36 @@ static void __exit mmc_blk_exit(void)
 	bus_unregister(&mmc_rpmb_bus_type);
 }
 
+/*
+ * CAF addition (not in mainline): reset/enable the packed-write
+ * statistics counters for a card, called from the "wr_pack_stats"
+ * debugfs knob (drivers/mmc/core/debugfs.c). Ported unchanged from the
+ * legacy single-queue drivers/mmc/card/block.c, which this driver
+ * replaced (see drivers/mmc/card/Makefile) -- packing_events is never
+ * allocated by this (blk-mq based) driver's I/O path, so in practice
+ * this remains a safe no-op (the early-return below) rather than a
+ * functioning packed-write feature.
+ */
+void mmc_blk_init_packed_statistics(struct mmc_card *card)
+{
+	int max_num_of_packed_reqs = 0;
+
+	if (!card || !card->wr_pack_stats.packing_events)
+		return;
+
+	max_num_of_packed_reqs = card->ext_csd.max_packed_writes;
+
+	spin_lock(&card->wr_pack_stats.lock);
+	memset(card->wr_pack_stats.packing_events, 0,
+		(max_num_of_packed_reqs + 1) *
+	       sizeof(*card->wr_pack_stats.packing_events));
+	memset(&card->wr_pack_stats.pack_stop_reason, 0,
+		sizeof(card->wr_pack_stats.pack_stop_reason));
+	card->wr_pack_stats.enabled = true;
+	spin_unlock(&card->wr_pack_stats.lock);
+}
+EXPORT_SYMBOL(mmc_blk_init_packed_statistics);
+
 module_init(mmc_blk_init);
 module_exit(mmc_blk_exit);
 

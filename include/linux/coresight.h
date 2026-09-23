@@ -315,13 +315,26 @@ struct coresight_platform_data *coresight_get_platform_data(struct device *dev);
 
 /*
  * CAF addition (not in mainline): defined+exported in
- * drivers/hwtracing/coresight/of_coresight.c, used by
+ * drivers/hwtracing/coresight/of_coresight.c, used unconditionally by
  * drivers/gpu/msm/adreno_coresight.c to build one coresight_platform_data
  * per child DT node under a single "qcom,gpu-coresight" parent (unlike
  * coresight_get_platform_data() above, which derives one platform_data
- * from a device's own fwnode as a whole).
+ * from a device's own fwnode as a whole). of_coresight.c only gets built
+ * when CONFIG_CORESIGHT is enabled (the whole hwtracing/coresight/
+ * directory is gated on it at the drivers/Makefile level), but
+ * adreno_coresight.c's call site isn't itself CONFIG_CORESIGHT-gated,
+ * so provide a NULL-returning fallback for that (the common, CORESIGHT-
+ * disabled) case.
  */
+#if IS_ENABLED(CONFIG_CORESIGHT)
 struct coresight_platform_data *of_get_coresight_platform_data(
 				struct device *dev, struct device_node *node);
+#else
+static inline struct coresight_platform_data *of_get_coresight_platform_data(
+				struct device *dev, struct device_node *node)
+{
+	return NULL;
+}
+#endif
 
 #endif

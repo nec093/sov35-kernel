@@ -64,7 +64,16 @@ usb_f_gsi-y			:= f_gsi.o rndis.o
 obj-$(CONFIG_USB_F_GSI)         += usb_f_gsi.o
 usb_f_qdss-y			:= f_qdss.o u_qdss.o
 obj-$(CONFIG_USB_F_QDSS)        += usb_f_qdss.o
-usb_f_qcrndis-y			:= f_qc_rndis.o
+#
+# f_qc_rndis.c calls the ipa_data_*() helpers defined in u_data_ipa.c,
+# but that file was only ever wired into the usb_f_rmnet_bam composite
+# below (missing here even in port-4.14 -- this platform's config just
+# never happened to enable USB_F_QCRNDIS without USB_F_RMNET_BAM before
+# now). Added it here too so USB_F_QCRNDIS links on its own; if a config
+# ever enables both composites simultaneously this would duplicate-
+# define ipa_data_*(), but only one is ever selected in this defconfig.
+#
+usb_f_qcrndis-y			:= f_qc_rndis.o u_data_ipa.o
 obj-$(CONFIG_USB_F_QCRNDIS)	+= usb_f_qcrndis.o
 usb_f_rmnet_bam-y		:= f_rmnet.o u_ctrl_qti.o u_bam_dmux.o u_data_ipa.o
 obj-$(CONFIG_USB_F_RMNET_BAM)	+= usb_f_rmnet_bam.o
