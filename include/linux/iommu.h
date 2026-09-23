@@ -49,6 +49,14 @@ struct iommu_fault_event;
 /* iommu fault flags */
 #define IOMMU_FAULT_READ	0x0
 #define IOMMU_FAULT_WRITE	0x1
+/*
+ * CAF additions (not in mainline). Given as separate bits (4+) so they
+ * can be OR'd with the READ/WRITE pair above without colliding.
+ */
+#define IOMMU_FAULT_TRANSLATION		(1 << 2)
+#define IOMMU_FAULT_PERMISSION		(1 << 3)
+#define IOMMU_FAULT_EXTERNAL		(1 << 4)
+#define IOMMU_FAULT_TRANSACTION_STALLED	(1 << 5)
 
 typedef int (*iommu_fault_handler_t)(struct iommu_domain *,
 			struct device *, unsigned long, int, void *);
@@ -94,6 +102,7 @@ struct iommu_domain {
 	void *handler_token;
 	struct iommu_domain_geometry geometry;
 	void *iova_cookie;
+	const char *name;	/* CAF addition (not in mainline). */
 };
 
 enum iommu_cap {
@@ -125,6 +134,28 @@ enum iommu_attr {
 	DOMAIN_ATTR_FSL_PAMUV1,
 	DOMAIN_ATTR_NESTING,	/* two stages of translation */
 	DOMAIN_ATTR_DMA_USE_FLUSH_QUEUE,
+	/* CAF additions (not in mainline). */
+	DOMAIN_ATTR_PT_BASE_ADDR,
+	DOMAIN_ATTR_CONTEXT_BANK,
+	DOMAIN_ATTR_DYNAMIC,
+	DOMAIN_ATTR_TTBR0,
+	DOMAIN_ATTR_CONTEXTIDR,
+	DOMAIN_ATTR_PROCID,
+	DOMAIN_ATTR_NON_FATAL_FAULTS,
+	DOMAIN_ATTR_S1_BYPASS,
+	DOMAIN_ATTR_ATOMIC,
+	DOMAIN_ATTR_SECURE_VMID,
+	DOMAIN_ATTR_FAST,
+	DOMAIN_ATTR_PGTBL_INFO,
+	DOMAIN_ATTR_USE_UPSTREAM_HINT,
+	DOMAIN_ATTR_EARLY_MAP,
+	DOMAIN_ATTR_PAGE_TABLE_IS_COHERENT,
+	DOMAIN_ATTR_PAGE_TABLE_FORCE_COHERENT,
+	DOMAIN_ATTR_CB_STALL_DISABLE,
+	DOMAIN_ATTR_ENABLE_TTBR1,
+	DOMAIN_ATTR_UPSTREAM_IOVA_ALLOCATOR,
+	DOMAIN_ATTR_MMU500_ERRATA_MIN_ALIGN,
+	DOMAIN_ATTR_FORCE_IOVA_GUARD_PAGE,
 	DOMAIN_ATTR_MAX,
 };
 
