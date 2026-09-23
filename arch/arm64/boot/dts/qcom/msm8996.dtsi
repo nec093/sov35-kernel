@@ -336,7 +336,19 @@
 	};
 
 	intc: interrupt-controller@9bc0000 {
-		compatible = "arm,gic-v3";
+		/*
+		 * "qcom,msm8996-gic-v3" activates upstream's
+		 * gic_enable_quirk_msm8996() (FLAGS_WORKAROUND_GICR_WAKER_MSM8996),
+		 * which skips the GICR_WAKER dance entirely because MSM8996's
+		 * redistributor WAKER register is broken/unresponsive in
+		 * firmware -- accessing it hangs the CPU forever (no fault,
+		 * no timeout; confirmed via binary-patch bisection landing
+		 * exactly on the first GICR_WAKER read in gic_enable_redist()).
+		 * The old 4.9/4.14-era "arm,gicv3-plat-qcom-legacy" property
+		 * drove a different, now-removed quirk mechanism and is no
+		 * longer consulted by this upstream-derived irq-gic-v3.c.
+		 */
+		compatible = "qcom,msm8996-gic-v3", "arm,gic-v3";
 		#interrupt-cells = <3>;
 		#address-cells = <1>;
 		#size-cells = <1>;
