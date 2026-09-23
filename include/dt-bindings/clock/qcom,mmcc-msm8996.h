@@ -213,6 +213,18 @@
 #define MMSS_SPDM_RM_AXI_CLK				204
 #define MMSS_SPDM_RM_MAXI_CLK				205
 
+/*
+ * CAF additions (not in mainline): consumed by drivers/clk/qcom/
+ * mmcc-msm8996.c's mmcc_msm8996_hws[] table (clk_hw, not clk_regmap,
+ * outputs) and by msm8996-mdss.dtsi/msm8996.dtsi. Moved from CAF's
+ * original values 0/1/2, now taken by mainline's own MMPLL0_EARLY/
+ * MMPLL0_PLL/MMPLL1_EARLY, to the first free values after this header's
+ * highest existing clock ID (205).
+ */
+#define GPLL0_DIV					206
+#define MDSS_MDP_VOTE_CLK				207
+#define MDSS_ROTATOR_VOTE_CLK				208
+
 #define MMAGICAHB_BCR					0
 #define MMAGIC_CFG_BCR					1
 #define MISC_BCR					2

@@ -12,6 +12,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/io.h>
 #include <linux/bitops.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>

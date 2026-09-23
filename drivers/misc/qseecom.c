@@ -49,6 +49,16 @@
 #include <crypto/ice.h>
 #include <linux/delay.h>
 
+/*
+ * dmac_flush_range() is an arm32-only macro; this is arm64, which only
+ * exposes __dma_flush_area() (clean+invalidate) as a declared extern.
+ * Same root cause and fix as drivers/char/adsprpc.c earlier this port.
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+
 #include <linux/compat.h>
 #include "compat_qseecom.h"
 
@@ -1188,7 +1198,7 @@ static int qseecom_register_listener(struct qseecom_dev_handle *data,
 		pr_err("copy_from_user failed\n");
 		return ret;
 	}
-	if (!access_ok(VERIFY_WRITE, (void __user *)rcvd_lstnr.virt_sb_base,
+	if (!access_ok((void __user *)rcvd_lstnr.virt_sb_base,
 			rcvd_lstnr.sb_size))
 		return -EFAULT;
 
@@ -1356,7 +1366,7 @@ static void qseecom_bw_inactive_req_work(struct work_struct *work)
 	mutex_unlock(&app_access_lock);
 }
 
-static void qseecom_scale_bus_bandwidth_timer_callback(unsigned long data)
+static void qseecom_scale_bus_bandwidth_timer_callback(struct timer_list *t)
 {
 	schedule_work(&qseecom.bw_inactive_req_ws);
 }
@@ -1573,7 +1583,7 @@ static int qseecom_set_client_mem_param(struct qseecom_dev_handle *data,
 			req.ifd_data_fd, req.sb_len, req.virt_sb_base);
 		return -EFAULT;
 	}
-	if (!access_ok(VERIFY_WRITE, (void __user *)req.virt_sb_base,
+	if (!access_ok((void __user *)req.virt_sb_base,
 			req.sb_len))
 		return -EFAULT;
 
@@ -8763,11 +8773,10 @@ static int qseecom_probe(struct platform_device *pdev)
 						pdev->dev.platform_data;
 	}
 	if (qseecom.support_bus_scaling) {
-		init_timer(&(qseecom.bw_scale_down_timer));
+		timer_setup(&qseecom.bw_scale_down_timer,
+				qseecom_scale_bus_bandwidth_timer_callback, 0);
 		INIT_WORK(&qseecom.bw_inactive_req_ws,
 					qseecom_bw_inactive_req_work);
-		qseecom.bw_scale_down_timer.function =
-				qseecom_scale_bus_bandwidth_timer_callback;
 	}
 	qseecom.timer_running = false;
 	qseecom.qsee_perf_client = msm_bus_scale_register_client(
