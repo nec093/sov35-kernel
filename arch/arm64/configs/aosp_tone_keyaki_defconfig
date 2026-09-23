@@ -445,11 +445,13 @@ CONFIG_REGULATOR_QPNP=y
 CONFIG_REGULATOR_RPM_SMD=y
 CONFIG_REGULATOR_SPM=y
 CONFIG_REGULATOR_STUB=y
-CONFIG_MEDIA_SUPPORT=y
-CONFIG_MEDIA_CAMERA_SUPPORT=y
-CONFIG_MEDIA_CONTROLLER=y
-CONFIG_VIDEO_V4L2_SUBDEV_API=y
-CONFIG_V4L_PLATFORM_DRIVERS=y
+# CONFIG_MEDIA_SUPPORT (the whole v4l2-core framework:
+# drivers/media/v4l2-core/*, media-entity.c, media-device.c) is
+# disabled too -- nothing needs it now that camera/video below are
+# disabled, and it was still contributing ~230 compile errors of its
+# own (v4l2-ioctl.c, media-entity.c, v4l2-compat-ioctl32.c,
+# v4l2-async.c, v4l2-mc.c) despite that.
+# CONFIG_MEDIA_SUPPORT is not set
 # Camera (CONFIG_MSM_CAMERA and its whole camera_v2 subtree), the video
 # codec (CONFIG_MSM_VIDC_3X_*) and the display rotator
 # (CONFIG_MSM_SDE_ROTATOR) are disabled for Phase A of the 5.4 port:
