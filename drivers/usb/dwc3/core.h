@@ -658,7 +658,7 @@ struct dwc3_ep {
 	unsigned		stream_capable:1;
 	struct dwc3_ep_events	dbg_ep_events;
 	struct dwc3_ep_events	dbg_ep_events_diff;
-	struct timespec		dbg_ep_events_ts;
+	struct timespec64	dbg_ep_events_ts;
 	int			fifo_depth;
 };
 

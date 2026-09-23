@@ -920,7 +920,7 @@ static ssize_t dwc3_store_int_events(struct file *file,
 	struct seq_file *s = file->private_data;
 	struct dwc3 *dwc = s->private;
 	struct dwc3_ep *dep;
-	struct timespec ts;
+	struct timespec64 ts;
 	u8 clear_stats;
 
 	if (ubuf == NULL) {
@@ -943,7 +943,7 @@ static ssize_t dwc3_store_int_events(struct file *file,
 
 	pr_debug("%s(): clearing debug interrupt buffers\n", __func__);
 	spin_lock_irqsave(&dwc->lock, flags);
-	ts = current_kernel_time();
+	ktime_get_real_ts64(&ts);
 	for (i = 0; i < DWC3_ENDPOINTS_NUM; i++) {
 		dep = dwc->eps[i];
 		memset(&dep->dbg_ep_events, 0, sizeof(dep->dbg_ep_events));
@@ -962,8 +962,8 @@ static int dwc3_gadget_int_events_show(struct seq_file *s, void *unused)
 	struct dwc3_gadget_events *dbg_gadget_events;
 	struct dwc3_ep *dep;
 	int i;
-	struct timespec ts_delta;
-	struct timespec ts_current;
+	struct timespec64 ts_delta;
+	struct timespec64 ts_current;
 	u32 ts_delta_ms;
 
 	spin_lock_irqsave(&dwc->lock, flags);
@@ -975,8 +975,8 @@ static int dwc3_gadget_int_events_show(struct seq_file *s, void *unused)
 		if (dep == NULL || !(dep->flags & DWC3_EP_ENABLED))
 			continue;
 
-		ts_current = current_kernel_time();
-		ts_delta = timespec_sub(ts_current, dep->dbg_ep_events_ts);
+		ktime_get_real_ts64(&ts_current);
+		ts_delta = timespec64_sub(ts_current, dep->dbg_ep_events_ts);
 		ts_delta_ms = ts_delta.tv_nsec / NSEC_PER_MSEC +
 			ts_delta.tv_sec * MSEC_PER_SEC;
 

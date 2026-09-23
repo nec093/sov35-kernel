@@ -15,6 +15,7 @@
 
 #include <video/msm_dba.h>
 #include <linux/extcon.h>
+#include <linux/extcon-provider.h>
 
 #include "mdss_dba_utils.h"
 #include "mdss_hdmi_edid.h"
@@ -27,13 +28,33 @@
 #define MSM_DBA_MAX_PCLK 148500
 #define DEFAULT_VIDEO_RESOLUTION HDMI_VFRMT_640x480p60_4_3
 
+/*
+ * CAF's sdev_display/sdev_audio each modeled a single binary cable state
+ * (accessed via the old embeddable struct extcon_dev's raw .state field
+ * with a literal cable id of 0); the current allocate/register API needs
+ * a real EXTCON_* cable-id table. Both devices represent the same HDMI
+ * bridge's presence (video vs. audio-capable sink), so both reuse
+ * EXTCON_DISP_HDMI as their one cable id.
+ */
+static const unsigned int mdss_dba_utils_extcon_cable[] = {
+	EXTCON_DISP_HDMI,
+	EXTCON_NONE,
+};
+
 struct mdss_dba_utils_data {
 	struct msm_dba_ops ops;
 	bool hpd_state;
 	bool audio_switch_registered;
 	bool display_switch_registered;
-	struct extcon_dev sdev_display;
-	struct extcon_dev sdev_audio;
+	/*
+	 * struct extcon_dev moved to a private header upstream (no longer
+	 * embeddable); switched to allocated pointers +
+	 * extcon_dev_allocate()/register() (extcon_dev_unregister() calls
+	 * below stay explicit -- no struct device * is available in this
+	 * file's own registration function to use the devm_ variant).
+	 */
+	struct extcon_dev *sdev_display;
+	struct extcon_dev *sdev_audio;
 	struct kobject *kobj;
 	struct mdss_panel_info *pinfo;
 	void *dba_data;
@@ -100,14 +121,14 @@ static void mdss_dba_utils_notify_display(
 		return;
 	}
 
-	state = udata->sdev_display.state;
+	state = extcon_get_state(udata->sdev_display, EXTCON_DISP_HDMI);
 
-	extcon_set_state_sync(&udata->sdev_display, 0, val);
+	extcon_set_state_sync(udata->sdev_display, EXTCON_DISP_HDMI, val);
 
 	pr_debug("cable state %s %d\n",
-		udata->sdev_display.state == state ?
+		extcon_get_state(udata->sdev_display, EXTCON_DISP_HDMI) == state ?
 		"is same" : "switched to",
-		udata->sdev_display.state);
+		extcon_get_state(udata->sdev_display, EXTCON_DISP_HDMI));
 }
 
 static void mdss_dba_utils_notify_audio(
@@ -125,14 +146,14 @@ static void mdss_dba_utils_notify_audio(
 		return;
 	}
 
-	state = udata->sdev_audio.state;
+	state = extcon_get_state(udata->sdev_audio, EXTCON_DISP_HDMI);
 
-	extcon_set_state_sync(&udata->sdev_audio, 0, val);
+	extcon_set_state_sync(udata->sdev_audio, EXTCON_DISP_HDMI, val);
 
 	pr_debug("audio state %s %d\n",
-		udata->sdev_audio.state == state ?
+		extcon_get_state(udata->sdev_audio, EXTCON_DISP_HDMI) == state ?
 		"is same" : "switched to",
-		udata->sdev_audio.state);
+		extcon_get_state(udata->sdev_audio, EXTCON_DISP_HDMI));
 }
 
 static ssize_t mdss_dba_utils_sysfs_rda_connected(struct device *dev,
@@ -482,9 +503,21 @@ static int mdss_dba_utils_init_switch_dev(struct mdss_dba_utils_data *udata,
 		goto end;
 	}
 
+	/*
+	 * struct extcon_dev is opaque outside drivers/extcon/ upstream, so
+	 * ->name can no longer be set directly here (matches
+	 * drivers/platform/msm/gpio-usbdetect.c's fix earlier this port,
+	 * which leaves it similarly unset -- extcon_dev_register() falls
+	 * back to an auto-generated name when none is given).
+	 */
 	/* create switch device to update display modules */
-	udata->sdev_display.name = "hdmi";
-	rc = extcon_dev_register(&udata->sdev_display);
+	udata->sdev_display = extcon_dev_allocate(mdss_dba_utils_extcon_cable);
+	if (IS_ERR(udata->sdev_display)) {
+		rc = PTR_ERR(udata->sdev_display);
+		pr_err("display switch allocation failed\n");
+		goto end;
+	}
+	rc = extcon_dev_register(udata->sdev_display);
 	if (rc) {
 		pr_err("display switch registration failed\n");
 		goto end;
@@ -493,8 +526,13 @@ static int mdss_dba_utils_init_switch_dev(struct mdss_dba_utils_data *udata,
 	udata->display_switch_registered = true;
 
 	/* create switch device to update audio modules */
-	udata->sdev_audio.name = "hdmi_audio";
-	ret = extcon_dev_register(&udata->sdev_audio);
+	udata->sdev_audio = extcon_dev_allocate(mdss_dba_utils_extcon_cable);
+	if (IS_ERR(udata->sdev_audio)) {
+		ret = PTR_ERR(udata->sdev_audio);
+		pr_err("audio switch allocation failed\n");
+		goto end;
+	}
+	ret = extcon_dev_register(udata->sdev_audio);
 	if (ret) {
 		pr_err("audio switch registration failed\n");
 		goto end;
@@ -821,11 +859,15 @@ void mdss_dba_utils_deinit(void *data)
 		udata->pinfo->is_cec_supported = false;
 	}
 
-	if (udata->audio_switch_registered)
-		extcon_dev_unregister(&udata->sdev_audio);
+	if (udata->audio_switch_registered) {
+		extcon_dev_unregister(udata->sdev_audio);
+		extcon_dev_free(udata->sdev_audio);
+	}
 
-	if (udata->display_switch_registered)
-		extcon_dev_unregister(&udata->sdev_display);
+	if (udata->display_switch_registered) {
+		extcon_dev_unregister(udata->sdev_display);
+		extcon_dev_free(udata->sdev_display);
+	}
 
 	if (udata->kobj)
 		mdss_dba_utils_sysfs_remove(udata->kobj);

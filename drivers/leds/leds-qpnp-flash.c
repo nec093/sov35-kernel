@@ -30,6 +30,7 @@
 #include <linux/qpnp/qpnp-adc.h>
 #include <linux/qpnp/qpnp-revid.h>
 #include <linux/debugfs.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/uaccess.h>
 #include "leds.h"
 
