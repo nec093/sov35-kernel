@@ -13,9 +13,3 @@ obj-$(CONFIG_PWRSEQ_SIMPLE)	+= pwrseq_simple.o
 obj-$(CONFIG_PWRSEQ_EMMC)	+= pwrseq_emmc.o
 mmc_core-$(CONFIG_DEBUG_FS)	+= debugfs.o
 obj-$(CONFIG_MMC_RING_BUFFER)	+= ring_buffer.o
-
-# Pristine v5.4.302's blk-mq-based block driver; see
-# drivers/mmc/card/Makefile for why CAF's own mmc_block was dropped
-# instead of reconciled.
-obj-$(CONFIG_MMC_BLOCK)	+= mmc_block.o
-mmc_block-objs			:= block.o queue.o
