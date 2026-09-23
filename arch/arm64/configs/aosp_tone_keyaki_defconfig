@@ -704,8 +704,11 @@ CONFIG_SENSORS_SSC=y
 # Disabled for Phase A, like SCHED_TUNE/EAS/WALT -- TODO for Phase B.
 CONFIG_EXT4_FS=y
 CONFIG_EXT4_FS_SECURITY=y
-CONFIG_EXT4_ENCRYPTION=y
-CONFIG_EXT4_FS_ENCRYPTION=y
+# CONFIG_EXT4_ENCRYPTION and CONFIG_EXT4_FS_ENCRYPTION (4.14-era per-fs
+# symbols) were replaced by a single shared fs/crypto/ subsystem in
+# mainline; the old symbol names are gone and silently dropped by
+# olddefconfig, so encryption must be enabled via the new symbol.
+CONFIG_FS_ENCRYPTION=y
 # CONFIG_EXT4_FS_ICE_ENCRYPTION is not set
 CONFIG_QUOTA=y
 CONFIG_QUOTA_NETLINK_INTERFACE=y

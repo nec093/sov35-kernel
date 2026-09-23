@@ -97,6 +97,15 @@ struct fs_context {
 	const char		*source;	/* The source name (eg. dev path) */
 	void			*security;	/* Linux S&M options */
 	void			*s_fs_info;	/* Proposed s_fs_info */
+	/*
+	 * Carries the CAF sdcardfs-style per-vfsmount data (struct
+	 * super_operations.alloc_mnt_data/mount2/remount_fs2) across the
+	 * fs_context get_tree()/reconfigure() calls, which run before the
+	 * real struct vfsmount exists (mount) or operate on an existing one
+	 * (remount). Unused by filesystems that don't set mount2.
+	 */
+	void			*s_mnt_data;	/* Per-mount data for mount2() */
+	struct vfsmount		*s_mnt;		/* Existing vfsmount, for remount_fs2() */
 	unsigned int		sb_flags;	/* Proposed superblock flags (SB_*) */
 	unsigned int		sb_flags_mask;	/* Superblock flags that were changed */
 	unsigned int		s_iflags;	/* OR'd with sb->s_iflags */

@@ -645,10 +645,34 @@ static int legacy_get_tree(struct fs_context *fc)
 	struct super_block *sb;
 	struct dentry *root;
 
-	root = fc->fs_type->mount(fc->fs_type, fc->sb_flags,
-				      fc->source, ctx->legacy_data);
-	if (IS_ERR(root))
-		return PTR_ERR(root);
+	if (fc->fs_type->mount2) {
+		/*
+		 * CAF's sdcardfs-style mount2() wants a struct vfsmount * so
+		 * it can stash per-mount data on it, but the real vfsmount
+		 * isn't allocated until after get_tree() returns (see
+		 * vfs_create_mount() in fs/namespace.c). Give it a throwaway
+		 * one to write into and carry the result forward on the
+		 * fs_context; vfs_create_mount() copies it into the real
+		 * vfsmount once that exists.
+		 */
+		struct vfsmount tmp_mnt = { };
+
+		if (fc->fs_type->alloc_mnt_data) {
+			tmp_mnt.data = fc->fs_type->alloc_mnt_data();
+			if (!tmp_mnt.data)
+				return -ENOMEM;
+		}
+		root = fc->fs_type->mount2(&tmp_mnt, fc->fs_type, fc->sb_flags,
+					   fc->source, ctx->legacy_data);
+		if (IS_ERR(root))
+			return PTR_ERR(root);
+		fc->s_mnt_data = tmp_mnt.data;
+	} else {
+		root = fc->fs_type->mount(fc->fs_type, fc->sb_flags,
+					      fc->source, ctx->legacy_data);
+		if (IS_ERR(root))
+			return PTR_ERR(root);
+	}
 
 	sb = root->d_sb;
 	BUG_ON(!sb);
@@ -664,6 +688,10 @@ static int legacy_reconfigure(struct fs_context *fc)
 {
 	struct legacy_fs_context *ctx = fc->fs_private;
 	struct super_block *sb = fc->root->d_sb;
+
+	if (sb->s_op->remount_fs2)
+		return sb->s_op->remount_fs2(fc->s_mnt, sb, &fc->sb_flags,
+					     ctx ? ctx->legacy_data : NULL);
 
 	if (!sb->s_op->remount_fs)
 		return 0;
