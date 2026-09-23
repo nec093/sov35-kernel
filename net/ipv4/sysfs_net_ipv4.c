@@ -22,6 +22,7 @@
 #include <linux/sysfs.h>
 #include <linux/init.h>
 #include <net/tcp.h>
+#include <net/net_namespace.h>
 
 #define CREATE_IPV4_FILE(_name, _var) \
 static ssize_t _name##_show(struct kobject *kobj, \
@@ -45,13 +46,19 @@ static ssize_t _name##_store(struct kobject *kobj, \
 static struct kobj_attribute _name##_attr = \
 	__ATTR(_name, 0644, _name##_show, _name##_store)
 
-CREATE_IPV4_FILE(tcp_wmem_min, sysctl_tcp_wmem[0]);
-CREATE_IPV4_FILE(tcp_wmem_def, sysctl_tcp_wmem[1]);
-CREATE_IPV4_FILE(tcp_wmem_max, sysctl_tcp_wmem[2]);
+/*
+ * sysctl_tcp_{r,w}mem moved from global arrays to a per-netns
+ * net->ipv4.sysctl_tcp_{r,w}mem field upstream; this sysfs interface
+ * (Android AOSP-only, predates CAF) always meant the global/init-net
+ * default, so reference init_net's copy explicitly.
+ */
+CREATE_IPV4_FILE(tcp_wmem_min, init_net.ipv4.sysctl_tcp_wmem[0]);
+CREATE_IPV4_FILE(tcp_wmem_def, init_net.ipv4.sysctl_tcp_wmem[1]);
+CREATE_IPV4_FILE(tcp_wmem_max, init_net.ipv4.sysctl_tcp_wmem[2]);
 
-CREATE_IPV4_FILE(tcp_rmem_min, sysctl_tcp_rmem[0]);
-CREATE_IPV4_FILE(tcp_rmem_def, sysctl_tcp_rmem[1]);
-CREATE_IPV4_FILE(tcp_rmem_max, sysctl_tcp_rmem[2]);
+CREATE_IPV4_FILE(tcp_rmem_min, init_net.ipv4.sysctl_tcp_rmem[0]);
+CREATE_IPV4_FILE(tcp_rmem_def, init_net.ipv4.sysctl_tcp_rmem[1]);
+CREATE_IPV4_FILE(tcp_rmem_max, init_net.ipv4.sysctl_tcp_rmem[2]);
 
 static struct attribute *ipv4_attrs[] = {
 	&tcp_wmem_min_attr.attr,

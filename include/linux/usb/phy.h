@@ -157,6 +157,25 @@ struct usb_phy {
 	enum usb_charger_type (*charger_detect)(struct usb_phy *x);
 };
 
+/*
+ * struct usb_phy_bind - represents a static binding between a USB
+ * controller and a phy, for boards where dev_name-based DT/board-file
+ * matching is used instead of a phandle (CAF addition, not in
+ * mainline).
+ * @dev_name: the device name of the controller
+ * @phy_dev_name: the device name of the phy
+ * @index: used if a single controller uses multiple phys
+ * @phy: reference to the phy
+ * @list: to maintain a linked list of the binding information
+ */
+struct usb_phy_bind {
+	const char	*dev_name;
+	const char	*phy_dev_name;
+	u8		index;
+	struct usb_phy	*phy;
+	struct list_head list;
+};
+
 /* for board-specific init logic */
 extern int usb_add_phy(struct usb_phy *, enum usb_phy_type type);
 extern int usb_add_phy_dev(struct usb_phy *);
