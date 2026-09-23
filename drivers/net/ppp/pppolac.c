@@ -386,7 +386,9 @@ static struct proto_ops pppolac_proto_ops = {
 	.socketpair = sock_no_socketpair,
 	.accept = sock_no_accept,
 	.getname = sock_no_getname,
-	.poll = sock_no_poll,
+	/* sock_no_poll() was removed upstream; .poll left unset (falls
+	 * back to the socket core's default poll behavior), matching how
+	 * protocols without real poll support are handled now. */
 	.ioctl = pppox_ioctl,
 	.listen = sock_no_listen,
 	.shutdown = sock_no_shutdown,

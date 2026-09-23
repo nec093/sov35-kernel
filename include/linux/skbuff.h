@@ -2030,6 +2030,10 @@ static inline void __skb_queue_tail(struct sk_buff_head *list,
 }
 void skb_queue_tail(struct sk_buff_head *list, struct sk_buff *newsk);
 
+/* CAF addition (not in mainline), defined in net/core/skbuff.c. */
+void skb_insert(struct sk_buff *old, struct sk_buff *newsk,
+		struct sk_buff_head *list);
+
 /*
  * remove sk_buff from list. _Must_ be called atomically, and with
  * the list known..

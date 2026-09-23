@@ -50,6 +50,11 @@ static inline int user_path_at(int dfd, const char __user *name, unsigned flags,
 }
 
 extern int kern_path(const char *, unsigned, struct path *);
+/* Exported (fs/namei.c) but was only ever declared for fs-internal
+ * callers (fs/internal.h); fs/sdcardfs/lookup.c, an out-of-tree-style
+ * overlay filesystem, also needs it. */
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
+		const char *, unsigned int, struct path *);
 
 extern struct dentry *kern_path_create(int, const char *, struct path *, unsigned int);
 extern struct dentry *user_path_create(int, const char __user *, struct path *, unsigned int);

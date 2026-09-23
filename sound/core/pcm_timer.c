@@ -55,12 +55,12 @@ static unsigned long snd_pcm_timer_resolution(struct snd_timer * timer)
 	unsigned long ret = 0, flags = 0;
 	
 	substream = timer->private_data;
-	spin_lock_irqsave(&substream->runtime_lock, flags);
+	snd_pcm_stream_lock_irqsave(substream, flags);
 	if (substream->runtime)
 		ret = substream->runtime->timer_resolution;
 	else
 		ret = 0;
-	spin_unlock_irqrestore(&substream->runtime_lock, flags);
+	snd_pcm_stream_unlock_irqrestore(substream, flags);
 	return ret;
 }
 

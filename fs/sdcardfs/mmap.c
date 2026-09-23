@@ -20,10 +20,10 @@
 
 #include "sdcardfs.h"
 
-static int sdcardfs_fault(struct vm_fault *vmf)
+static vm_fault_t sdcardfs_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
-	int err;
+	vm_fault_t err;
 	struct file *file;
 	const struct vm_operations_struct *lower_vm_ops;
 
@@ -49,10 +49,10 @@ static void sdcardfs_vm_close(struct vm_area_struct *vma)
 	fput(file);
 }
 
-static int sdcardfs_page_mkwrite(struct vm_fault *vmf)
+static vm_fault_t sdcardfs_page_mkwrite(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
-	int err = 0;
+	vm_fault_t err = 0;
 	struct file *file;
 	const struct vm_operations_struct *lower_vm_ops;
 

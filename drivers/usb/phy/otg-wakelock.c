@@ -41,7 +41,10 @@ static DEFINE_SPINLOCK(otgwl_spinlock);
 
 struct otgwl_lock {
 	char name[40];
-	struct wakeup_source wakesrc;
+	/* wakeup_source_init()/wakeup_source_trash() removed upstream;
+	 * switched to a pointer + wakeup_source_create()/_add()/_remove()/
+	 * _destroy(), same pattern used repeatedly elsewhere this session. */
+	struct wakeup_source *wakesrc;
 	bool held;
 };
 
@@ -56,21 +59,21 @@ static struct otgwl_lock vbus_lock;
 static void otgwl_hold(struct otgwl_lock *lock)
 {
 	if (!lock->held) {
-		__pm_stay_awake(&lock->wakesrc);
+		__pm_stay_awake(lock->wakesrc);
 		lock->held = true;
 	}
 }
 
 static void otgwl_temporary_hold(struct otgwl_lock *lock)
 {
-	__pm_wakeup_event(&lock->wakesrc, TEMPORARY_HOLD_TIME);
+	__pm_wakeup_event(lock->wakesrc, TEMPORARY_HOLD_TIME);
 	lock->held = false;
 }
 
 static void otgwl_drop(struct otgwl_lock *lock)
 {
 	if (lock->held) {
-		__pm_relax(&lock->wakesrc);
+		__pm_relax(lock->wakesrc);
 		lock->held = false;
 	}
 }
@@ -149,7 +152,10 @@ static int __init otg_wakelock_init(void)
 
 	snprintf(vbus_lock.name, sizeof(vbus_lock.name), "vbus-%s",
 		 dev_name(otgwl_xceiv->dev));
-	wakeup_source_init(&vbus_lock.wakesrc, vbus_lock.name);
+	vbus_lock.wakesrc = wakeup_source_create(vbus_lock.name);
+	if (!vbus_lock.wakesrc)
+		return -ENOMEM;
+	wakeup_source_add(vbus_lock.wakesrc);
 
 	otgwl_nb.notifier_call = otgwl_otg_notifications;
 	ret = usb_register_notifier(otgwl_xceiv, &otgwl_nb);
@@ -159,7 +165,8 @@ static int __init otg_wakelock_init(void)
 		       " failed\n", __func__,
 		       dev_name(otgwl_xceiv->dev));
 		otgwl_xceiv = NULL;
-		wakeup_source_trash(&vbus_lock.wakesrc);
+		wakeup_source_remove(vbus_lock.wakesrc);
+		wakeup_source_destroy(vbus_lock.wakesrc);
 		return ret;
 	}
 

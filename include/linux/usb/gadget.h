@@ -524,6 +524,8 @@ struct usb_gadget {
 	bool				l1_supported;
 	bool				is_chipidea;
 	bool				remote_wakeup;
+	/* Indicates function using bam2bam is enabled or not. */
+	bool				bam2bam_func_enabled;
 };
 #define work_to_gadget(w)	(container_of((w), struct usb_gadget, work))
 
@@ -1113,6 +1115,14 @@ static inline void usb_gadget_autopm_put_no_suspend(struct usb_gadget *gadget)
 }
 
 /*-------------------------------------------------------------------------*/
+
+/*
+ * CAF addition (not in mainline), defined+exported in
+ * drivers/usb/dwc3/dwc3-msm.c: undo the BAM2BAM/GSI-specific endpoint
+ * configuration done by the controller driver, used by gadget function
+ * drivers built on top of it (u_data_ipa.c, u_qdss.c, f_qc_rndis.c).
+ */
+extern int msm_ep_unconfig(struct usb_ep *ep);
 
 /* utility wrapping a simple endpoint selection policy */
 

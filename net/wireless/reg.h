@@ -33,6 +33,19 @@ bool is_world_regdom(const char *alpha2);
 bool reg_supported_dfs_region(enum nl80211_dfs_regions dfs_region);
 enum nl80211_dfs_regions reg_get_dfs_region(struct wiphy *wiphy);
 
+/*
+ * regulatory_hint_user - hint to the wireless core a regulatory domain
+ * from userspace
+ * @alpha2: the ISO/IEC 3166 alpha2 the driver claims its regulatory
+ * domain should be set to
+ * @user_reg_hint_type: the type of user regulatory hint.
+ *
+ * Defined in reg.c, called from nl80211.c; was never declared in this
+ * shared private header -- a pure header-drift gap.
+ */
+int regulatory_hint_user(const char *alpha2,
+			 enum nl80211_user_reg_hint_type user_reg_hint_type);
+
 /**
  * regulatory_hint_indoor - hint operation in indoor env. or not
  * @is_indoor: if true indicates that user space thinks that the
