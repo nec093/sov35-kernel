@@ -24,6 +24,7 @@
 #include <linux/platform_device.h>
 #include <linux/soc/qcom/smd-rpm.h>
 #include <soc/qcom/rpm-smd.h>
+#include <soc/qcom/clock-rpm.h>
 #include <linux/clk.h>
 
 #include <dt-bindings/clock/qcom,rpmcc.h>

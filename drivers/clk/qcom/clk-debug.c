@@ -265,19 +265,18 @@ static int clk_debug_measure_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(clk_measure_fops, clk_debug_measure_get,
 							NULL, "%lld\n");
 
-int clk_debug_measure_add(struct clk_hw *hw, struct dentry *dentry)
+void clk_debug_measure_add(struct clk_hw *hw, struct dentry *dentry)
 {
 	if (IS_ERR_OR_NULL(measure)) {
 		pr_err_once("Please check if `measure` clk is registered.\n");
-		return 0;
+		return;
 	}
 
 	if (clk_set_parent(measure->clk, hw->clk))
-		return 0;
+		return;
 
 	debugfs_create_file("clk_measure", 0444, dentry, hw,
 					&clk_measure_fops);
-	return 0;
 }
 EXPORT_SYMBOL(clk_debug_measure_add);
 

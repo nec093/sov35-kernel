@@ -766,6 +766,31 @@ void clk_hw_set_rate_range(struct clk_hw *hw, unsigned long min_rate,
 EXPORT_SYMBOL_GPL(clk_hw_set_rate_range);
 
 /*
+ * Aggregate the rate of all child nodes which are enabled and exclude the
+ * child node which requests for clk_aggregate_rate.
+ *
+ * CAF addition (used by drivers/clk/qcom/clk-branch.c and
+ * clk-voter.c-style CAF clock voting), ported to the 5.4 clk core
+ * unmodified -- struct clk_core's children/child_node/enable_count/
+ * name/rate fields are unchanged from 4.14.
+ */
+unsigned long clk_aggregate_rate(struct clk_hw *hw,
+					const struct clk_core *parent)
+{
+	struct clk_core *child;
+	unsigned long aggre_rate = 0;
+
+	hlist_for_each_entry(child, &parent->children, child_node) {
+		if (child->enable_count &&
+				strcmp(child->name, hw->init->name))
+			aggre_rate = max(child->rate, aggre_rate);
+	}
+
+	return aggre_rate;
+}
+EXPORT_SYMBOL_GPL(clk_aggregate_rate);
+
+/*
  * __clk_mux_determine_rate - clk_ops::determine_rate implementation for a mux type clk
  * @hw: mux type clk to determine rate on
  * @req: rate request, also used to return preferred parent and frequencies

@@ -8,6 +8,7 @@
 
 #include <linux/of.h>
 #include <linux/of_clk.h>
+#include <linux/mutex.h>
 
 /*
  * flags used across common struct clk.  these flags should only affect the
@@ -32,11 +33,25 @@
 #define CLK_OPS_PARENT_ENABLE	BIT(12)
 /* duty cycle call may be forwarded to the parent clock */
 #define CLK_DUTY_CYCLE_PARENT	BIT(13)
+/*
+ * CAF additions. Placed at BIT(14)+ (not BIT(13), which mainline's own
+ * CLK_DUTY_CYCLE_PARENT above already occupies) to avoid colliding with
+ * upstream flags added to this enum between 4.14 and 5.4.
+ */
+#define CLK_ENABLE_HAND_OFF	BIT(14) /* enable clock when registered. */
+					/*
+					 * hand-off enable_count & prepare_count
+					 * to first consumer that enables clk
+					 */
+#define CLK_IS_MEASURE          BIT(15) /* measure clock */
+/* do not call clk_change_rate on the clock's children */
+#define CLK_CHILD_NO_RATE_PROP	BIT(16)
 
 struct clk;
 struct clk_hw;
 struct clk_core;
 struct dentry;
+struct seq_file;
 
 /**
  * struct clk_rate_request - Structure encoding the clk constraints that
@@ -245,6 +260,12 @@ struct clk_ops {
 					  struct clk_duty *duty);
 	void		(*init)(struct clk_hw *hw);
 	void		(*debug_init)(struct clk_hw *hw, struct dentry *dentry);
+	/* CAF additions, all optional. */
+	int		(*set_flags)(struct clk_hw *hw, unsigned int flags);
+	void		(*list_registers)(struct seq_file *f,
+						struct clk_hw *hw);
+	long		(*list_rate)(struct clk_hw *hw, unsigned int n,
+						unsigned long rate_max);
 };
 
 /**
@@ -284,7 +305,73 @@ struct clk_init_data {
 	const struct clk_hw		**parent_hws;
 	u8			num_parents;
 	unsigned long		flags;
+	/* CAF additions: voltage-scaling requirement class. */
+	struct clk_vdd_class	*vdd_class;
+	unsigned long		*rate_max;
+	int			num_rate_max;
 };
+
+struct regulator;
+
+/**
+ * struct clk_vdd_class - Voltage scaling class (CAF addition)
+ * @class_name: name of the class
+ * @regulator: array of regulators
+ * @num_regulators: size of regulator array. Standard regulator APIs will be
+			used if this field > 0
+ * @set_vdd: function to call when applying a new voltage setting
+ * @vdd_uv: sorted 2D array of legal voltage settings. Indexed by level, then
+		regulator
+ * @level_votes: array of votes for each level
+ * @num_levels: specifies the size of level_votes array
+ * @skip_handoff: do not vote for the max possible voltage during init
+ * @use_max_uV: use INT_MAX for max_uV when calling regulator_set_voltage
+ * @cur_level: the currently set voltage level
+ * @lock: lock to protect this struct
+ */
+struct clk_vdd_class {
+	const char *class_name;
+	struct regulator **regulator;
+	int num_regulators;
+	int (*set_vdd)(struct clk_vdd_class *v_class, int level);
+	int *vdd_uv;
+	int *level_votes;
+	int num_levels;
+	bool skip_handoff;
+	bool use_max_uV;
+	unsigned long cur_level;
+	struct mutex lock;
+};
+
+#define DEFINE_VDD_CLASS(_name, _set_vdd, _num_levels) \
+	struct clk_vdd_class _name = { \
+		.class_name = #_name, \
+		.set_vdd = _set_vdd, \
+		.level_votes = (int [_num_levels]) {}, \
+		.num_levels = _num_levels, \
+		.cur_level = _num_levels, \
+		.lock = __MUTEX_INITIALIZER(_name.lock) \
+	}
+
+#define DEFINE_VDD_REGULATORS(_name, _num_levels, _num_regulators, _vdd_uv) \
+	struct clk_vdd_class _name = { \
+		.class_name = #_name, \
+		.vdd_uv = _vdd_uv, \
+		.regulator = (struct regulator * [_num_regulators]) {}, \
+		.num_regulators = _num_regulators, \
+		.level_votes = (int [_num_levels]) {}, \
+		.num_levels = _num_levels, \
+		.cur_level = _num_levels, \
+		.lock = __MUTEX_INITIALIZER(_name.lock) \
+	}
+
+#define DEFINE_VDD_REGS_INIT(_name, _num_regulators) \
+	struct clk_vdd_class _name = { \
+		.class_name = #_name, \
+		.regulator = (struct regulator * [_num_regulators]) {}, \
+		.num_regulators = _num_regulators, \
+		.lock = __MUTEX_INITIALIZER(_name.lock) \
+	}
 
 /**
  * struct clk_hw - handle for traversing from a struct clk to its corresponding
@@ -464,6 +551,8 @@ struct clk_divider {
 #define CLK_DIVIDER_READ_ONLY		BIT(5)
 #define CLK_DIVIDER_MAX_AT_ZERO		BIT(6)
 #define CLK_DIVIDER_BIG_ENDIAN		BIT(7)
+/* CAF addition, placed at BIT(8) to avoid colliding with BIG_ENDIAN above. */
+#define CLK_DIVIDER_ROUND_KHZ		BIT(8)
 
 extern const struct clk_ops clk_divider_ops;
 extern const struct clk_ops clk_divider_ro_ops;
@@ -842,6 +931,9 @@ int clk_mux_determine_rate_flags(struct clk_hw *hw,
 void clk_hw_reparent(struct clk_hw *hw, struct clk_hw *new_parent);
 void clk_hw_set_rate_range(struct clk_hw *hw, unsigned long min_rate,
 			   unsigned long max_rate);
+/* CAF addition, implemented in drivers/clk/clk.c. */
+unsigned long clk_aggregate_rate(struct clk_hw *hw,
+					const struct clk_core *parent);
 
 static inline void __clk_hw_set_clk(struct clk_hw *dst, struct clk_hw *src)
 {
