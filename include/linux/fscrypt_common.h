@@ -18,7 +18,7 @@
 #include <linux/dcache.h>
 #include <crypto/skcipher.h>
 #include <uapi/linux/fs.h>
-#include <uapi/linux/fscrypt.h>	/* FS_ENCRYPTION_MODE_* compat defines */
+#include <uapi/linux/fscrypt.h>
 
 #define FS_CRYPTO_BLOCK_SIZE		16
 
@@ -99,12 +99,18 @@ static inline bool fscrypt_dummy_context_enabled(struct inode *inode)
 static inline bool fscrypt_valid_enc_modes(u32 contents_mode,
 					u32 filenames_mode)
 {
-	if (contents_mode == FS_ENCRYPTION_MODE_AES_128_CBC &&
-	    filenames_mode == FS_ENCRYPTION_MODE_AES_128_CTS)
+	/*
+	 * FS_ENCRYPTION_MODE_* are "old name" uapi compat aliases for
+	 * FSCRYPT_MODE_*, guarded #ifndef __KERNEL__ in
+	 * include/uapi/linux/fscrypt.h (deliberately not available to
+	 * kernel code) -- use the real names directly.
+	 */
+	if (contents_mode == FSCRYPT_MODE_AES_128_CBC &&
+	    filenames_mode == FSCRYPT_MODE_AES_128_CTS)
 		return true;
 
-	if (contents_mode == FS_ENCRYPTION_MODE_AES_256_XTS &&
-	    filenames_mode == FS_ENCRYPTION_MODE_AES_256_CTS)
+	if (contents_mode == FSCRYPT_MODE_AES_256_XTS &&
+	    filenames_mode == FSCRYPT_MODE_AES_256_CTS)
 		return true;
 
 	return false;

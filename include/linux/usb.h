@@ -407,6 +407,9 @@ struct usb_host_bos {
 	struct usb_ssp_cap_descriptor	*ssp_cap;
 	struct usb_ss_container_id_descriptor	*ss_id;
 	struct usb_ptm_cap_descriptor	*ptm_cap;
+	/* CAF additions (not in mainline). */
+	struct usb_config_summary_descriptor	*config_summary;
+	u8	num_config_summary_desc;
 };
 
 int __usb_get_extra_descriptor(char *buffer, unsigned size,
@@ -476,6 +479,16 @@ struct usb_bus {
 	struct mon_bus *mon_bus;	/* non-null when associated */
 	int monitored;			/* non-zero when monitored */
 #endif
+	/* CAF addition (not in mainline). */
+	unsigned skip_resume:1;	/* All USB devices are brought into full
+					 * power state after system resume. It
+					 * is desirable for some buses to keep
+					 * their devices in suspend state even
+					 * after system resume. The devices
+					 * are resumed later when a remote
+					 * wakeup is detected or an interface
+					 * driver starts I/O.
+					 */
 };
 
 struct usb_dev_state;

@@ -2691,7 +2691,7 @@ static int __sdfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	__lock_d_revalidate(old_dentry);
 	__lock_d_revalidate(new_dentry);
 
-	new_inode_inc_iversion_raw(dir);
+	inode_inc_iversion_raw(new_dir);
 	new_dir->i_ctime = new_dir->i_mtime = new_dir->i_atime = ts;
 	if (IS_DIRSYNC(new_dir))
 		(void) sdfat_sync_inode(new_dir);
@@ -2712,7 +2712,7 @@ static int __sdfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 			inc_nlink(new_dir);
 	}
 
-	old_inode_inc_iversion_raw(dir);
+	inode_inc_iversion_raw(old_dir);
 	old_dir->i_ctime = old_dir->i_mtime = ts;
 	if (IS_DIRSYNC(old_dir))
 		(void) sdfat_sync_inode(old_dir);
@@ -4846,7 +4846,7 @@ static int sdfat_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	root_inode->i_ino = SDFAT_ROOT_INO;
-	root_inode_set_iversion_raw(inode, 1);
+	inode_set_iversion_raw(root_inode, 1);
 
 	err = sdfat_read_root(root_inode);
 	if (err) {

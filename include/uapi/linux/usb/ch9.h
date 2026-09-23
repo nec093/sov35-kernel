@@ -1080,6 +1080,30 @@ struct usb_ptm_cap_descriptor {
 } __attribute__((packed));
 
 #define USB_DT_USB_PTM_ID_SIZE		3
+
+/*
+ * CAF addition (not in mainline): Configuration Summary capability
+ * descriptor, describing a device's alternate configurations (used to
+ * let the host pick a Configuration without enumerating each one).
+ */
+#define	USB_CAP_TYPE_CONFIG_SUMMARY	0x10
+
+struct function_class_info {
+	__u8 bClass;
+	__u8 bSubClass;
+	__u8 bProtocol;
+};
+
+struct usb_config_summary_descriptor {
+	__u8 bLength;
+	__u8 bDescriptorType;
+	__u8 bDevCapabilityType;
+	__u16 bcdVersion;
+	__u8 bConfigurationValue;
+	__u8 bMaxPower;
+	__u8 bNumFunctions;
+	struct function_class_info cs_info[];
+} __attribute__((packed));
 /*
  * The size of the descriptor for the Sublink Speed Attribute Count
  * (SSAC) specified in bmAttributes[4:0]. SSAC is zero-based

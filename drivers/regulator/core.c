@@ -157,6 +157,14 @@ static inline struct regulator_dev *rdev_get_supply(struct regulator_dev *rdev)
 }
 
 /*
+ * Mainline's ww_mutex class for rdev->mutex; belongs with
+ * regulator_lock_nested() below (ported from pristine at the same
+ * time) but was missed there -- needed by ww_mutex_init() at the rdev
+ * registration site.
+ */
+static DEFINE_WW_CLASS(regulator_ww_class);
+
+/*
  * Mainline 5.4 replaced the plain per-rdev mutex with a ww_mutex (for
  * supply-chain deadlock avoidance) and a reentrant regulator_lock()/
  * regulator_unlock() wrapper (ref-counted via rdev->ref_cnt/mutex_owner,
@@ -2630,9 +2638,9 @@ int regulator_is_enabled(struct regulator *regulator)
 	if (regulator->always_on)
 		return 1;
 
-	mutex_lock(&regulator->rdev->mutex);
+	regulator_lock(regulator->rdev);
 	ret = _regulator_is_enabled(regulator->rdev);
-	mutex_unlock(&regulator->rdev->mutex);
+	regulator_unlock(regulator->rdev);
 
 	return ret;
 }
@@ -4540,7 +4548,7 @@ regulator_register(const struct regulator_desc *regulator_desc,
 		rdev->dev.of_node = of_node_get(config->of_node);
 	}
 
-	mutex_init(&rdev->mutex);
+	ww_mutex_init(&rdev->mutex, &regulator_ww_class);
 	rdev->reg_data = config->driver_data;
 	rdev->owner = regulator_desc->owner;
 	rdev->desc = regulator_desc;

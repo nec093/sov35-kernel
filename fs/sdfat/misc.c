@@ -71,7 +71,7 @@ void __sdfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 		pr_err("[SDFAT](%s[%d:%d]):ERR: %pV\n",
 			sb->s_id, MAJOR(bd_dev), MINOR(bd_dev), &vaf);
 #ifdef CONFIG_SDFAT_SUPPORT_STLOG
-		if (opts->errors == SDFAT_ERRORS_RO && !(sb->s_flags & MS_RDONLY)) {
+		if (opts->errors == SDFAT_ERRORS_RO && !(sb->s_flags & SB_RDONLY)) {
 			ST_LOG("[SDFAT](%s[%d:%d]):ERR: %pV\n",
 				sb->s_id, MAJOR(bd_dev), MINOR(bd_dev), &vaf);
 		}
@@ -82,8 +82,8 @@ void __sdfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 	if (opts->errors == SDFAT_ERRORS_PANIC) {
 		panic("[SDFAT](%s[%d:%d]): fs panic from previous error\n",
 			sb->s_id, MAJOR(bd_dev), MINOR(bd_dev));
-	} else if (opts->errors == SDFAT_ERRORS_RO && !(sb->s_flags & MS_RDONLY)) {
-		sb->s_flags |= MS_RDONLY;
+	} else if (opts->errors == SDFAT_ERRORS_RO && !(sb->s_flags & SB_RDONLY)) {
+		sb->s_flags |= SB_RDONLY;
 		pr_err("[SDFAT](%s[%d:%d]): Filesystem has been set "
 			"read-only\n", sb->s_id, MAJOR(bd_dev), MINOR(bd_dev));
 #ifdef CONFIG_SDFAT_SUPPORT_STLOG

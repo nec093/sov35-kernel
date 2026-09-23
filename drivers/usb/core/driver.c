@@ -1332,7 +1332,7 @@ static int usb_suspend_both(struct usb_device *udev, pm_message_t msg)
 			int err;
 			u16 devstat;
 
-			err = usb_get_status(udev, USB_RECIP_DEVICE, 0,
+			err = usb_get_std_status(udev, USB_RECIP_DEVICE, 0,
 					     &devstat);
 			if (err) {
 				dev_err(&udev->dev,

@@ -143,7 +143,7 @@ static s32 __fs_set_vol_flags(struct super_block *sb, u16 new_flag, s32 always_s
 	/* skip updating volume dirty flag,
 	 * if this volume has been mounted with read-only
 	 */
-	if (sb->s_flags & MS_RDONLY)
+	if (sb->s_flags & SB_RDONLY)
 		return 0;
 
 	if (!fsi->pbr_bh) {
