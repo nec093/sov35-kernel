@@ -19,7 +19,10 @@
 struct mdss_wb_ctrl {
 	struct platform_device *pdev;
 	struct mdss_panel_data pdata;
-	struct extcon_dev sdev;
+	/* struct extcon_dev moved to a private header upstream (no longer
+	 * embeddable); switched to an allocated pointer, same pattern used
+	 * for gpio-usbdetect.c/mdss_dba_utils.c earlier this session. */
+	struct extcon_dev *sdev;
 };
 
 #endif

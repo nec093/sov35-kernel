@@ -41,6 +41,7 @@
 #include <linux/input.h>
 #include <linux/slab.h>
 #include <linux/pm.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/string.h>

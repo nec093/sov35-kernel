@@ -50,6 +50,16 @@
 #include "soc/qcom/secure_buffer.h"
 #include <asm/cacheflush.h>
 
+/*
+ * dmac_flush_range() is an arm32-only macro; this is arm64, which only
+ * exposes __dma_flush_area() (clean+invalidate) as a declared extern.
+ * Same root cause and fix as drivers/char/adsprpc.c earlier this port.
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+
 #include "mdss.h"
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
@@ -5666,7 +5676,7 @@ static int __init mdss_mdp_driver_init(void)
 module_param_string(panel, mdss_mdp_panel, MDSS_MAX_PANEL_LEN, 0);
 MODULE_PARM_DESC(panel,
 		"panel=<lk_cfg>:<pan_intf>:<pan_intf_cfg>:<panel_topology_cfg> "
-		"where <lk_cfg> is "1"-lk/gcdb config or "0" non-lk/non-gcdb "
+		"where <lk_cfg> is \"1\"-lk/gcdb config or \"0\" non-lk/non-gcdb "
 		"config; <pan_intf> is dsi:<ctrl_id> or hdmi or edp "
 		"<pan_intf_cfg> is panel interface specific string "
 		"Ex: This string is panel's device node name from DT "

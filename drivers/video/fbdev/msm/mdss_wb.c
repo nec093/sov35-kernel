@@ -11,6 +11,7 @@
  *
  */
 
+#include <linux/extcon-provider.h>
 #include <linux/init.h>
 #include <linux/ioctl.h>
 #include <linux/kernel.h>
@@ -110,11 +111,20 @@ static int mdss_wb_dev_init(struct mdss_wb_ctrl *wb_ctrl)
 		return -ENODEV;
 	}
 
-	memset(&wb_ctrl->sdev, 0x0, sizeof(wb_ctrl->sdev));
-	wb_ctrl->sdev.supported_cable = mdss_wb_disp_supported_cable;
-	wb_ctrl->sdev.dev.parent = &wb_ctrl->pdev->dev;
-	wb_ctrl->sdev.name = "wfd";
-	rc = extcon_dev_register(&wb_ctrl->sdev);
+	/*
+	 * Not using the devm_ variant: mdss_wb_dev_uninit() below already
+	 * explicitly unregisters/frees this on both the probe-error and
+	 * normal-remove paths, and both of those run at the same points
+	 * devres would otherwise fire its own cleanup -- avoids a double
+	 * unregister.
+	 */
+	wb_ctrl->sdev = extcon_dev_allocate(mdss_wb_disp_supported_cable);
+	if (IS_ERR(wb_ctrl->sdev)) {
+		rc = PTR_ERR(wb_ctrl->sdev);
+		pr_err("Failed to allocate switch dev for writeback panel");
+		return rc;
+	}
+	rc = extcon_dev_register(wb_ctrl->sdev);
 	if (rc) {
 		pr_err("Failed to setup switch dev for writeback panel");
 		return rc;
@@ -130,7 +140,8 @@ static int mdss_wb_dev_uninit(struct mdss_wb_ctrl *wb_ctrl)
 		return -ENODEV;
 	}
 
-	extcon_dev_unregister(&wb_ctrl->sdev);
+	extcon_dev_unregister(wb_ctrl->sdev);
+	extcon_dev_free(wb_ctrl->sdev);
 	return 0;
 }
 

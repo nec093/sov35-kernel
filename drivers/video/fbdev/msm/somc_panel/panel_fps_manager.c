@@ -23,6 +23,8 @@
 #include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
+#include <linux/time32.h>
+#include <linux/timekeeping32.h>
 
 #include "../mdss_mdp.h"
 #include "../mdss_dsi.h"
@@ -234,12 +236,13 @@ error:
 
 static u32 ts_diff_ms(struct timespec lhs, struct timespec rhs)
 {
-	struct timespec tdiff;
+	struct timespec64 tdiff;
 	s64 nsec;
 	u32 msec;
 
-	tdiff = timespec_sub(lhs, rhs);
-	nsec = timespec_to_ns(&tdiff);
+	tdiff = timespec64_sub(timespec_to_timespec64(lhs),
+				timespec_to_timespec64(rhs));
+	nsec = timespec64_to_ns(&tdiff);
 	msec = (u32)nsec;
 	do_div(msec, NSEC_PER_MSEC);
 

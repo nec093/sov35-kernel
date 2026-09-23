@@ -12,6 +12,7 @@
 
 #include <linux/clk.h>
 #include <linux/err.h>
+#include <linux/i2c.h>
 #include <linux/io.h>
 #include <linux/regulator/consumer.h>
 #include <linux/delay.h>
