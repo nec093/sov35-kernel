@@ -628,6 +628,11 @@ struct request_queue {
 #define QUEUE_FLAG_PCI_P2PDMA	25	/* device supports PCI p2p requests */
 #define QUEUE_FLAG_ZONE_RESETALL 26	/* supports Zone Reset All */
 #define QUEUE_FLAG_RQ_ALLOC_TIME 27	/* record rq->alloc_time_ns */
+/*
+ * CAF addition (not in mainline), placed at 28 to avoid colliding with
+ * upstream flags added between 4.14 and 5.4.
+ */
+#define QUEUE_FLAG_INLINECRYPT 28	/* inline encryption support */
 
 #define QUEUE_FLAG_MQ_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_SAME_COMP))
@@ -1797,6 +1802,63 @@ static inline bool blk_req_can_dispatch_to_zone(struct request *rq)
 	return true;
 }
 #endif /* CONFIG_BLK_DEV_ZONED */
+
+/*
+ * CAF addition (not in mainline): IO latency histogram support, used by
+ * struct mmc_host's io_lat_read/io_lat_write (include/linux/mmc/host.h)
+ * and drivers/mmc/core/core.c.
+ */
+static const u_int64_t latency_x_axis_us[] = {
+	100,
+	200,
+	300,
+	400,
+	500,
+	600,
+	700,
+	800,
+	900,
+	1000,
+	1200,
+	1400,
+	1600,
+	1800,
+	2000,
+	2500,
+	3000,
+	4000,
+	5000,
+	6000,
+	7000,
+	9000,
+	10000
+};
+
+#define BLK_IO_LAT_HIST_DISABLE         0
+#define BLK_IO_LAT_HIST_ENABLE          1
+#define BLK_IO_LAT_HIST_ZERO            2
+
+struct io_latency_state {
+	u_int64_t	latency_y_axis[ARRAY_SIZE(latency_x_axis_us) + 1];
+	u_int64_t	latency_elems;
+	u_int64_t	latency_sum;
+};
+
+static inline void
+blk_update_latency_hist(struct io_latency_state *s, u_int64_t delta_us)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(latency_x_axis_us); i++)
+		if (delta_us < (u_int64_t)latency_x_axis_us[i])
+			break;
+	s->latency_y_axis[i]++;
+	s->latency_elems++;
+	s->latency_sum += delta_us;
+}
+
+ssize_t blk_latency_hist_show(char *name, struct io_latency_state *s,
+		char *buf, int buf_size);
 
 #else /* CONFIG_BLOCK */
 
