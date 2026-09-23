@@ -844,8 +844,18 @@ static int msm_wdog_dt_to_pdata(struct platform_device *pdev,
 		dev_info(&pdev->dev, "wdog absent resource not present\n");
 	}
 
-	pdata->bark_irq = platform_get_irq(pdev, 0);
-	pdata->bite_irq = platform_get_irq(pdev, 1);
+	ret = platform_get_irq(pdev, 0);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "reading bark irq failed\n");
+		return -ENXIO;
+	}
+	pdata->bark_irq = ret;
+	ret = platform_get_irq(pdev, 1);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "reading bite irq failed\n");
+		return -ENXIO;
+	}
+	pdata->bite_irq = ret;
 	ret = of_property_read_u32(node, "qcom,bark-time", &pdata->bark_time);
 	if (ret) {
 		dev_err(&pdev->dev, "reading bark time failed\n");

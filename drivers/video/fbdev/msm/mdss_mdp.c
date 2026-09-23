@@ -2505,9 +2505,11 @@ void mdss_mdp_footswitch_ctrl_splash(int on)
 					pr_err("core_gdsc failed to enable\n");
 			}
 
-			ret = regulator_enable(mdata->fs);
-			if (ret)
-				pr_err("Footswitch failed to enable\n");
+			if (mdata->fs) {
+				ret = regulator_enable(mdata->fs);
+				if (ret)
+					pr_err("Footswitch failed to enable\n");
+			}
 
 			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 			mdss_bus_bandwidth_ctrl(true);
@@ -2515,7 +2517,8 @@ void mdss_mdp_footswitch_ctrl_splash(int on)
 			pr_debug("Disable MDP FS for splash.\n");
 			mdss_bus_bandwidth_ctrl(false);
 			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
-			regulator_disable(mdata->fs);
+			if (mdata->fs)
+				regulator_disable(mdata->fs);
 			if (mdata->core_gdsc)
 				regulator_disable(mdata->core_gdsc);
 			mdata->handoff_pending = false;
