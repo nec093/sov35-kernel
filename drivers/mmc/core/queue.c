@@ -139,7 +139,7 @@ static void mmc_mq_recovery_handler(struct work_struct *work)
 					    recovery_work);
 	struct request_queue *q = mq->queue;
 
-	mmc_get_card(mq->card, &mq->ctx);
+	mmc_get_card(mq->card);
 
 	mq->in_recovery = true;
 
@@ -154,7 +154,7 @@ static void mmc_mq_recovery_handler(struct work_struct *work)
 	mq->recovery_needed = false;
 	spin_unlock_irq(&mq->lock);
 
-	mmc_put_card(mq->card, &mq->ctx);
+	mmc_put_card(mq->card);
 
 	blk_mq_run_hw_queues(q, true);
 }
@@ -301,7 +301,7 @@ static blk_status_t mmc_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 	}
 
 	if (get_card)
-		mmc_get_card(card, &mq->ctx);
+		mmc_get_card(card);
 
 	if (mq->use_cqe) {
 		host->retune_now = host->need_retune && cqe_retune_ok &&
@@ -334,7 +334,7 @@ static blk_status_t mmc_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 		mq->busy = false;
 		spin_unlock_irq(&mq->lock);
 		if (put_card)
-			mmc_put_card(card, &mq->ctx);
+			mmc_put_card(card);
 	} else {
 		WRITE_ONCE(mq->busy, false);
 	}

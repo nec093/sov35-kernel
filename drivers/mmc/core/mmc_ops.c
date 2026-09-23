@@ -872,3 +872,20 @@ int mmc_discard_queue(struct mmc_host *host, u32 tasks)
 	return mmc_wait_for_cmd(host, &cmd, 0);
 }
 EXPORT_SYMBOL(mmc_discard_queue);
+
+/*
+ * Mainline additions (not in CAF); see the comment in mmc_ops.h. Dead
+ * code in practice for this device, stubbed as failing rather than
+ * porting mainline's real EXT_CSD CMDQ-switch sequence.
+ */
+int mmc_cmdq_enable(struct mmc_card *card)
+{
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(mmc_cmdq_enable);
+
+int mmc_cmdq_disable(struct mmc_card *card)
+{
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(mmc_cmdq_disable);

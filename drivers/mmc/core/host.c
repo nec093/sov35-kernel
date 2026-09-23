@@ -39,14 +39,12 @@
 #define MMC_DEVFRQ_DEFAULT_POLLING_MSEC 100
 
 static DEFINE_IDA(mmc_host_ida);
-static DEFINE_SPINLOCK(mmc_host_lock);
 
 static void mmc_host_classdev_release(struct device *dev)
 {
 	struct mmc_host *host = cls_dev_to_mmc_host(dev);
-	spin_lock(&mmc_host_lock);
-	ida_remove(&mmc_host_ida, host->index);
-	spin_unlock(&mmc_host_lock);
+
+	ida_simple_remove(&mmc_host_ida, host->index);
 	kfree(host);
 }
 
@@ -484,9 +482,9 @@ out:
 	return err;
 }
 
-static void mmc_retune_timer(unsigned long data)
+static void mmc_retune_timer(struct timer_list *t)
 {
-	struct mmc_host *host = (struct mmc_host *)data;
+	struct mmc_host *host = from_timer(host, t, retune_timer);
 
 	mmc_retune_needed(host);
 }
@@ -675,22 +673,16 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	/* scanning will be enabled when we're ready */
 	host->rescan_disable = 1;
 
-again:
-	if (!ida_pre_get(&mmc_host_ida, GFP_KERNEL)) {
+	/*
+	 * Old ida_pre_get()/ida_get_new() retry-loop API removed upstream;
+	 * ida_simple_get() is a single thread-safe call, no retry needed.
+	 */
+	err = ida_simple_get(&mmc_host_ida, 0, 0, GFP_KERNEL);
+	if (err < 0) {
 		kfree(host);
 		return NULL;
 	}
-
-	spin_lock(&mmc_host_lock);
-	err = ida_get_new(&mmc_host_ida, &host->index);
-	spin_unlock(&mmc_host_lock);
-
-	if (err == -EAGAIN) {
-		goto again;
-	} else if (err) {
-		kfree(host);
-		return NULL;
-	}
+	host->index = err;
 
 	dev_set_name(&host->class_dev, "mmc%d", host->index);
 
@@ -715,7 +707,7 @@ again:
 	spin_lock_init(&host->lock);
 	init_waitqueue_head(&host->wq);
 	INIT_DELAYED_WORK(&host->detect, mmc_rescan);
-	setup_timer(&host->retune_timer, mmc_retune_timer, (unsigned long)host);
+	timer_setup(&host->retune_timer, mmc_retune_timer, 0);
 
 	mutex_init(&host->rpmb_req_mutex);
 

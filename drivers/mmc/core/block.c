@@ -1527,7 +1527,7 @@ static void mmc_blk_cqe_complete_rq(struct mmc_queue *mq, struct request *req)
 		blk_mq_run_hw_queues(q, true);
 
 	if (put_card)
-		mmc_put_card(mq->card, &mq->ctx);
+		mmc_put_card(mq->card);
 }
 
 void mmc_blk_cqe_recovery(struct mmc_queue *mq)
@@ -2029,7 +2029,7 @@ static void mmc_blk_mq_dec_in_flight(struct mmc_queue *mq, enum mmc_issue_type i
 	spin_unlock_irqrestore(&mq->lock, flags);
 
 	if (put_card)
-		mmc_put_card(mq->card, &mq->ctx);
+		mmc_put_card(mq->card);
 }
 
 static void mmc_blk_mq_post_req(struct mmc_queue *mq, struct request *req)
@@ -2209,7 +2209,7 @@ static int mmc_blk_mq_issue_rw_rq(struct mmc_queue *mq,
 
 	mqrq->brq.mrq.done = mmc_blk_mq_req_done;
 
-	mmc_pre_req(host, &mqrq->brq.mrq);
+	mmc_pre_req(host, &mqrq->brq.mrq, false);
 
 	err = mmc_blk_rw_wait(mq, &prev_req);
 	if (err)

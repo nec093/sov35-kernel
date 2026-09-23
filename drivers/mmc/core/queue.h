@@ -73,7 +73,13 @@ struct mmc_queue_req {
 
 struct mmc_queue {
 	struct mmc_card		*card;
-	struct mmc_ctx		ctx;
+	/*
+	 * struct mmc_ctx (pristine's per-queue claim-context tracking,
+	 * paired with mmc_get_card()/mmc_put_card() gaining a context
+	 * arg) removed: this tree's mmc_get_card()/mmc_put_card() keep
+	 * CAF's simpler single-arg signature, so nothing sets or reads
+	 * this field.
+	 */
 	struct blk_mq_tag_set	tag_set;
 	struct mmc_blk_data	*blkdata;
 	struct request_queue	*queue;

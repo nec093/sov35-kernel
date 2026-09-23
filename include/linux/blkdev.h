@@ -77,6 +77,9 @@ typedef __u32 __bitwise req_flags_t;
 #define RQF_SORTED		((__force req_flags_t)(1 << 0))
 /* drive already may have started this one */
 #define RQF_STARTED		((__force req_flags_t)(1 << 1))
+/* CAF addition (not in mainline), used by CAF's mmc CMDQ request
+ * tracking in drivers/mmc/core/core.c. */
+#define RQF_QUEUED		((__force req_flags_t)(1 << 2))
 /* may not be passed by ioscheduler */
 #define RQF_SOFTBARRIER		((__force req_flags_t)(1 << 3))
 /* request for flush sequence */

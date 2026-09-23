@@ -90,6 +90,11 @@ struct mmc_data {
 
 #define MMC_DATA_WRITE	(1 << 8)
 #define MMC_DATA_READ	(1 << 9)
+/* Mainline additions (not in CAF), see the struct mmc_cqe_ops comment
+ * in include/linux/mmc/host.h.
+ */
+#define MMC_DATA_REL_WR		BIT(12)		/* Reliable write */
+#define MMC_DATA_DAT_TAG	BIT(13)		/* Tag request */
 
 	unsigned int		bytes_xfered;
 
@@ -101,6 +106,7 @@ struct mmc_data {
 	struct scatterlist	*sg;		/* I/O scatter list */
 	s32			host_cookie;	/* host private data */
 	bool			fault_injected; /* fault injected */
+	unsigned int		blk_addr;	/* Mainline addition (not in CAF): block address */
 };
 
 struct mmc_host;
@@ -120,6 +126,12 @@ struct mmc_request {
 	/* Allow other commands during this ongoing data transfer or busy wait */
 	bool			cap_cmd_during_tfr;
 	ktime_t			io_start;
+
+	/* Mainline additions (not in CAF), see the struct mmc_cqe_ops
+	 * comment in include/linux/mmc/host.h.
+	 */
+	int			tag;
+	void			(*recovery_notifier)(struct mmc_request *);
 #ifdef CONFIG_BLOCK
 	int			lat_hist_enabled;
 #endif
@@ -142,6 +154,8 @@ struct mmc_bus_ops {
 	int (*change_bus_speed)(struct mmc_host *, unsigned long *);
 	int (*pre_hibernate)(struct mmc_host *);
 	int (*post_hibernate)(struct mmc_host *);
+	/* Mainline addition (not in CAF). */
+	bool (*cache_enabled)(struct mmc_host *);
 };
 
 struct mmc_card;
@@ -170,12 +184,27 @@ extern int mmc_interrupt_hpi(struct mmc_card *);
 extern void mmc_wait_for_req(struct mmc_host *, struct mmc_request *);
 extern void mmc_wait_for_req_done(struct mmc_host *host,
 				  struct mmc_request *mrq);
+/*
+ * Mainline additions (not in CAF), used by drivers/mmc/core/block.c
+ * (pristine v5.4.302's blk-mq block driver, see
+ * drivers/mmc/core/Makefile). mmc_start_request() was already present
+ * in this file's core.c but static; made non-static there. The
+ * mmc_cqe_* functions are stubs in core.c since this device's host
+ * never enables CQE (host->cqe_enabled always false) -- see
+ * include/linux/mmc/host.h's struct mmc_cqe_ops comment.
+ */
+extern int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq);
+extern int mmc_cqe_start_req(struct mmc_host *host, struct mmc_request *mrq);
+extern void mmc_cqe_post_req(struct mmc_host *host, struct mmc_request *mrq);
+extern int mmc_cqe_recovery(struct mmc_host *host);
 extern bool mmc_is_req_done(struct mmc_host *host, struct mmc_request *mrq);
 extern int mmc_wait_for_cmd(struct mmc_host *, struct mmc_command *, int);
 extern int mmc_app_cmd(struct mmc_host *, struct mmc_card *);
 extern int mmc_wait_for_app_cmd(struct mmc_host *, struct mmc_card *,
 	struct mmc_command *, int);
 extern void mmc_check_bkops(struct mmc_card *card);
+/* Mainline addition (not in CAF), used by drivers/mmc/core/block.c. */
+extern void mmc_run_bkops(struct mmc_card *card);
 extern void mmc_start_manual_bkops(struct mmc_card *card);
 extern int mmc_switch(struct mmc_card *, u8, u8, u8, unsigned int);
 extern int mmc_switch_ignore_timeout(struct mmc_card *, u8, u8, u8,

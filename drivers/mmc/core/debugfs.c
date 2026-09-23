@@ -677,7 +677,7 @@ static ssize_t mmc_wr_pack_stats_read(struct file *filp, char __user *ubuf,
 	if (!card)
 		return cnt;
 
-	if (!access_ok(VERIFY_WRITE, ubuf, cnt))
+	if (!access_ok(ubuf, cnt))
 		return cnt;
 
 	if (!card->wr_pack_stats.print_in_read)
@@ -840,7 +840,7 @@ static ssize_t mmc_wr_pack_stats_write(struct file *filp,
 	if (!card)
 		return cnt;
 
-	if (!access_ok(VERIFY_READ, ubuf, cnt))
+	if (!access_ok(ubuf, cnt))
 		return cnt;
 
 	sscanf(ubuf, "%d", &value);

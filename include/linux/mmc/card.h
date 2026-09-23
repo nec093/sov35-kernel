@@ -91,6 +91,7 @@ struct mmc_ext_csd {
 	unsigned int		hpi_cmd;		/* cmd used as HPI */
 	bool			bkops;		/* background support bit */
 	u8			bkops_en;	/* bkops enable */
+	bool			man_bkops_en;	/* Mainline addition (not in CAF): manual bkops enable */
 	unsigned int            data_sector_size;       /* 512 bytes or 4KB */
 	unsigned int            data_tag_unit_size;     /* DATA TAG UNIT size */
 	unsigned int		boot_ro_lock;		/* ro lock support */
@@ -144,6 +145,14 @@ struct mmc_ext_csd {
 	u8			fw_version;		/* 254 */
 	unsigned int            feature_support;
 #define MMC_DISCARD_FEATURE	BIT(0)                  /* CMD38 feature */
+
+	/*
+	 * Mainline addition, distinct from CAF's own cmdq_depth/
+	 * cmdq_support above: tracks whether mainline's CQE has actually
+	 * been switched on for this card. Always false here since this
+	 * device's host never sets host->cqe_ops.
+	 */
+	bool			cmdq_en;	/* Command Queue enabled */
 };
 
 struct sd_scr {
@@ -450,6 +459,15 @@ struct mmc_card {
 	struct mmc_bkops_info bkops;
 	bool err_in_sdr104;
 	bool sdr104_blocked;
+
+	/*
+	 * Mainline CQE-related fields (see include/linux/mmc/host.h's
+	 * struct mmc_cqe_ops comment) -- inert here since this device's
+	 * host never sets host->cqe_ops.
+	 */
+	bool			reenable_cmdq;	/* Re-enable Command Queue */
+	unsigned int		erase_arg;	/* erase / trim / discard */
+	struct workqueue_struct *complete_wq;	/* Private workqueue */
 };
 
 /*
@@ -504,11 +522,14 @@ struct mmc_fixup {
 #define EXT_CSD_REV_ANY (-1u)
 
 #define CID_MANFID_SANDISK      0x2
+#define CID_MANFID_ATP          0x9	/* mainline addition, not in CAF */
 #define CID_MANFID_TOSHIBA      0x11
 #define CID_MANFID_MICRON       0x13
 #define CID_MANFID_SAMSUNG      0x15
+#define CID_MANFID_APACER       0x27	/* mainline addition, not in CAF */
 #define CID_MANFID_KINGSTON     0x70
 #define CID_MANFID_HYNIX	0x90
+#define CID_MANFID_NUMONYX	0xFE	/* mainline addition, not in CAF */
 
 #define END_FIXUP { NULL }
 

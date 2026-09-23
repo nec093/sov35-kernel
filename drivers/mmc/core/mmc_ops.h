@@ -34,5 +34,15 @@ int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
 		bool ignore_crc);
 int __mmc_send_status(struct mmc_card *card, u32 *status,
 				    bool ignore_crc);
+/*
+ * Mainline additions (not in CAF), used by drivers/mmc/core/block.c.
+ * Dead code in practice: only reached when card->ext_csd.cmdq_en is
+ * false and card->reenable_cmdq is true, and reenable_cmdq is never
+ * set true anywhere in this tree (see include/linux/mmc/card.h).
+ * Stub implementations that report failure rather than porting
+ * mainline's real EXT_CSD CMDQ-switch sequence.
+ */
+int mmc_cmdq_enable(struct mmc_card *card);
+int mmc_cmdq_disable(struct mmc_card *card);
 #endif
 

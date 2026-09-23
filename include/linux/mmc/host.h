@@ -225,6 +225,62 @@ struct mmc_host_ops {
 	void	(*force_err_irq)(struct mmc_host *host, u64 errmask);
 };
 
+/*
+ * Mainline's CQE (Command Queue Engine) subsystem, added between 4.14
+ * and 5.4. Not implemented for this device: sdhci-msm.c uses CAF's own
+ * older cmdq_hci.c command-queue driver instead of mainline's cqhci.c,
+ * so nothing here ever sets ->cqe_ops on a real mmc_host -- these
+ * definitions exist only so drivers/mmc/core/{block,queue,core,
+ * mmc_ops}.c (pristine, blk-mq-based) compile and correctly treat this
+ * host as CQE-incapable (falling back to ordinary, non-command-queued
+ * blk-mq I/O, a fully supported mainline path). TODO for Phase B:
+ * either port sdhci-msm.c to cqhci.c for full CQE support, or confirm
+ * it isn't worth it for this SoC/eMMC combination.
+ */
+struct mmc_cqe_ops {
+	/* Allocate resources, and make the CQE operational */
+	int	(*cqe_enable)(struct mmc_host *host, struct mmc_card *card);
+	/* Free resources, and make the CQE non-operational */
+	void	(*cqe_disable)(struct mmc_host *host);
+	/*
+	 * Issue a read, write or DCMD request to the CQE. Also deal with the
+	 * effect of ->cqe_off().
+	 */
+	int	(*cqe_request)(struct mmc_host *host, struct mmc_request *mrq);
+	/* Free resources (e.g. DMA mapping) associated with the request */
+	void	(*cqe_post_req)(struct mmc_host *host, struct mmc_request *mrq);
+	/*
+	 * Prepare the CQE and host controller to accept non-CQ commands. There
+	 * is no corresponding ->cqe_on(), instead ->cqe_request() is required
+	 * to deal with that.
+	 */
+	void	(*cqe_off)(struct mmc_host *host);
+	/*
+	 * Wait for all CQE tasks to complete. Return an error if recovery
+	 * becomes necessary.
+	 */
+	int	(*cqe_wait_for_idle)(struct mmc_host *host);
+	/*
+	 * Notify CQE that a request has timed out. Return false if the request
+	 * completed or true if a timeout happened in which case indicate if
+	 * recovery is needed.
+	 */
+	bool	(*cqe_timeout)(struct mmc_host *host, struct mmc_request *mrq,
+			       bool *recovery_needed);
+	/*
+	 * Stop all CQE activity and prepare the CQE and host controller to
+	 * accept recovery commands.
+	 */
+	void	(*cqe_recovery_start)(struct mmc_host *host);
+	/*
+	 * Clear the queue and call mmc_cqe_request_done() on all requests.
+	 * Requests that errored will have the error set on the mmc_request
+	 * (data->error or cmd->error for DCMD).  Requests that did not error
+	 * will have zero data bytes transferred.
+	 */
+	void	(*cqe_recovery_finish)(struct mmc_host *host);
+};
+
 struct mmc_card;
 struct device;
 
@@ -457,6 +513,8 @@ struct mmc_host {
 #define MMC_CAP_DRIVER_TYPE_A	(1 << 23)	/* Host supports Driver Type A */
 #define MMC_CAP_DRIVER_TYPE_C	(1 << 24)	/* Host supports Driver Type C */
 #define MMC_CAP_DRIVER_TYPE_D	(1 << 25)	/* Host supports Driver Type D */
+/* Mainline addition (not in CAF), bit 27 free here as in pristine. */
+#define MMC_CAP_DONE_COMPLETE	(1 << 27)	/* RW reqs can be completed within mmc_request_done() */
 #define MMC_CAP_CMD_DURING_TFR	(1 << 29)	/* Commands during data transfer */
 #define MMC_CAP_CMD23		(1 << 30)	/* CMD23 supported. */
 #define MMC_CAP_HW_RESET	(1 << 31)	/* Hardware reset */
@@ -502,6 +560,15 @@ struct mmc_host {
 #define MMC_CAP2_SLEEP_AWAKE	(1 << 30)	/* Use Sleep/Awake (CMD5) */
 /* use max discard ignoring max_busy_timeout parameter */
 #define MMC_CAP2_MAX_DISCARD_SIZE	(1 << 31)
+/*
+ * Mainline additions (CQE-related, see the struct mmc_cqe_ops comment
+ * above). caps2 is a 32-bit field and CAF's own flags already occupy
+ * every bit (0-31); since this host never actually supports either
+ * capability, define them as always-false rather than reusing a bit
+ * CAF already assigned a different meaning to.
+ */
+#define MMC_CAP2_CQE_DCMD		0
+#define MMC_CAP2_MERGE_CAPABLE		0
 
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
@@ -666,6 +733,18 @@ struct mmc_host {
 
 	atomic_t rpmb_req_pending;
 	struct mutex		rpmb_req_mutex;
+
+	/*
+	 * Mainline CQE fields (not used by this device's host driver --
+	 * see the struct mmc_cqe_ops comment above); left NULL/0/false so
+	 * pristine v5.4.302's drivers/mmc/core/{block,queue,core,
+	 * mmc_ops}.c treat this host as CQE-incapable.
+	 */
+	const struct mmc_cqe_ops *cqe_ops;
+	int			cqe_qdepth;
+	bool			cqe_enabled;
+	unsigned int		can_dma_map_merge:1; /* merging can be used */
+
 	unsigned long		private[0] ____cacheline_aligned;
 };
 

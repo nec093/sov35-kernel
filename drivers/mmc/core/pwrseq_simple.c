@@ -7,6 +7,7 @@
  *
  *  Simple MMC power sequence management
  */
+#include <linux/bitmap.h>
 #include <linux/clk.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -39,17 +40,25 @@ static void mmc_pwrseq_simple_set_gpios_value(struct mmc_pwrseq_simple *pwrseq,
 	struct gpio_descs *reset_gpios = pwrseq->reset_gpios;
 
 	if (!IS_ERR(reset_gpios)) {
-		int i, *values;
+		/*
+		 * gpiod_set_array_value_cansleep() gained a struct
+		 * gpio_array * parameter (NULL is fine, it's an optional
+		 * fast-path hint) and switched from a per-descriptor int
+		 * array to a value_bitmap upstream.
+		 */
+		unsigned long *values;
 		int nvalues = reset_gpios->ndescs;
 
-		values = kmalloc_array(nvalues, sizeof(int), GFP_KERNEL);
+		values = kcalloc(BITS_TO_LONGS(nvalues), sizeof(long),
+				 GFP_KERNEL);
 		if (!values)
 			return;
 
-		for (i = 0; i < nvalues; i++)
-			values[i] = value;
+		if (value)
+			bitmap_fill(values, nvalues);
 
-		gpiod_set_array_value_cansleep(nvalues, reset_gpios->desc, values);
+		gpiod_set_array_value_cansleep(nvalues, reset_gpios->desc,
+						NULL, values);
 		kfree(values);
 	}
 }

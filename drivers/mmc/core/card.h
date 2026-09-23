@@ -60,44 +60,14 @@
 		    card->cid.year,		\
 		    card->cid.month)
 
-static inline int mmc_card_lenient_fn0(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_LENIENT_FN0;
-}
-
-static inline int mmc_blksz_for_byte_mode(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_BLKSZ_FOR_BYTE_MODE;
-}
-
-static inline int mmc_card_disable_cd(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_DISABLE_CD;
-}
-
-static inline int mmc_card_nonstd_func_interface(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_NONSTD_FUNC_IF;
-}
-
-static inline int mmc_card_broken_byte_mode_512(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_BROKEN_BYTE_MODE_512;
-}
-
-static inline int mmc_card_long_read_time(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_LONG_READ_TIME;
-}
-
-static inline int mmc_card_broken_irq_polling(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_BROKEN_IRQ_POLLING;
-}
-
-static inline int mmc_card_broken_hpi(const struct mmc_card *c)
-{
-	return c->quirks & MMC_QUIRK_BROKEN_HPI;
-}
+/*
+ * mmc_card_lenient_fn0()/mmc_blksz_for_byte_mode()/mmc_card_disable_cd()/
+ * mmc_card_nonstd_func_interface()/mmc_card_broken_byte_mode_512()/
+ * mmc_card_long_read_time()/mmc_card_broken_irq_polling()/
+ * mmc_card_broken_hpi() were defined here too, identically, in
+ * pristine v5.4.302 -- but CAF's public include/linux/mmc/card.h
+ * (already included above) already provides the same definitions, so
+ * this driver-private copy was dropped to avoid the redefinition.
+ */
 
 #endif

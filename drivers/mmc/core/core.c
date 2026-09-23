@@ -1176,7 +1176,10 @@ static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 	host->ops->request(host, mrq);
 }
 
-static int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
+/* Made non-static: pristine v5.4.302's drivers/mmc/core/block.c (this
+ * branch's blk-mq block driver, see drivers/mmc/core/Makefile) calls
+ * this directly. */
+int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 {
 #ifdef CONFIG_MMC_DEBUG
 	unsigned int i, sz;
@@ -1500,6 +1503,51 @@ void mmc_check_bkops(struct mmc_card *card)
 }
 EXPORT_SYMBOL(mmc_check_bkops);
 
+#define MMC_BKOPS_TIMEOUT_MS		(120 * 1000) /* 120s */
+
+/*
+ * mmc_run_bkops - Run BKOPS for supported cards (mainline addition,
+ * not in CAF, used by drivers/mmc/core/block.c). CAF's own bkops path
+ * is mmc_check_bkops()/mmc_start_manual_bkops() above; this is
+ * effectively dead code here since card->ext_csd.man_bkops_en is never
+ * set true by CAF's own card-init code, but block.c calls it
+ * unconditionally so it must exist and behave safely if ever reached.
+ */
+void mmc_run_bkops(struct mmc_card *card)
+{
+	int err;
+
+	if (!card->ext_csd.man_bkops_en)
+		return;
+
+	err = mmc_read_bkops_status(card);
+	if (err) {
+		pr_err("%s: Failed to read bkops status: %d\n",
+		       mmc_hostname(card->host), err);
+		return;
+	}
+
+	if (!card->ext_csd.raw_bkops_status ||
+	    card->ext_csd.raw_bkops_status < EXT_CSD_BKOPS_LEVEL_2)
+		return;
+
+	mmc_retune_hold(card->host);
+
+	/*
+	 * For urgent BKOPS status, LEVEL_2 and higher, let's execute
+	 * synchronously. Future wise, we may consider to start BKOPS, for less
+	 * urgent levels by using an asynchronous background task, when idle.
+	 */
+	err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+			 EXT_CSD_BKOPS_START, 1, MMC_BKOPS_TIMEOUT_MS);
+	if (err)
+		pr_warn("%s: Error %d starting bkops\n",
+			mmc_hostname(card->host), err);
+
+	mmc_retune_release(card->host);
+}
+EXPORT_SYMBOL(mmc_run_bkops);
+
 /**
  *	mmc_start_manual_bkops - start BKOPS for supported cards
  *	@card: MMC card to start BKOPS
@@ -1730,6 +1778,32 @@ void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq)
 }
 EXPORT_SYMBOL(mmc_wait_for_req_done);
 
+/*
+ * Mainline CQE (Command Queue Engine) entry points (not in CAF), called
+ * by drivers/mmc/core/block.c (pristine v5.4.302's blk-mq block
+ * driver). Only reachable when mq->use_cqe is true, which requires
+ * host->cqe_enabled -- always false for this device (see
+ * include/linux/mmc/host.h's struct mmc_cqe_ops comment), so these
+ * are unreachable in practice; implemented as safe stubs rather than
+ * porting mainline's real CQE core logic.
+ */
+int mmc_cqe_start_req(struct mmc_host *host, struct mmc_request *mrq)
+{
+	WARN_ON_ONCE(1);
+	return -ENOTSUPP;
+}
+
+void mmc_cqe_post_req(struct mmc_host *host, struct mmc_request *mrq)
+{
+	WARN_ON_ONCE(1);
+}
+
+int mmc_cqe_recovery(struct mmc_host *host)
+{
+	WARN_ON_ONCE(1);
+	return -ENOTSUPP;
+}
+
 /**
  *	mmc_is_req_done - Determine if a 'cap_cmd_during_tfr' request is done
  *	@host: MMC host
@@ -1762,7 +1836,9 @@ EXPORT_SYMBOL(mmc_is_req_done);
  *	host prepare for the new request. Preparation of a request may be
  *	performed while another request is running on the host.
  */
-static void mmc_pre_req(struct mmc_host *host, struct mmc_request *mrq,
+/* Made non-static: pristine v5.4.302's block.c calls this (with
+ * is_first_req=false, since it has no equivalent concept). */
+void mmc_pre_req(struct mmc_host *host, struct mmc_request *mrq,
 		 bool is_first_req)
 {
 	if (host->ops->pre_req) {
@@ -1781,7 +1857,8 @@ static void mmc_pre_req(struct mmc_host *host, struct mmc_request *mrq,
  *	Let the host post process a completed request. Post processing of
  *	a request may be performed while another reuqest is running.
  */
-static void mmc_post_req(struct mmc_host *host, struct mmc_request *mrq,
+/* Made non-static: pristine v5.4.302's block.c calls this directly. */
+void mmc_post_req(struct mmc_host *host, struct mmc_request *mrq,
 			 int err)
 {
 	if (host->ops->post_req) {

@@ -15,6 +15,20 @@
 
 #define MMC_CMD_RETRIES        3
 
+/* Non-static as of this branch; see their definitions in core.c. */
+void mmc_pre_req(struct mmc_host *host, struct mmc_request *mrq,
+		 bool is_first_req);
+void mmc_post_req(struct mmc_host *host, struct mmc_request *mrq, int err);
+
+/* Mainline addition (not in CAF), used by drivers/mmc/core/block.c. */
+static inline bool mmc_cache_enabled(struct mmc_host *host)
+{
+	if (host->bus_ops->cache_enabled)
+		return host->bus_ops->cache_enabled(host);
+
+	return false;
+}
+
 void mmc_attach_bus(struct mmc_host *host, const struct mmc_bus_ops *ops);
 void mmc_detach_bus(struct mmc_host *host);
 
