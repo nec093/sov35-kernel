@@ -26,6 +26,8 @@
 #include <linux/interrupt.h>
 #include <linux/idr.h>
 
+struct phy;	/* generic PHY-framework forward decl, see usb_hcd.phy below */
+
 #define MAX_TOPO_LEVEL		6
 
 /* This file contains declarations of usbcore internals that are mostly
@@ -111,6 +113,11 @@ struct usb_hcd {
 	 * other external phys should be software-transparent
 	 */
 	struct usb_phy		*usb_phy;
+	/*
+	 * Generic PHY-framework pointer, present in old (4.14-era) mainline
+	 * but dropped since; still used by this driver's own DWC3/CAF code.
+	 */
+	struct phy		*phy;
 	struct usb_phy_roothub	*phy_roothub;
 
 	/* Flags that need to be manipulated atomically because they can
@@ -126,6 +133,12 @@ struct usb_hcd {
 #define HCD_FLAG_DEAD			6	/* controller has died? */
 #define HCD_FLAG_INTF_AUTHORIZED	7	/* authorize interfaces? */
 #define HCD_FLAG_DEFER_RH_REGISTER	8	/* Defer roothub registration */
+/*
+ * CAF addition (not in mainline, which replaced this bit-flag approach
+ * with the dev_policy field below), placed at 9 since mainline's own
+ * flags now go up to 8.
+ */
+#define HCD_FLAG_DEV_AUTHORIZED		9	/* authorize devices? */
 
 	/* The flags can be tested using these macros; they are likely to
 	 * be slightly faster than test_bit().
@@ -145,6 +158,9 @@ struct usb_hcd {
 	 */
 #define HCD_INTF_AUTHORIZED(hcd) \
 	((hcd)->flags & (1U << HCD_FLAG_INTF_AUTHORIZED))
+/* CAF addition (not in mainline). */
+#define HCD_DEV_AUTHORIZED(hcd) \
+	((hcd)->flags & (1U << HCD_FLAG_DEV_AUTHORIZED))
 
 	/*
 	 * Specifies if devices are authorized by default
@@ -269,6 +285,11 @@ struct hc_driver {
 #define	HCD_USB32	0x0060		/* USB 3.2 */
 #define	HCD_MASK	0x0070
 #define	HCD_BH		0x0100		/* URB complete in BH context */
+/*
+ * CAF addition (not in mainline), placed at 0x0200 since mainline's own
+ * HCD_DMA now occupies 0x0002 (the bit CAF originally used for this).
+ */
+#define	HCD_LOCAL_MEM	0x0200		/* HC needs local memory */
 
 	/* called to init HCD and root hub */
 	int	(*reset) (struct usb_hcd *hcd);
@@ -414,6 +435,20 @@ struct hc_driver {
 	/* Call for power on/off the port if necessary */
 	int	(*port_power)(struct usb_hcd *hcd, int portnum, bool enable);
 
+	/* CAF additions (not in mainline): DWC3 secondary event ring
+	 * support, used for USB offload/tethering acceleration.
+	 */
+	int (*sec_event_ring_setup)(struct usb_hcd *hcd, unsigned int intr_num);
+	int (*sec_event_ring_cleanup)(struct usb_hcd *hcd,
+			unsigned int intr_num);
+	phys_addr_t (*get_sec_event_ring_phys_addr)(struct usb_hcd *hcd,
+			unsigned int intr_num, dma_addr_t *dma);
+	phys_addr_t (*get_xfer_ring_phys_addr)(struct usb_hcd *hcd,
+			struct usb_device *udev, struct usb_host_endpoint *ep,
+			dma_addr_t *dma);
+	int (*get_core_id)(struct usb_hcd *hcd);
+	int (*stop_endpoint)(struct usb_hcd *hcd, struct usb_device *udev,
+			struct usb_host_endpoint *ep);
 };
 
 static inline int hcd_giveback_urb_in_bh(struct usb_hcd *hcd)
@@ -457,6 +492,18 @@ extern int usb_hcd_alloc_bandwidth(struct usb_device *udev,
 		struct usb_host_interface *old_alt,
 		struct usb_host_interface *new_alt);
 extern int usb_hcd_get_frame_number(struct usb_device *udev);
+/* CAF additions (not in mainline), matching struct hc_driver above. */
+extern int usb_hcd_sec_event_ring_setup(struct usb_device *udev,
+	unsigned int intr_num);
+extern int usb_hcd_sec_event_ring_cleanup(struct usb_device *udev,
+	unsigned int intr_num);
+extern phys_addr_t usb_hcd_get_sec_event_ring_phys_addr(
+	struct usb_device *udev, unsigned int intr_num, dma_addr_t *dma);
+extern phys_addr_t usb_hcd_get_xfer_ring_phys_addr(
+	struct usb_device *udev, struct usb_host_endpoint *ep, dma_addr_t *dma);
+extern int usb_hcd_get_controller_id(struct usb_device *udev);
+extern int usb_hcd_stop_endpoint(struct usb_device *udev,
+	struct usb_host_endpoint *ep);
 
 struct usb_hcd *__usb_create_hcd(const struct hc_driver *driver,
 		struct device *sysdev, struct device *dev, const char *bus_name,
@@ -514,6 +561,7 @@ extern void usb_hc_died(struct usb_hcd *hcd);
 extern void usb_hcd_poll_rh_status(struct usb_hcd *hcd);
 extern void usb_wakeup_notification(struct usb_device *hdev,
 		unsigned int portnum);
+extern void usb_flush_hub_wq(void);
 
 extern void usb_hcd_start_port_resume(struct usb_bus *bus, int portnum);
 extern void usb_hcd_end_port_resume(struct usb_bus *bus, int portnum);

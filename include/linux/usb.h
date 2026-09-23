@@ -431,6 +431,12 @@ struct usb_bus {
 	struct device *sysdev;		/* as seen from firmware or bus */
 	int busnum;			/* Bus number (in order of reg) */
 	const char *bus_name;		/* stable id (PCI slot_name etc) */
+	/*
+	 * Existed in old (4.14-era) mainline, replaced upstream by the
+	 * newer hcd_uses_dma() (based on struct hc_driver's HCD_DMA flag);
+	 * still set/read directly by this driver's own hcd.c.
+	 */
+	u8 uses_dma;			/* Does the host controller use DMA? */
 	u8 uses_pio_for_control;	/*
 					 * Does the host controller use PIO
 					 * for control transfers?
