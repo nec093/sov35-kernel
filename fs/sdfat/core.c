@@ -1947,10 +1947,10 @@ s32 fscore_lookup(struct inode *inode, u8 *path, FILE_ID_T *fid)
 		return ret;
 
 	/* check the validation of hint_stat and initialize it if required */
-	if (dir_fid->version != (u32)(inode->i_version & 0xffffffff)) {
+	if (dir_fid->version != (u32)(inode_peek_iversion_raw(inode) & 0xffffffff)) {
 		dir_fid->hint_stat.clu = dir.dir;
 		dir_fid->hint_stat.eidx = 0;
-		dir_fid->version = (u32)(inode->i_version & 0xffffffff);
+		dir_fid->version = (u32)(inode_peek_iversion_raw(inode) & 0xffffffff);
 		dir_fid->hint_femp.eidx = -1;
 	}
 

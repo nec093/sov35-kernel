@@ -1168,7 +1168,7 @@ static int __sdfat_revalidate_common(struct dentry *dentry)
 
 	spin_lock(&dentry->d_lock);
 	if ((!dentry->d_inode) && (!__check_dstate_locked(dentry) &&
-		(dentry->d_time != dentry->d_parent->d_inode->i_version))) {
+		(dentry->d_time != inode_peek_iversion_raw(dentry->d_parent->d_inode)))) {
 		ret = 0;
 	}
 	spin_unlock(&dentry->d_lock);
@@ -2114,7 +2114,7 @@ static int sdfat_dfr_ioctl(struct inode *inode, struct file *filp,
 		__lock_super(sb);
 
 		/* Check if FS_ERROR occurred */
-		if (sb->s_flags & MS_RDONLY) {
+		if (sb->s_flags & SB_RDONLY) {
 			dfr_err("RDONLY partition (err %d)", -EPERM);
 			__unlock_super(sb);
 			return -EPERM;
@@ -2306,7 +2306,7 @@ static int __sdfat_create(struct inode *dir, struct dentry *dentry)
 {
 	struct super_block *sb = dir->i_sb;
 	struct inode *inode;
-	struct timespec ts;
+	struct timespec64 ts;
 	FILE_ID_T fid;
 	loff_t i_pos;
 	int err;
@@ -2323,7 +2323,7 @@ static int __sdfat_create(struct inode *dir, struct dentry *dentry)
 
 	__lock_d_revalidate(dentry);
 
-	dir->i_version++;
+	inode_inc_iversion_raw(dir);
 	dir->i_ctime = dir->i_mtime = dir->i_atime = ts;
 	if (IS_DIRSYNC(dir))
 		(void) sdfat_sync_inode(dir);
@@ -2336,7 +2336,7 @@ static int __sdfat_create(struct inode *dir, struct dentry *dentry)
 		err = PTR_ERR(inode);
 		goto out;
 	}
-	inode->i_version++;
+	inode_inc_iversion_raw(inode);
 	inode->i_mtime = inode->i_atime = inode->i_ctime = ts;
 	/* timestamp is already written, so mark_inode_dirty() is unneeded. */
 
@@ -2449,7 +2449,7 @@ static struct dentry *__sdfat_lookup(struct inode *dir, struct dentry *dentry)
 	dput(alias);
 out:
 	/* initialize d_time even though it is positive dentry */
-	dentry->d_time = dir->i_version;
+	dentry->d_time = inode_peek_iversion_raw(dir);
 	__unlock_super(sb);
 
 	dentry = d_splice_alias(inode, dentry);
@@ -2467,7 +2467,7 @@ static int sdfat_unlink(struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
 	struct super_block *sb = dir->i_sb;
-	struct timespec ts;
+	struct timespec64 ts;
 	int err;
 
 	__lock_super(sb);
@@ -2486,7 +2486,7 @@ static int sdfat_unlink(struct inode *dir, struct dentry *dentry)
 
 	__lock_d_revalidate(dentry);
 
-	dir->i_version++;
+	inode_inc_iversion_raw(dir);
 	dir->i_mtime = dir->i_atime = ts;
 	if (IS_DIRSYNC(dir))
 		(void) sdfat_sync_inode(dir);
@@ -2496,7 +2496,7 @@ static int sdfat_unlink(struct inode *dir, struct dentry *dentry)
 	clear_nlink(inode);
 	inode->i_mtime = inode->i_atime = ts;
 	sdfat_detach(inode);
-	dentry->d_time = dir->i_version;
+	dentry->d_time = inode_peek_iversion_raw(dir);
 out:
 	__unlock_d_revalidate(dentry);
 	__unlock_super(sb);
@@ -2508,7 +2508,7 @@ static int sdfat_symlink(struct inode *dir, struct dentry *dentry, const char *t
 {
 	struct super_block *sb = dir->i_sb;
 	struct inode *inode;
-	struct timespec ts;
+	struct timespec64 ts;
 	FILE_ID_T fid;
 	loff_t i_pos;
 	int err;
@@ -2538,7 +2538,7 @@ static int sdfat_symlink(struct inode *dir, struct dentry *dentry, const char *t
 
 	__lock_d_revalidate(dentry);
 
-	dir->i_version++;
+	inode_inc_iversion_raw(dir);
 	dir->i_ctime = dir->i_mtime = dir->i_atime = ts;
 	if (IS_DIRSYNC(dir))
 		(void) sdfat_sync_inode(dir);
@@ -2551,7 +2551,7 @@ static int sdfat_symlink(struct inode *dir, struct dentry *dentry, const char *t
 		err = PTR_ERR(inode);
 		goto out;
 	}
-	inode->i_version++;
+	inode_inc_iversion_raw(inode);
 	inode->i_mtime = inode->i_atime = inode->i_ctime = ts;
 	/* timestamp is already written, so mark_inode_dirty() is unneeded. */
 
@@ -2575,7 +2575,7 @@ static int __sdfat_mkdir(struct inode *dir, struct dentry *dentry)
 {
 	struct super_block *sb = dir->i_sb;
 	struct inode *inode;
-	struct timespec ts;
+	struct timespec64 ts;
 	FILE_ID_T fid;
 	loff_t i_pos;
 	int err;
@@ -2592,7 +2592,7 @@ static int __sdfat_mkdir(struct inode *dir, struct dentry *dentry)
 
 	__lock_d_revalidate(dentry);
 
-	dir->i_version++;
+	inode_inc_iversion_raw(dir);
 	dir->i_ctime = dir->i_mtime = dir->i_atime = ts;
 	if (IS_DIRSYNC(dir))
 		(void) sdfat_sync_inode(dir);
@@ -2606,7 +2606,7 @@ static int __sdfat_mkdir(struct inode *dir, struct dentry *dentry)
 		err = PTR_ERR(inode);
 		goto out;
 	}
-	inode->i_version++;
+	inode_inc_iversion_raw(inode);
 	inode->i_mtime = inode->i_atime = inode->i_ctime = ts;
 	/* timestamp is already written, so mark_inode_dirty() is unneeded. */
 
@@ -2626,7 +2626,7 @@ static int sdfat_rmdir(struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
 	struct super_block *sb = dir->i_sb;
-	struct timespec ts;
+	struct timespec64 ts;
 	int err;
 
 	__lock_super(sb);
@@ -2643,7 +2643,7 @@ static int sdfat_rmdir(struct inode *dir, struct dentry *dentry)
 
 	__lock_d_revalidate(dentry);
 
-	dir->i_version++;
+	inode_inc_iversion_raw(dir);
 	dir->i_mtime = dir->i_atime = ts;
 	if (IS_DIRSYNC(dir))
 		(void) sdfat_sync_inode(dir);
@@ -2654,7 +2654,7 @@ static int sdfat_rmdir(struct inode *dir, struct dentry *dentry)
 	clear_nlink(inode);
 	inode->i_mtime = inode->i_atime = ts;
 	sdfat_detach(inode);
-	dentry->d_time = dir->i_version;
+	dentry->d_time = inode_peek_iversion_raw(dir);
 out:
 	__unlock_d_revalidate(dentry);
 	__unlock_super(sb);
@@ -2667,7 +2667,7 @@ static int __sdfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 {
 	struct inode *old_inode, *new_inode;
 	struct super_block *sb = old_dir->i_sb;
-	struct timespec ts;
+	struct timespec64 ts;
 	loff_t i_pos;
 	int err;
 
@@ -2691,7 +2691,7 @@ static int __sdfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 	__lock_d_revalidate(old_dentry);
 	__lock_d_revalidate(new_dentry);
 
-	new_dir->i_version++;
+	new_inode_inc_iversion_raw(dir);
 	new_dir->i_ctime = new_dir->i_mtime = new_dir->i_atime = ts;
 	if (IS_DIRSYNC(new_dir))
 		(void) sdfat_sync_inode(new_dir);
@@ -2712,7 +2712,7 @@ static int __sdfat_rename(struct inode *old_dir, struct dentry *old_dentry,
 			inc_nlink(new_dir);
 	}
 
-	old_dir->i_version++;
+	old_inode_inc_iversion_raw(dir);
 	old_dir->i_ctime = old_dir->i_mtime = ts;
 	if (IS_DIRSYNC(old_dir))
 		(void) sdfat_sync_inode(old_dir);
@@ -3818,7 +3818,7 @@ static int sdfat_fill_inode(struct inode *inode, const FILE_ID_T *fid)
 	SDFAT_I(inode)->target = NULL;
 	inode->i_uid = sbi->options.fs_uid;
 	inode->i_gid = sbi->options.fs_gid;
-	inode->i_version++;
+	inode_inc_iversion_raw(inode);
 	inode->i_generation = get_seconds();
 
 	if (fsapi_read_inode(inode, &info) < 0) {
@@ -3896,7 +3896,7 @@ static struct inode *sdfat_build_inode(struct super_block *sb,
 		goto out;
 	}
 	inode->i_ino = iunique(sb, SDFAT_ROOT_INO);
-	inode->i_version = 1;
+	inode_set_iversion_raw(inode, 1);
 	err = sdfat_fill_inode(inode, fid);
 	if (err) {
 		iput(inode);
@@ -4064,7 +4064,7 @@ static void sdfat_write_super(struct super_block *sb)
 	/* flush delayed FAT/DIR dirty */
 	__flush_delayed_meta(sb, 0);
 
-	if (!(sb->s_flags & MS_RDONLY))
+	if (!(sb->s_flags & SB_RDONLY))
 		fsapi_sync_fs(sb, 0);
 
 	__unlock_super(sb);
@@ -4204,7 +4204,7 @@ static int sdfat_remount(struct super_block *sb, int *flags, char *data)
 	struct sdfat_sb_info *sbi = SDFAT_SB(sb);
 	FS_INFO_T *fsi = &(sbi->fsi);
 
-	*flags |= MS_NODIRATIME;
+	*flags |= SB_NODIRATIME;
 
 	prev_sb_flags = sb->s_flags;
 
@@ -4213,8 +4213,8 @@ static int sdfat_remount(struct super_block *sb, int *flags, char *data)
 	fsapi_set_vol_flags(sb, VOL_CLEAN, 1);
 
 	sdfat_log_msg(sb, KERN_INFO, "re-mounted(%s->%s), eio=0x%x, Opts: %s",
-		(prev_sb_flags & MS_RDONLY) ? "ro" : "rw",
-		(*flags & MS_RDONLY) ? "ro" : "rw",
+		(prev_sb_flags & SB_RDONLY) ? "ro" : "rw",
+		(*flags & SB_RDONLY) ? "ro" : "rw",
 		fsi->prev_eio, orig_data);
 	kfree(orig_data);
 	return 0;
@@ -4696,7 +4696,7 @@ static int sdfat_read_root(struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 	struct sdfat_sb_info *sbi = SDFAT_SB(sb);
-	struct timespec ts;
+	struct timespec64 ts;
 	FS_INFO_T *fsi = &(sbi->fsi);
 	DIR_ENTRY_T info;
 
@@ -4722,7 +4722,7 @@ static int sdfat_read_root(struct inode *inode)
 
 	inode->i_uid = sbi->options.fs_uid;
 	inode->i_gid = sbi->options.fs_gid;
-	inode->i_version++;
+	inode_inc_iversion_raw(inode);
 	inode->i_generation = 0;
 	inode->i_mode = sdfat_make_mode(sbi, ATTR_SUBDIR, S_IRWXUGO);
 	inode->i_op = &sdfat_dir_inode_operations;
@@ -4784,7 +4784,7 @@ static int sdfat_fill_super(struct super_block *sb, void *data, int silent)
 
 	mutex_init(&sbi->s_vlock);
 	sb->s_fs_info = sbi;
-	sb->s_flags |= MS_NODIRATIME;
+	sb->s_flags |= SB_NODIRATIME;
 	sb->s_magic = SDFAT_SUPER_MAGIC;
 	sb->s_op = &sdfat_sops;
 	ratelimit_state_init(&sbi->ratelimit, DEFAULT_RATELIMIT_INTERVAL,
@@ -4846,7 +4846,7 @@ static int sdfat_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	root_inode->i_ino = SDFAT_ROOT_INO;
-	root_inode->i_version = 1;
+	root_inode_set_iversion_raw(inode, 1);
 
 	err = sdfat_read_root(root_inode);
 	if (err) {

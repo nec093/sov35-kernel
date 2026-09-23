@@ -23,6 +23,7 @@
 #include <linux/types.h>
 #include <linux/nls.h>
 #include <linux/fs.h>
+#include <linux/iversion.h>
 #include <linux/mutex.h>
 #include <linux/ratelimit.h>
 #include <linux/version.h>
@@ -30,7 +31,12 @@
 #include "api.h"
 
 #ifndef CURRENT_TIME_SEC
-#define CURRENT_TIME_SEC	((struct timespec) { get_seconds(), 0 })
+/*
+ * get_seconds() was removed from mainline; struct timespec-based inode
+ * timestamps were also replaced by timespec64. Use the 64-bit
+ * equivalents directly.
+ */
+#define CURRENT_TIME_SEC	((struct timespec64) { ktime_get_real_seconds(), 0 })
 #endif
 
 #ifdef CONFIG_SDFAT_DFR
@@ -367,9 +373,9 @@ __sdfat_msg(struct super_block *sb, const char *lv, int st, const char *fmt, ...
 #define sdfat_log_msg(sb, lv, fmt, args...)          \
 	__sdfat_msg(sb, lv, 1, fmt, ## args)
 extern void sdfat_log_version(void);
-extern void sdfat_time_fat2unix(struct sdfat_sb_info *sbi, struct timespec *ts,
+extern void sdfat_time_fat2unix(struct sdfat_sb_info *sbi, struct timespec64 *ts,
 				DATE_TIME_T *tp);
-extern void sdfat_time_unix2fat(struct sdfat_sb_info *sbi, struct timespec *ts,
+extern void sdfat_time_unix2fat(struct sdfat_sb_info *sbi, struct timespec64 *ts,
 				DATE_TIME_T *tp);
 extern TIMESTAMP_T *tm_now(struct sdfat_sb_info *sbi, TIMESTAMP_T *tm);
 
