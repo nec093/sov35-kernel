@@ -2579,9 +2579,10 @@ void adreno_dispatcher_queue_context(struct kgsl_device *device,
  * subsequent calls then the GPU may have faulted
  */
 
-static void adreno_dispatcher_fault_timer(unsigned long data)
+static void adreno_dispatcher_fault_timer(struct timer_list *t)
 {
-	struct adreno_device *adreno_dev = (struct adreno_device *) data;
+	struct adreno_device *adreno_dev = from_timer(adreno_dev, t,
+						dispatcher.fault_timer);
 	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
 
 	/* Leave if the user decided to turn off fast hang detection */
@@ -2611,9 +2612,10 @@ static void adreno_dispatcher_fault_timer(unsigned long data)
  * This is called when the timer expires - it either means the GPU is hung or
  * the IB is taking too long to execute
  */
-static void adreno_dispatcher_timer(unsigned long data)
+static void adreno_dispatcher_timer(struct timer_list *t)
 {
-	struct adreno_device *adreno_dev = (struct adreno_device *) data;
+	struct adreno_device *adreno_dev = from_timer(adreno_dev, t,
+						dispatcher.timer);
 
 	adreno_dispatcher_schedule(KGSL_DEVICE(adreno_dev));
 }
@@ -2841,11 +2843,10 @@ int adreno_dispatcher_init(struct adreno_device *adreno_dev)
 
 	mutex_init(&dispatcher->mutex);
 
-	setup_timer(&dispatcher->timer, adreno_dispatcher_timer,
-		(unsigned long) adreno_dev);
+	timer_setup(&dispatcher->timer, adreno_dispatcher_timer, 0);
 
-	setup_timer(&dispatcher->fault_timer, adreno_dispatcher_fault_timer,
-		(unsigned long) adreno_dev);
+	timer_setup(&dispatcher->fault_timer,
+		adreno_dispatcher_fault_timer, 0);
 
 	kthread_init_work(&dispatcher->work, adreno_dispatcher_work);
 

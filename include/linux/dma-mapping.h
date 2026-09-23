@@ -86,6 +86,12 @@
  * coherent.
  */
 #define DMA_ATTR_FORCE_NON_COHERENT		(1UL << 15)
+/*
+ * DMA_ATTR_STRONGLY_ORDERED: Specifies that accesses to the mapping must
+ * be strongly ordered. Moved from CAF's original bit 9, now taken by
+ * mainline's DMA_ATTR_PRIVILEGED, to bit 16.
+ */
+#define DMA_ATTR_STRONGLY_ORDERED		(1UL << 16)
 
 /*
  * A dma_addr_t can hold any valid DMA or bus address for the platform.

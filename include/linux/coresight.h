@@ -313,4 +313,15 @@ extern int coresight_get_cpu(struct device *dev);
 
 struct coresight_platform_data *coresight_get_platform_data(struct device *dev);
 
+/*
+ * CAF addition (not in mainline): defined+exported in
+ * drivers/hwtracing/coresight/of_coresight.c, used by
+ * drivers/gpu/msm/adreno_coresight.c to build one coresight_platform_data
+ * per child DT node under a single "qcom,gpu-coresight" parent (unlike
+ * coresight_get_platform_data() above, which derives one platform_data
+ * from a device's own fwnode as a whole).
+ */
+struct coresight_platform_data *of_get_coresight_platform_data(
+				struct device *dev, struct device_node *node);
+
 #endif

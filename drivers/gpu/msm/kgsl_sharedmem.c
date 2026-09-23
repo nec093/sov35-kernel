@@ -564,18 +564,21 @@ static int kgsl_contiguous_vmfault(struct kgsl_memdesc *memdesc,
 				struct vm_fault *vmf)
 {
 	unsigned long offset, pfn;
-	int ret;
+	vm_fault_t ret;
 
 	offset = (vmf->address - vma->vm_start) >>
 		PAGE_SHIFT;
 
 	pfn = (memdesc->physaddr >> PAGE_SHIFT) + offset;
-	ret = vm_insert_pfn(vma, vmf->address, pfn);
-
-	if (ret == -ENOMEM || ret == -EAGAIN)
-		return VM_FAULT_OOM;
-	else if (ret == -EFAULT)
-		return VM_FAULT_SIGBUS;
+	/*
+	 * vm_insert_pfn() (which returned a raw -ENOMEM/-EFAULT/... errno,
+	 * manually translated below to VM_FAULT_*) was replaced upstream
+	 * by vmf_insert_pfn(), which returns a vm_fault_t (VM_FAULT_*)
+	 * directly.
+	 */
+	ret = vmf_insert_pfn(vma, vmf->address, pfn);
+	if (ret & VM_FAULT_ERROR)
+		return ret;
 
 	memdesc->mapsize += PAGE_SIZE;
 

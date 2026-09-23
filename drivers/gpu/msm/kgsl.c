@@ -4109,7 +4109,7 @@ static void kgsl_gpumem_vm_open(struct vm_area_struct *vma)
 		vma->vm_private_data = NULL;
 }
 
-static int
+static vm_fault_t
 kgsl_gpumem_vm_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
@@ -4702,7 +4702,7 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 	rwlock_init(&device->context_lock);
 	spin_lock_init(&device->submit_lock);
 
-	setup_timer(&device->idle_timer, kgsl_timer, (unsigned long) device);
+	timer_setup(&device->idle_timer, kgsl_timer, 0);
 
 	status = kgsl_mmu_probe(device, kgsl_mmu_type);
 	if (status != 0)

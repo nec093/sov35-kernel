@@ -14,8 +14,35 @@
 #define __KGSL_SHAREDMEM_H
 
 #include <linux/dma-mapping.h>
+#include <asm/cacheflush.h>
 
 #include "kgsl_mmu.h"
+
+/*
+ * dmac_{flush,clean,inv}_range() are arm32-only macros (arch/arm/include/
+ * asm/{cacheflush,glue-cache}.h); this is arm64, which only exposes
+ * __dma_flush_area() (clean+invalidate) as a declared extern -- the
+ * separate clean-only/invalidate-only asm entry points
+ * (__dma_clean_area()/__dma_inv_area(), arch/arm64/mm/cache.S) aren't
+ * part of the public API. Same root cause and same fix as
+ * drivers/char/adsprpc.c earlier this port: fold all three into
+ * __dma_flush_area() -- functionally safe (a full flush covers the
+ * clean-only/invalidate-only cases too), just not maximally optimal.
+ * Defined here (rather than per .c file) since both kgsl_sharedmem.c
+ * and kgsl_pool.c need them.
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+#ifndef dmac_clean_range
+#define dmac_clean_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+#ifndef dmac_inv_range
+#define dmac_inv_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
 
 struct kgsl_device;
 struct kgsl_process_private;
