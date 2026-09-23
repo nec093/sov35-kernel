@@ -20,5 +20,12 @@ struct system_pm_ops {
 	bool (*sleep_allowed)(void);
 };
 
+#if IS_ENABLED(CONFIG_MSM_PM)
 uint32_t register_system_pm_ops(struct system_pm_ops *pm_ops);
+#else
+static inline uint32_t register_system_pm_ops(struct system_pm_ops *pm_ops)
+{
+	return 0;
+}
+#endif
 #endif

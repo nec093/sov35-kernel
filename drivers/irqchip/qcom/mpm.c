@@ -31,6 +31,7 @@
 #include <linux/of_irq.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
+#include <clocksource/arm_arch_timer.h>
 #include <linux/cpu_pm.h>
 #include <asm/arch_timer.h>
 #include <soc/qcom/rpm-notifier.h>
@@ -501,9 +502,16 @@ static int system_pm_update_wakeup(bool from_idle)
 		wake_time = msm_pm_sleep_time_override * USEC_PER_SEC;
 		wakeup = us_to_ticks(wake_time);
 	} else {
-		/* Read the hardware to get the most accurate value */
+		/* Read the hardware to get the most accurate value.
+		 * arch_timer_mem_get_cval() (a memory-mapped-frame CVAL
+		 * read) doesn't exist in this tree; arch_timer_read_counter()
+		 * is the standard, already-exported counter accessor (picks
+		 * the system-register or mem-mapped backend automatically)
+		 * and serves the same "current 64-bit tick count" purpose. */
+		u64 cval = arch_timer_read_counter();
 
-		arch_timer_mem_get_cval(&lo, &hi);
+		lo = (uint32_t)cval;
+		hi = (uint32_t)(cval >> 32);
 		wakeup = lo;
 		wakeup |= ((uint64_t)(hi) << 32);
 	}
