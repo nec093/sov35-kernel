@@ -301,6 +301,16 @@ $(obj)/%.dt.yaml: $(src)/%.dts $(DTC) $(DT_TMP_SCHEMA) FORCE
 
 dtc-tmp = $(subst $(comma),_,$(dot-target).dts.tmp)
 
+# cat
+# ---------------------------------------------------------------------------
+# Concatentate multiple files together
+# CAF addition (not in mainline): this rule ($(call if_changed,cat)) is
+# used by arch/arm64/boot/Makefile's Image.gz-dtb target but was missing
+# from this file entirely -- cmd_cat undefined meant `if_changed` fell
+# through to an empty/malformed shell command.
+quiet_cmd_cat = CAT     $@
+cmd_cat = (cat $(filter-out FORCE,$^) > $@) || (rm -f $@; false)
+
 # Bzip2
 # ---------------------------------------------------------------------------
 
