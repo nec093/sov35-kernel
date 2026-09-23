@@ -124,17 +124,51 @@ struct fb_cursor_user {
  * Register/unregister for framebuffer events
  */
 
-/*	The resolution of the passed in fb_info about to change */ 
+/*	The resolution of the passed in fb_info about to change */
 #define FB_EVENT_MODE_CHANGE		0x01
-
-#ifdef CONFIG_GUMSTIX_AM200EPD
-/* only used by mach-pxa/am200epd.c */
+/*	The display on this fb_info is beeing suspended, no access to the
+ *	framebuffer is allowed any more after that call returns
+ *	(CAF addition, not in mainline).
+ */
+#define FB_EVENT_SUSPEND		0x02
+/*	The display on this fb_info was resumed, you can restore the display
+ *	if you own it (CAF addition, not in mainline).
+ */
+#define FB_EVENT_RESUME			0x03
+/*      An entry from the modelist was removed (CAF addition, not in mainline). */
+#define FB_EVENT_MODE_DELETE            0x04
+/*      A driver registered itself. mainline guards these two behind
+ *      CONFIG_GUMSTIX_AM200EPD (only used by mach-pxa/am200epd.c); CAF
+ *      uses them unconditionally, so they are unguarded here too.
+ */
 #define FB_EVENT_FB_REGISTERED          0x05
+/*      A driver unregistered itself */
 #define FB_EVENT_FB_UNREGISTERED        0x06
-#endif
-
+/*      CONSOLE-SPECIFIC: get console to framebuffer mapping (CAF addition, not in mainline). */
+#define FB_EVENT_GET_CONSOLE_MAP        0x07
+/*      CONSOLE-SPECIFIC: set console to framebuffer mapping (CAF addition, not in mainline). */
+#define FB_EVENT_SET_CONSOLE_MAP        0x08
 /*      A display blank is requested       */
 #define FB_EVENT_BLANK                  0x09
+/*      Private modelist is to be replaced (CAF addition, not in mainline). */
+#define FB_EVENT_NEW_MODELIST           0x0A
+/*	The resolution of the passed in fb_info about to change and
+	all vc's should be changed (CAF addition, not in mainline). */
+#define FB_EVENT_MODE_CHANGE_ALL	0x0B
+/*	A software display blank change occurred (CAF addition, not in mainline). */
+#define FB_EVENT_CONBLANK               0x0C
+/*      Get drawing requirements (CAF addition, not in mainline).      */
+#define FB_EVENT_GET_REQ                0x0D
+/*      Unbind from the console if possible (CAF addition, not in mainline). */
+#define FB_EVENT_FB_UNBIND              0x0E
+/*      CONSOLE-SPECIFIC: remap all consoles to new fb - for vga_switcheroo
+ *      (CAF addition, not in mainline).
+ */
+#define FB_EVENT_REMAP_ALL_CONSOLE      0x0F
+/*      A hardware display blank early change occured (CAF addition, not in mainline). */
+#define FB_EARLY_EVENT_BLANK		0x10
+/*      A hardware display blank revert early change occured (CAF addition, not in mainline). */
+#define FB_R_EARLY_EVENT_BLANK		0x11
 
 struct fb_event {
 	struct fb_info *info;
@@ -276,9 +310,17 @@ struct fb_ops {
 	int (*fb_ioctl)(struct fb_info *info, unsigned int cmd,
 			unsigned long arg);
 
+	/* CAF addition: perform fb specific ioctl v2 (optional) - provides file param */
+	int (*fb_ioctl_v2)(struct fb_info *info, unsigned int cmd,
+				unsigned long arg, struct file *file);
+
 	/* Handle 32bit compat ioctl (optional) */
-	int (*fb_compat_ioctl)(struct fb_info *info, unsigned cmd,
+	int (*fb_compat_ioctl)(struct fb_info *info, unsigned int cmd,
 			unsigned long arg);
+
+	/* CAF addition: Handle 32bit compat ioctl v2 (optional) */
+	int (*fb_compat_ioctl_v2)(struct fb_info *info, unsigned int cmd,
+				  unsigned long arg, struct file *file);
 
 	/* perform fb specific mmap */
 	int (*fb_mmap)(struct fb_info *info, struct vm_area_struct *vma);
@@ -400,6 +442,9 @@ struct fb_tile_ops {
 #define FBINFO_HWACCEL_YPAN		0x2000 /* optional */
 #define FBINFO_HWACCEL_YWRAP		0x4000 /* optional */
 
+/* CAF addition (not in mainline): event request from userland */
+#define FBINFO_MISC_USEREVENT          0x10000
+
 #define FBINFO_MISC_TILEBLITTING       0x20000 /* use tile blitting */
 
 /* A driver may set this flag to indicate that it does want a set_par to be
@@ -454,6 +499,7 @@ struct fb_info {
 	struct fb_cmap cmap;		/* Current cmap */
 	struct list_head modelist;      /* mode list */
 	struct fb_videomode *mode;	/* current mode */
+	struct file *file;		/* CAF addition: current file node */
 
 #if IS_ENABLED(CONFIG_FB_BACKLIGHT)
 	/* assigned backlight device */
@@ -603,8 +649,12 @@ extern ssize_t fb_sys_write(struct fb_info *info, const char __user *buf,
 
 /* drivers/video/fbmem.c */
 extern int register_framebuffer(struct fb_info *fb_info);
-extern void unregister_framebuffer(struct fb_info *fb_info);
-extern void unlink_framebuffer(struct fb_info *fb_info);
+/*
+ * CAF's fbmem.c defines both of these returning int (the unregister
+ * result), not void as mainline declares; match the real definitions.
+ */
+extern int unregister_framebuffer(struct fb_info *fb_info);
+extern int unlink_framebuffer(struct fb_info *fb_info);
 extern int remove_conflicting_pci_framebuffers(struct pci_dev *pdev, int res_id,
 					       const char *name);
 extern int remove_conflicting_framebuffers(struct apertures_struct *a,
