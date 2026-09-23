@@ -23,6 +23,7 @@
 #include <linux/smcinvoke.h>
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
+#include <linux/overflow.h>
 
 #include <soc/qcom/scm.h>
 #include <asm/cacheflush.h>
@@ -30,6 +31,21 @@
 
 #include "smcinvoke_object.h"
 #include "../../misc/qseecom_kernel.h"
+
+/*
+ * dmac_flush_range()/dmac_inv_range() are arm32-only macros; this is
+ * arm64, which only exposes __dma_flush_area() (clean+invalidate) as a
+ * declared extern. Same root cause and fix as drivers/char/adsprpc.c
+ * earlier this port.
+ */
+#ifndef dmac_flush_range
+#define dmac_flush_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
+#ifndef dmac_inv_range
+#define dmac_inv_range(start, end) \
+	__dma_flush_area(start, (void *)(end) - (void *)(start))
+#endif
 
 #define SMCINVOKE_DEV			"smcinvoke"
 #define SMCINVOKE_TZ_PARAM_ID		0x224
@@ -82,13 +98,10 @@ struct class *driver_class;
 struct device *class_dev;
 
 /*
- * size_add saturates at SIZE_MAX. If integer overflow is detected,
- * this function would return SIZE_MAX otherwise normal a+b is returned.
+ * size_add() (saturates at SIZE_MAX on overflow) is now a real function
+ * in include/linux/overflow.h upstream -- dropped this file's own
+ * identical copy, which collided with it.
  */
-static inline size_t size_add(size_t a, size_t b)
-{
-	return (b > (SIZE_MAX - a)) ? SIZE_MAX : a + b;
-}
 
 /*
  * pad_size is used along with size_align to define a buffer overflow

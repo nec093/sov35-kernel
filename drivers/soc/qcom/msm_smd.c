@@ -69,7 +69,10 @@ struct smsm_shared_info {
 
 static struct smsm_shared_info smsm_info;
 static struct kfifo smsm_snapshot_fifo;
-static struct wakeup_source smsm_snapshot_ws;
+/* wakeup_source_init()/wakeup_source_trash() removed upstream; switched
+ * to a pointer + wakeup_source_create()/_add(), same pattern used
+ * repeatedly elsewhere this session. */
+static struct wakeup_source *smsm_snapshot_ws;
 static int smsm_snapshot_count;
 static DEFINE_SPINLOCK(smsm_snapshot_count_lock);
 
@@ -2412,7 +2415,10 @@ static int smsm_init(void)
 		pr_err("%s: SMSM state fifo alloc failed %d\n", __func__, i);
 		return i;
 	}
-	wakeup_source_init(&smsm_snapshot_ws, "smsm_snapshot");
+	smsm_snapshot_ws = wakeup_source_create("smsm_snapshot");
+	if (!smsm_snapshot_ws)
+		return -ENOMEM;
+	wakeup_source_add(smsm_snapshot_ws);
 
 	if (!smsm_info.state) {
 		smsm_info.state = smem_alloc(ID_SHARED_STATE,
@@ -2489,7 +2495,7 @@ static void smsm_cb_snapshot(uint32_t use_wakeup_source)
 		spin_lock_irqsave(&smsm_snapshot_count_lock, flags);
 		if (smsm_snapshot_count == 0) {
 			SMSM_POWER_INFO("SMSM snapshot wake lock\n");
-			__pm_stay_awake(&smsm_snapshot_ws);
+			__pm_stay_awake(smsm_snapshot_ws);
 		}
 		++smsm_snapshot_count;
 		spin_unlock_irqrestore(&smsm_snapshot_count_lock, flags);
@@ -2531,7 +2537,7 @@ restore_snapshot_count:
 			--smsm_snapshot_count;
 			if (smsm_snapshot_count == 0) {
 				SMSM_POWER_INFO("SMSM snapshot wake unlock\n");
-				__pm_relax(&smsm_snapshot_ws);
+				__pm_relax(smsm_snapshot_ws);
 			}
 		} else {
 			pr_err("%s: invalid snapshot count\n", __func__);
@@ -2795,7 +2801,7 @@ void notify_smsm_cb_clients_worker(struct work_struct *work)
 				if (smsm_snapshot_count == 0) {
 					SMSM_POWER_INFO(
 						"SMSM snapshot wake unlock\n");
-					__pm_relax(&smsm_snapshot_ws);
+					__pm_relax(smsm_snapshot_ws);
 				}
 			} else {
 				pr_err("%s: invalid snapshot count\n",

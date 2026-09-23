@@ -479,6 +479,9 @@ struct snd_pcm_substream {
 #endif /* CONFIG_SND_VERBOSE_PROCFS */
 	/* misc flags */
 	unsigned int hw_opened: 1;
+	/* CAF addition (not in mainline): see the PCM Volume/User control
+	 * API comment above struct snd_pcm_volume_elem below. */
+	unsigned int hw_no_buffer: 1;
 };
 
 #define SUBSTREAM_BUSY(substream) ((substream)->ref_count > 0)
@@ -503,6 +506,10 @@ struct snd_pcm_str {
 #endif
 	struct snd_kcontrol *chmap_kctl; /* channel-mapping controls */
 	struct device dev;
+	/* CAF additions (not in mainline): see the PCM Volume/User control
+	 * API comment above struct snd_pcm_volume_elem below. */
+	struct snd_kcontrol *vol_kctl;
+	struct snd_kcontrol *usr_kctl;
 };
 
 struct snd_pcm {

@@ -121,6 +121,21 @@ static inline u64 __raw_readq(const volatile void __iomem *addr)
 #define readl_relaxed(c)	({ u32 __r = le32_to_cpu((__force __le32)__raw_readl(c)); __r; })
 #define readq_relaxed(c)	({ u64 __r = le64_to_cpu((__force __le64)__raw_readq(c)); __r; })
 
+/*
+ * CAF additions (not in mainline): "_no_log" variants of the plain I/O
+ * accessors, used by a handful of drivers (msm_smd.c,
+ * glink_smem_native_xprt.c, tsens2xxx.c, ...) to bypass a debug trace/
+ * log wrapper CAF's own port-4.14 asm-generic/io.h carried around each
+ * accessor. That wrapper doesn't exist in this pristine-based header
+ * (mainline never had it, and dropping the tracing here is harmless --
+ * it only skipped instrumentation, never changed the actual access),
+ * so these three (the only ones this tree's build actually needs) are
+ * plain aliases for their logged counterparts.
+ */
+#define __raw_writel_no_log(v, c)	__raw_writel((v), (c))
+#define __raw_readl_no_log(c)		__raw_readl(c)
+#define readl_relaxed_no_log(c)	readl_relaxed(c)
+
 #define writeb_relaxed(v,c)	((void)__raw_writeb((v),(c)))
 #define writew_relaxed(v,c)	((void)__raw_writew((__force u16)cpu_to_le16(v),(c)))
 #define writel_relaxed(v,c)	((void)__raw_writel((__force u32)cpu_to_le32(v),(c)))
