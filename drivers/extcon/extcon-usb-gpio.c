@@ -1,20 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * drivers/extcon/extcon-usb-gpio.c - USB GPIO extcon driver
  *
  * Copyright (C) 2015 Texas Instruments Incorporated - http://www.ti.com
  * Author: Roger Quadros <rogerq@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
-#include <linux/extcon.h>
+#include <linux/extcon-provider.h>
 #include <linux/gpio.h>
 #include <linux/gpio/consumer.h>
 #include <linux/init.h>
@@ -185,8 +177,7 @@ static int usb_extcon_probe(struct platform_device *pdev)
 		ret = devm_request_threaded_irq(dev, info->vbus_irq, NULL,
 						usb_irq_handler,
 						IRQF_TRIGGER_RISING |
-						IRQF_TRIGGER_FALLING |
-						IRQF_ONESHOT,
+						IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 						pdev->name, info);
 		if (ret < 0) {
 			dev_err(dev, "failed to request handler for VBUS IRQ\n");

@@ -397,11 +397,16 @@ CONFIG_GPIO_SYSFS=y
 CONFIG_POWER_RESET_QCOM=y
 CONFIG_POWER_RESET_XGENE=y
 CONFIG_POWER_RESET_SYSCON=y
-CONFIG_QPNP_FG=y
-CONFIG_QPNP_FG_EXTENSION=y
-CONFIG_QPNP_SMBCHARGER=y
-CONFIG_QPNP_SMBCHARGER_EXTENSION=y
-CONFIG_QPNP_TYPEC=y
+# CONFIG_QPNP_FG, CONFIG_QPNP_FG_EXTENSION, CONFIG_QPNP_SMBCHARGER,
+# CONFIG_QPNP_SMBCHARGER_EXTENSION and CONFIG_QPNP_TYPEC are disabled for
+# Phase A of the 5.4 port: none of these have been reconciled with 5.4
+# APIs yet (~150 compile errors combined as of 2026-09-23), and detailed
+# fuel-gauge/charger-IC management is not required to reach a
+# touch-interactive boot milestone. The PMIC still charges the battery
+# autonomously in hardware without a kernel driver. TODO for Phase B.
+# CONFIG_QPNP_FG is not set
+# CONFIG_QPNP_SMBCHARGER is not set
+# CONFIG_QPNP_TYPEC is not set
 CONFIG_MSM_APM=y
 CONFIG_SENSORS_QPNP_ADC_VOLTAGE=y
 CONFIG_SENSORS_QPNP_ADC_CURRENT=y
@@ -445,27 +450,15 @@ CONFIG_MEDIA_CAMERA_SUPPORT=y
 CONFIG_MEDIA_CONTROLLER=y
 CONFIG_VIDEO_V4L2_SUBDEV_API=y
 CONFIG_V4L_PLATFORM_DRIVERS=y
-CONFIG_MSM_CAMERA=y
-CONFIG_MSMB_CAMERA=y
-CONFIG_MSM_CAMERA_SENSOR=y
-CONFIG_MSM_CPP=y
-CONFIG_MSM_CCI=y
-CONFIG_MSM_CSI20_HEADER=y
-CONFIG_MSM_CSI22_HEADER=y
-CONFIG_MSM_CSI30_HEADER=y
-CONFIG_MSM_CSI31_HEADER=y
-CONFIG_MSM_CSIPHY=y
-CONFIG_MSM_CSID=y
-CONFIG_MSM_EEPROM=y
-CONFIG_MSM_ISPIF=y
-CONFIG_MSMB_JPEG=y
-CONFIG_MSM_FD=y
-CONFIG_MSM_JPEGDMA=y
-CONFIG_SONY_CAM_V4L2=y
-CONFIG_MSM_VIDC_3X_V4L2=y
-CONFIG_MSM_VIDC_VMEM=y
-CONFIG_MSM_VIDC_3X_GOVERNORS=y
-CONFIG_MSM_SDE_ROTATOR=y
+# Camera (CONFIG_MSM_CAMERA and its whole camera_v2 subtree), the video
+# codec (CONFIG_MSM_VIDC_3X_*) and the display rotator
+# (CONFIG_MSM_SDE_ROTATOR) are disabled for Phase A of the 5.4 port:
+# none have been reconciled with 5.4 APIs yet (~500+ compile errors
+# combined as of 2026-09-23: struct extcon_dev-style API drift in the
+# camera stack, msm_venc.c/msm_vdec.c/msm_vidc_common.c and
+# msm_sde_rotator.h), and neither camera nor video/rotation is required
+# to reach a touch-interactive boot milestone. TODO for Phase B.
+# CONFIG_MSM_CAMERA is not set
 # CONFIG_VGA_ARB is not set
 CONFIG_QCOM_KGSL=y
 CONFIG_FB=y
@@ -481,7 +474,10 @@ CONFIG_SND=y
 CONFIG_SND_DYNAMIC_MINORS=y
 # CONFIG_SND_PCI is not set
 # CONFIG_SND_SPI is not set
-CONFIG_SND_USB_AUDIO=y
+# CONFIG_SND_USB_AUDIO is not set -- ~160 compile errors as of
+# 2026-09-23 (sound/usb/{stream,mixer,clock,validate,mixer_maps,card}.c
+# all API-drifted vs 5.4), and only affects USB audio accessories, not
+# the onboard WCD934X codec (CONFIG_SND_SOC). TODO for Phase B.
 CONFIG_SND_SOC=y
 CONFIG_HIDRAW=y
 CONFIG_UHID=y
@@ -554,8 +550,11 @@ CONFIG_USB_STORAGE=y
 CONFIG_USB_DWC3=y
 # CONFIG_USB_DWC3_PCI is not set
 CONFIG_USB_DWC3_MSM=y
-CONFIG_USB_PD_POLICY=y
-CONFIG_USB_CC_FUSB301=y
+# CONFIG_USB_PD_POLICY and CONFIG_USB_CC_FUSB301 (USB Type-C Power
+# Delivery negotiation) disabled for Phase A of the 5.4 port: ~75
+# compile errors combined as of 2026-09-23 (drivers/usb/pd/policy_engine.c,
+# drivers/usb/misc/fusb301.c), and basic USB/ADB works fine without PD
+# negotiation. TODO for Phase B.
 CONFIG_USB_OTG_WAKELOCK=y
 CONFIG_NOP_USB_XCEIV=y
 CONFIG_USB_ULPI=y
