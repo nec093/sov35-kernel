@@ -1419,9 +1419,10 @@ static void msm_hs_disconnect_rx(struct uart_port *uport)
 }
 
 /* Tx timeout callback function */
-void tx_timeout_handler(unsigned long arg)
+void tx_timeout_handler(struct timer_list *t)
 {
-	struct msm_hs_port *msm_uport = (struct msm_hs_port *) arg;
+	struct msm_hs_port *msm_uport = from_timer(msm_uport, t,
+						    tx.tx_timeout_timer);
 	struct uart_port *uport = &msm_uport->uport;
 	int isr;
 
@@ -2786,9 +2787,7 @@ static int msm_hs_startup(struct uart_port *uport)
 
 	tx->dma_in_flight = false;
 	MSM_HS_DBG("%s():desc usage flag 0x%lx", __func__, rx->queued_flag);
-	setup_timer(&(tx->tx_timeout_timer),
-			tx_timeout_handler,
-			(unsigned long) msm_uport);
+	timer_setup(&tx->tx_timeout_timer, tx_timeout_handler, 0);
 
 	/* Enable reading the current CTS, no harm even if CTS is ignored */
 	msm_uport->imr_reg |= UARTDM_ISR_CURRENT_CTS_BMSK;

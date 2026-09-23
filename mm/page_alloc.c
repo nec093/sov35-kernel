@@ -2220,6 +2220,16 @@ static int fallbacks[MIGRATE_TYPES][4] = {
 #endif
 };
 
+/*
+ * CAF addition (not in mainline): exports the fallbacks[] array above,
+ * used by drivers/staging/android/lowmemorykiller.c.
+ */
+int *get_migratetype_fallbacks(int mtype)
+{
+	return fallbacks[mtype];
+}
+EXPORT_SYMBOL_GPL(get_migratetype_fallbacks);
+
 #ifdef CONFIG_CMA
 static __always_inline struct page *__rmqueue_cma_fallback(struct zone *zone,
 					unsigned int order)
