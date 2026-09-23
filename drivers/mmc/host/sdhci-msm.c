@@ -3001,7 +3001,14 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 		init_completion(&msm_host->pwr_irq_completion);
 	else if (!wait_for_completion_timeout(&msm_host->pwr_irq_completion,
 				msecs_to_jiffies(MSM_PWR_IRQ_TIMEOUT_MS))) {
-		__WARN_printf("%s: request(%d) timed out waiting for pwr_irq\n",
+		/*
+		 * __WARN_printf() takes a taint flag as its first argument
+		 * (see include/asm-generic/bug.h); this call was missing it
+		 * and passing the format string in its place, which corrupts
+		 * the generated bug-table entry. Use the normal WARN() macro
+		 * instead, same as this file's other WARN() call site.
+		 */
+		WARN(1, "%s: request(%d) timed out waiting for pwr_irq\n",
 					mmc_hostname(host->mmc), req_type);
 		MMC_TRACE(host->mmc,
 			"%s: request(%d) timed out waiting for pwr_irq\n",

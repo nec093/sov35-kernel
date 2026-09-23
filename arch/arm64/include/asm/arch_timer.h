@@ -213,12 +213,17 @@ static __always_inline u64 __arch_counter_get_cntvct(void)
  * Several CAF SoC drivers outside the clocksource subsystem still call
  * this by its original name for a direct (non-mem-mapped) counter read;
  * reintroduced here as a thin wrapper so those callers don't all need
- * touching individually.
+ * touching individually. Guarded so it doesn't collide with
+ * drivers/clocksource/arm_arch_timer.c's own (file-static, unrelated)
+ * function of the same name, which #defines
+ * BUILDING_ARM_ARCH_TIMER_C before including this header.
  */
+#ifndef BUILDING_ARM_ARCH_TIMER_C
 static __always_inline u64 arch_counter_get_cntvct(void)
 {
 	return __arch_counter_get_cntvct();
 }
+#endif
 
 static inline int arch_timer_arch_init(void)
 {

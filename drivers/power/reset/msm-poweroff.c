@@ -403,10 +403,12 @@ static void msm_restart_prepare(const char *cmd)
 #endif
 	}
 
-	flush_cache_all();
-
-	/*outer_flush_all is not supported by 64bit kernel*/
+	/* flush_cache_all()/outer_flush_all() aren't supported by the
+	 * 64-bit kernel (mainline removed the arm64 flush_cache_all()
+	 * declaration entirely; targeted cache maintenance is used
+	 * elsewhere in the reset path instead). */
 #ifndef CONFIG_ARM64
+	flush_cache_all();
 	outer_flush_all();
 #endif
 

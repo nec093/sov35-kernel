@@ -43,7 +43,10 @@ struct platform_device *regulator_register_always_on(int id, const char *name,
 	}
 
 	data->cfg.microvolts = uv;
-	data->cfg.gpio = -EINVAL;
+	/* struct fixed_voltage_config.gpio (legacy raw GPIO number, being
+	 * set here to -EINVAL i.e. "no GPIO") was removed upstream in favor
+	 * of gpiod-based lookup tables; omitting it here has the same
+	 * "no GPIO control pin" effect. */
 	data->cfg.enabled_at_boot = 1;
 	data->cfg.init_data = &data->init_data;
 

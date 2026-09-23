@@ -88,11 +88,19 @@ int of_resolve_phandles(struct device_node *tree);
 void __of_free_phandle_cache_entry(phandle handle);
 #endif
 
+/*
+ * of_populate_phandle_cache()/of_free_phandle_cache() are defined
+ * unconditionally in base.c (used there by of_core_init() regardless of
+ * CONFIG_OF_OVERLAY), and drivers/of/fdt.c also needs to call the former
+ * during early unflattening; only the overlay-specific mutex helpers
+ * below are genuinely CONFIG_OF_OVERLAY-only.
+ */
+int of_free_phandle_cache(void);
+void of_populate_phandle_cache(void);
+
 #if defined(CONFIG_OF_OVERLAY)
 void of_overlay_mutex_lock(void);
 void of_overlay_mutex_unlock(void);
-int of_free_phandle_cache(void);
-void of_populate_phandle_cache(void);
 #else
 static inline void of_overlay_mutex_lock(void) {};
 static inline void of_overlay_mutex_unlock(void) {};

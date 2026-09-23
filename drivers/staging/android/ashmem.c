@@ -443,13 +443,24 @@ static int ashmem_mmap(struct file *file, struct vm_area_struct *vma)
 	}
 	get_file(asma->file);
 
-	if (vma->vm_flags & VM_SHARED)
-		shmem_set_file(vma, asma->file);
-	else {
-		if (vma->vm_file)
-			fput(vma->vm_file);
-		vma->vm_file = asma->file;
+	/*
+	 * shmem_set_file() doesn't exist in this kernel version; reworked
+	 * to use shmem_zero_setup()/vma_set_anonymous() instead, same as
+	 * pristine mainline's current ashmem.c.
+	 */
+	if (vma->vm_flags & VM_SHARED) {
+		ret = shmem_zero_setup(vma);
+		if (ret) {
+			fput(asma->file);
+			goto out;
+		}
+	} else {
+		vma_set_anonymous(vma);
 	}
+
+	if (vma->vm_file)
+		fput(vma->vm_file);
+	vma->vm_file = asma->file;
 
 out:
 	mutex_unlock(&ashmem_mutex);

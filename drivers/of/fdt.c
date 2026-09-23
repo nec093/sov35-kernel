@@ -1229,7 +1229,12 @@ void __init unflatten_device_tree(void)
 	/* Get pointer to "/chosen" and "/aliases" nodes for use everywhere */
 	of_alias_scan(early_init_dt_alloc_memory_arch);
 
-	of_populate_phandle_cache_early();
+	/*
+	 * of_populate_phandle_cache_early() doesn't exist; the real
+	 * (unconditionally defined) function is just
+	 * of_populate_phandle_cache() -- see drivers/of/of_private.h.
+	 */
+	of_populate_phandle_cache();
 
 	unittest_unflatten_overlay_base();
 }

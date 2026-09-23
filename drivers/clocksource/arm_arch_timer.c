@@ -8,6 +8,13 @@
 
 #define pr_fmt(fmt) 	"arch_timer: " fmt
 
+/*
+ * Tells asm/arch_timer.h not to define its CAF-compat
+ * arch_counter_get_cntvct(), which would otherwise collide with this
+ * file's own unrelated file-static function of the same name below.
+ */
+#define BUILDING_ARM_ARCH_TIMER_C
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/device.h>

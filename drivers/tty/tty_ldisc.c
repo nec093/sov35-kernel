@@ -237,7 +237,7 @@ static int tty_ldiscs_seq_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static const struct seq_operations tty_ldiscs_seq_ops = {
+const struct seq_operations tty_ldiscs_seq_ops = {
 	.start	= tty_ldiscs_seq_start,
 	.next	= tty_ldiscs_seq_next,
 	.stop	= tty_ldiscs_seq_stop,
