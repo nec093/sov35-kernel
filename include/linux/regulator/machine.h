@@ -81,6 +81,12 @@ struct regulator_state {
 	unsigned int mode;
 	int enabled;
 	bool changeable;
+	/*
+	 * CAF addition (not in mainline, which dropped this in favor of a
+	 * tri-state "enabled" alone): explicit disabled-in-suspend flag,
+	 * checked alongside "enabled" by drivers/regulator/core.c.
+	 */
+	int disabled;
 };
 
 /**
@@ -247,12 +253,19 @@ struct regulator_init_data {
 
 #ifdef CONFIG_REGULATOR
 void regulator_has_full_constraints(void);
+/*
+ * CAF's drivers/regulator/core.c provides real, exported definitions of
+ * these two (mainline replaced them with the always-inline no-op stubs
+ * below, in the else branch, for source compat only -- pristine v5.4.302
+ * has no real implementation to declare here). Declared, not inline, to
+ * avoid a redefinition clash with core.c's definitions.
+ */
+int regulator_suspend_prepare(suspend_state_t state);
+int regulator_suspend_finish(void);
 #else
 static inline void regulator_has_full_constraints(void)
 {
 }
-#endif
-
 static inline int regulator_suspend_prepare(suspend_state_t state)
 {
 	return 0;
@@ -261,5 +274,6 @@ static inline int regulator_suspend_finish(void)
 {
 	return 0;
 }
+#endif
 
 #endif

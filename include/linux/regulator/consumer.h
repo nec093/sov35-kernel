@@ -172,6 +172,15 @@ struct regulator_bulk_data {
 	int ret;
 };
 
+/*
+ * CAF addition (not in mainline): OCP (over-current-protection)
+ * notification callback registration.
+ */
+struct regulator_ocp_notification {
+	void (*notify)(void *);
+	void *ctxt;
+};
+
 #if defined(CONFIG_REGULATOR)
 
 /* regulator get and put */
@@ -240,6 +249,8 @@ void regulator_bulk_free(int num_consumers,
 
 int regulator_count_voltages(struct regulator *regulator);
 int regulator_list_voltage(struct regulator *regulator, unsigned selector);
+/* CAF addition (not in mainline). */
+int regulator_list_corner_voltage(struct regulator *regulator, int corner);
 int regulator_is_supported_voltage(struct regulator *regulator,
 				   int min_uV, int max_uV);
 unsigned int regulator_get_linear_step(struct regulator *regulator);
@@ -266,6 +277,10 @@ int regulator_get_hardware_vsel_register(struct regulator *regulator,
 					 unsigned *vsel_mask);
 int regulator_list_hardware_vsel(struct regulator *regulator,
 				 unsigned selector);
+
+/* CAF addition (not in mainline): regulator register ocp notification */
+int regulator_register_ocp_notification(struct regulator *regulator,
+			struct regulator_ocp_notification *ocp_notification);
 
 /* regulator notifier block */
 int regulator_register_notifier(struct regulator *regulator,
@@ -544,6 +559,13 @@ static inline int regulator_list_hardware_vsel(struct regulator *regulator,
 	return -EOPNOTSUPP;
 }
 
+static inline int regulator_register_ocp_notification(
+			struct regulator *regulator,
+			struct regulator_ocp_notification *ocp_notification)
+{
+	return 0;
+}
+
 static inline int regulator_register_notifier(struct regulator *regulator,
 			      struct notifier_block *nb)
 {
@@ -584,6 +606,12 @@ static inline int regulator_count_voltages(struct regulator *regulator)
 }
 
 static inline int regulator_list_voltage(struct regulator *regulator, unsigned selector)
+{
+	return -EINVAL;
+}
+
+static inline int regulator_list_corner_voltage(struct regulator *regulator,
+	int corner)
 {
 	return -EINVAL;
 }

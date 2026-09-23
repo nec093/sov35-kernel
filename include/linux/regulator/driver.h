@@ -15,6 +15,7 @@
 #include <linux/device.h>
 #include <linux/notifier.h>
 #include <linux/regulator/consumer.h>
+#include <linux/regulator/proxy-consumer.h>
 #include <linux/ww_mutex.h>
 
 struct gpio_desc;
@@ -145,6 +146,8 @@ struct regulator_ops {
 
 	/* enumerate supported voltages */
 	int (*list_voltage) (struct regulator_dev *, unsigned selector);
+	/* CAF addition (not in mainline). */
+	int (*list_corner_voltage)(struct regulator_dev *, int corner);
 
 	/* get/set regulator voltage */
 	int (*set_voltage) (struct regulator_dev *, int min_uV, int max_uV,
@@ -201,6 +204,9 @@ struct regulator_ops {
 
 	/* control and report on bypass mode */
 	int (*set_bypass)(struct regulator_dev *dev, bool enable);
+	/* CAF addition (not in mainline): register ocp notification */
+	int (*register_ocp_notification) (struct regulator_dev *,
+			struct regulator_ocp_notification *notification);
 	int (*get_bypass)(struct regulator_dev *dev, bool *enable);
 
 	/* the operations below are for configuration of regulator state when
@@ -416,6 +422,17 @@ struct regulator_config {
 	struct regmap *regmap;
 
 	struct gpio_desc *ena_gpiod;
+
+	/*
+	 * CAF additions (not in mainline): the older raw-GPIO-number
+	 * enable-pin API, superseded upstream by ena_gpiod above but still
+	 * used by this driver's own regulator_ena_gpio_ctrl-style logic in
+	 * drivers/regulator/core.c.
+	 */
+	bool ena_gpio_initialized;
+	int ena_gpio;
+	unsigned int ena_gpio_invert:1;
+	unsigned int ena_gpio_flags;
 };
 
 /*
@@ -448,7 +465,13 @@ struct regulator_dev {
 	int exclusive;
 	u32 use_count;
 	u32 open_count;
+	u32 open_offset;	/* CAF addition (not in mainline). */
 	u32 bypass_count;
+	/*
+	 * CAF addition (not in mainline): count of deferred disable calls
+	 * still pending (regulator_disable_deferred()).
+	 */
+	int deferred_disables;
 
 	/* lists we belong to */
 	struct list_head list; /* list of all regulators */
@@ -482,6 +505,10 @@ struct regulator_dev {
 
 	/* time when this regulator was disabled last time */
 	unsigned long last_off_jiffy;
+
+	/* CAF additions (not in mainline). */
+	struct proxy_consumer *proxy_consumer;
+	struct regulator *debug_consumer;
 };
 
 struct regulator_dev *
