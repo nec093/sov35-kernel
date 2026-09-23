@@ -48,6 +48,10 @@ struct extcon_dev {
 	struct device dev;
 	struct raw_notifier_head nh_all;
 	struct raw_notifier_head *nh;
+	/* CAF addition (not in mainline): per-cable blocking notifier chain,
+	 * for consumers (e.g. dwc3-msm.c) that need extcon_register_
+	 * blocking_notifier()'s callback context to be able to sleep. */
+	struct blocking_notifier_head *bnh;
 	struct list_head entry;
 	int max_supported;
 	spinlock_t lock;	/* could be called by irq handler */

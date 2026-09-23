@@ -117,14 +117,20 @@
  * @type:       integer (intval)
  * @value:      0 (USB/USB2) or 1 (USB3)
  * @default:    0 (USB/USB2)
+ * - EXTCON_PROP_USB_TYPEC_MED_HIGH_CURRENT (CAF addition, not in mainline)
+ * @type:       integer (intval)
+ * @value:      0 (default current), 1 (medium or high current)
+ * @default:    0 (default current)
  *
  */
 #define EXTCON_PROP_USB_VBUS		0
 #define EXTCON_PROP_USB_TYPEC_POLARITY	1
 #define EXTCON_PROP_USB_SS		2
+/* CAF addition (not in mainline). */
+#define EXTCON_PROP_USB_TYPEC_MED_HIGH_CURRENT	3
 
 #define EXTCON_PROP_USB_MIN		0
-#define EXTCON_PROP_USB_MAX		2
+#define EXTCON_PROP_USB_MAX		3
 #define EXTCON_PROP_USB_CNT	(EXTCON_PROP_USB_MAX - EXTCON_PROP_USB_MIN + 1)
 
 /* Properties of EXTCON_TYPE_CHG. */
@@ -200,6 +206,12 @@ extern int extcon_register_notifier(struct extcon_dev *edev, unsigned int id,
 				struct notifier_block *nb);
 extern int extcon_unregister_notifier(struct extcon_dev *edev, unsigned int id,
 				struct notifier_block *nb);
+/* CAF additions (not in mainline): blocking-notifier variants, for
+ * consumers whose callback needs to sleep (e.g. dwc3-msm.c). */
+extern int extcon_register_blocking_notifier(struct extcon_dev *edev,
+				unsigned int id, struct notifier_block *nb);
+extern int extcon_unregister_blocking_notifier(struct extcon_dev *edev,
+				unsigned int id, struct notifier_block *nb);
 extern int devm_extcon_register_notifier(struct device *dev,
 				struct extcon_dev *edev, unsigned int id,
 				struct notifier_block *nb);
@@ -255,6 +267,18 @@ static inline int extcon_register_notifier(struct extcon_dev *edev,
 }
 
 static inline int extcon_unregister_notifier(struct extcon_dev *edev,
+				unsigned int id, struct notifier_block *nb)
+{
+	return 0;
+}
+
+static inline int extcon_register_blocking_notifier(struct extcon_dev *edev,
+				unsigned int id, struct notifier_block *nb)
+{
+	return 0;
+}
+
+static inline int extcon_unregister_blocking_notifier(struct extcon_dev *edev,
 				unsigned int id, struct notifier_block *nb)
 {
 	return 0;

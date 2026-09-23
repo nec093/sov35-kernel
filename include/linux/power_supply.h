@@ -289,6 +289,8 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_PD,		/* Power Delivery Port */
 	POWER_SUPPLY_TYPE_USB_PD_DRP,		/* PD Dual Role Port */
 	POWER_SUPPLY_TYPE_APPLE_BRICK_ID,	/* Apple Charging Method */
+	/* CAF addition (not in mainline). */
+	POWER_SUPPLY_TYPE_USB_FLOAT,		/* Floating charger */
 };
 
 enum power_supply_usb_type {
@@ -306,6 +308,12 @@ enum power_supply_usb_type {
 
 enum power_supply_notifier_events {
 	PSY_EVENT_PROP_CHANGED,
+};
+
+/* CAF addition (not in mainline): physical connector type. */
+enum {
+	POWER_SUPPLY_CONNECTOR_TYPEC,
+	POWER_SUPPLY_CONNECTOR_MICRO_USB,
 };
 
 union power_supply_propval {

@@ -487,6 +487,26 @@ int extcon_sync(struct extcon_dev *edev, unsigned int id)
 }
 EXPORT_SYMBOL_GPL(extcon_sync);
 
+/* CAF addition (not in mainline): run the per-cable blocking notifier
+ * chain for one cable, for consumers whose callback needs to sleep.
+ * Unlike extcon_sync() above, this is not called automatically on every
+ * state change -- callers invoke it explicitly when they need the
+ * blocking-context notification semantics. */
+int extcon_blocking_sync(struct extcon_dev *edev, unsigned int id, bool val)
+{
+	int index;
+
+	if (!edev)
+		return -EINVAL;
+
+	index = find_cable_index_by_id(edev, id);
+	if (index < 0)
+		return index;
+
+	return blocking_notifier_call_chain(&edev->bnh[index], val, edev);
+}
+EXPORT_SYMBOL(extcon_blocking_sync);
+
 /**
  * extcon_get_state() - Get the state of an external connector.
  * @edev:	the extcon device
@@ -925,6 +945,41 @@ int extcon_register_notifier(struct extcon_dev *edev, unsigned int id,
 }
 EXPORT_SYMBOL_GPL(extcon_register_notifier);
 
+/* CAF additions (not in mainline): blocking-notifier variants of
+ * extcon_register_notifier()/extcon_unregister_notifier() above, for
+ * consumers whose callback needs to sleep (e.g. dwc3-msm.c). */
+int extcon_register_blocking_notifier(struct extcon_dev *edev, unsigned int id,
+			struct notifier_block *nb)
+{
+	int idx = -EINVAL;
+
+	if (!edev || !nb)
+		return -EINVAL;
+
+	idx = find_cable_index_by_id(edev, id);
+	if (idx < 0)
+		return idx;
+
+	return blocking_notifier_chain_register(&edev->bnh[idx], nb);
+}
+EXPORT_SYMBOL(extcon_register_blocking_notifier);
+
+int extcon_unregister_blocking_notifier(struct extcon_dev *edev,
+			unsigned int id, struct notifier_block *nb)
+{
+	int idx;
+
+	if (!edev || !nb)
+		return -EINVAL;
+
+	idx = find_cable_index_by_id(edev, id);
+	if (idx < 0)
+		return idx;
+
+	return blocking_notifier_chain_unregister(&edev->bnh[idx], nb);
+}
+EXPORT_SYMBOL(extcon_unregister_blocking_notifier);
+
 /**
  * extcon_unregister_notifier() - Unregister a notifier block from the extcon.
  * @edev:	the extcon device
@@ -1248,8 +1303,23 @@ int extcon_dev_register(struct extcon_dev *edev)
 		}
 	}
 
-	for (index = 0; index < edev->max_supported; index++)
+	/* CAF addition (not in mainline): per-cable blocking notifier chain
+	 * array, allocated in parallel with nh above. Not devm_*(): edev->dev
+	 * is not initialized until device_register() below, and devres_add()
+	 * on an uninitialized device oopses. */
+	if (edev->max_supported) {
+		edev->bnh = kcalloc(edev->max_supported, sizeof(*edev->bnh),
+				GFP_KERNEL);
+		if (!edev->bnh) {
+			ret = -ENOMEM;
+			goto err_alloc_bnh;
+		}
+	}
+
+	for (index = 0; index < edev->max_supported; index++) {
 		RAW_INIT_NOTIFIER_HEAD(&edev->nh[index]);
+		BLOCKING_INIT_NOTIFIER_HEAD(&edev->bnh[index]);
+	}
 
 	RAW_INIT_NOTIFIER_HEAD(&edev->nh_all);
 
@@ -1269,6 +1339,9 @@ int extcon_dev_register(struct extcon_dev *edev)
 	return 0;
 
 err_dev:
+	if (edev->max_supported)
+		kfree(edev->bnh);
+err_alloc_bnh:
 	if (edev->max_supported)
 		kfree(edev->nh);
 err_alloc_nh:
@@ -1333,6 +1406,7 @@ void extcon_dev_unregister(struct extcon_dev *edev)
 		kfree(edev->extcon_dev_type.groups);
 		kfree(edev->cables);
 		kfree(edev->nh);
+		kfree(edev->bnh);
 	}
 
 	put_device(&edev->dev);

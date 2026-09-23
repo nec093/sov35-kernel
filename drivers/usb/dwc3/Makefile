@@ -1,6 +1,11 @@
 # define_trace.h needs to know how to find our header
 CFLAGS_trace.o				:= -I$(src)
-CFLAGS_dwc3-msm.o			:= -Idrivers/usb/host -Idrivers/base/power
+# Bare relative -I paths only resolve for an in-tree (srctree == objtree)
+# build; with this project's out-of-tree O= build the compiler's cwd is
+# the objtree, which never gets hand-written headers like host/xhci.h or
+# base/power/power.h copied into it (same bug class fixed in
+# drivers/input/misc/vl53L0/Makefile). Prefixed with $(srctree)/.
+CFLAGS_dwc3-msm.o			:= -I$(srctree)/drivers/usb/host -I$(srctree)/drivers/base/power
 
 obj-$(CONFIG_USB_DWC3)			+= dwc3.o
 

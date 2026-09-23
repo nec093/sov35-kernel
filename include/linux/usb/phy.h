@@ -62,7 +62,8 @@ enum usb_otg_state {
 	OTG_STATE_B_IDLE,
 	OTG_STATE_B_SRP_INIT,
 	OTG_STATE_B_PERIPHERAL,
-	/* CAF addition (not in mainline). */
+	/* CAF additions (not in mainline). */
+	OTG_STATE_B_SUSPEND,
 	OTG_STATE_B_CHARGER,
 
 	/* extra dual-role default-b states */

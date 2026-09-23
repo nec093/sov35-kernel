@@ -1130,7 +1130,7 @@ static int gsi_prepare_trbs(struct usb_ep *ep, struct usb_gsi_request *req)
 	struct scatterlist *sg;
 	struct sg_table *sgt;
 
-	dep->trb_pool = dma_zalloc_coherent(dwc->sysdev,
+	dep->trb_pool = dma_alloc_coherent(dwc->sysdev,
 				num_trbs * sizeof(struct dwc3_trb),
 				&dep->trb_pool_dma, GFP_KERNEL);
 

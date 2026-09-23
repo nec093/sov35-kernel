@@ -33,6 +33,10 @@ extern void devm_extcon_dev_free(struct device *dev, struct extcon_dev *edev);
 
 /* Synchronize the state and property value for each external connector. */
 extern int extcon_sync(struct extcon_dev *edev, unsigned int id);
+/* CAF addition (not in mainline): blocking-context variant, for consumers
+ * registered via extcon_register_blocking_notifier(). */
+extern int extcon_blocking_sync(struct extcon_dev *edev, unsigned int id,
+				bool val);
 
 /*
  * Following APIs set the connected state of each external connector.
@@ -107,6 +111,12 @@ static inline int extcon_set_state_sync(struct extcon_dev *edev, unsigned int id
 }
 
 static inline int extcon_sync(struct extcon_dev *edev, unsigned int id)
+{
+	return 0;
+}
+
+static inline int extcon_blocking_sync(struct extcon_dev *edev,
+				unsigned int id, bool val)
 {
 	return 0;
 }
