@@ -580,7 +580,11 @@ CONFIG_USB_CONFIGFS_NCM=y
 CONFIG_USB_CONFIGFS_ECM=y
 CONFIG_USB_CONFIGFS_QCRNDIS=y
 CONFIG_USB_CONFIGFS_RNDIS=y
-CONFIG_USB_CONFIGFS_RMNET_BAM=y
+# CONFIG_USB_CONFIGFS_RMNET_BAM (selects CONFIG_USB_F_RMNET_BAM, whose
+# u_data_ipa.c has ~23 compile errors) is disabled for Phase A: it's
+# the IPA-accelerated USB RmNet function for cellular-modem tethering
+# over USB, not needed for a touch-interactive boot milestone.
+# CONFIG_USB_CONFIGFS_RMNET_BAM is not set
 CONFIG_USB_CONFIGFS_F_FS=y
 CONFIG_USB_CONFIGFS_F_MTP=y
 CONFIG_USB_CONFIGFS_F_PTP=y

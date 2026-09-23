@@ -3494,7 +3494,7 @@ void ipa_inc_acquire_wakelock(enum ipa_wakelock_ref_client ref_client)
 		ref_client, ipa_ctx->wakelock_ref_cnt.cnt);
 	ipa_ctx->wakelock_ref_cnt.cnt |= (1 << ref_client);
 	if (ipa_ctx->wakelock_ref_cnt.cnt)
-		__pm_stay_awake(&ipa_ctx->w_lock);
+		__pm_stay_awake(ipa_ctx->w_lock);
 	IPADBG_LOW("active wakelock ref cnt = %d client enum %d\n",
 		ipa_ctx->wakelock_ref_cnt.cnt, ref_client);
 	spin_unlock_irqrestore(&ipa_ctx->wakelock_ref_cnt.spinlock, flags);
@@ -3519,7 +3519,7 @@ void ipa_dec_release_wakelock(enum ipa_wakelock_ref_client ref_client)
 	IPADBG_LOW("active wakelock ref cnt = %d client enum %d\n",
 		ipa_ctx->wakelock_ref_cnt.cnt, ref_client);
 	if (ipa_ctx->wakelock_ref_cnt.cnt == 0)
-		__pm_relax(&ipa_ctx->w_lock);
+		__pm_relax(ipa_ctx->w_lock);
 	spin_unlock_irqrestore(&ipa_ctx->wakelock_ref_cnt.spinlock, flags);
 }
 
@@ -4345,8 +4345,15 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 
 
 
-	/* Create a wakeup source. */
-	wakeup_source_init(&ipa_ctx->w_lock, "IPA_WS");
+	/*
+	 * Create a wakeup source. wakeup_source_init() (in-place init of an
+	 * embedded struct) was removed upstream; wakeup_source_create()
+	 * allocates one instead (see the struct wakeup_source *w_lock
+	 * comment in ipa_i.h).
+	 */
+	ipa_ctx->w_lock = wakeup_source_create("IPA_WS");
+	if (ipa_ctx->w_lock)
+		wakeup_source_add(ipa_ctx->w_lock);
 	spin_lock_init(&ipa_ctx->wakelock_ref_cnt.spinlock);
 
 	/* Initialize the SPS PM lock. */

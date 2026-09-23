@@ -47,7 +47,12 @@ struct ipa_rm_it_private {
 	bool reschedule_work;
 	bool work_in_progress;
 	unsigned long jiffies;
-	struct wakeup_source w_lock;
+	/*
+	 * Pointer, not embedded: mainline dropped the in-place
+	 * wakeup_source_init()/wakeup_source_trash() this used to be set
+	 * up/torn down with, replaced by wakeup_source_create()/destroy().
+	 */
+	struct wakeup_source *w_lock;
 	char w_lock_name[MAX_WS_NAME];
 };
 
@@ -91,7 +96,7 @@ static void ipa_rm_inactivity_timer_func(struct work_struct *work)
 	} else {
 		IPA_RM_DBG_LOW("%s: calling release_resource on resource %d!\n",
 			__func__, me->resource_name);
-		__pm_relax(&ipa_rm_it_handles[me->resource_name].w_lock);
+		__pm_relax(ipa_rm_it_handles[me->resource_name].w_lock);
 		ipa_rm_release_resource(me->resource_name);
 		ipa_rm_it_handles[me->resource_name].work_in_progress = false;
 	}
@@ -138,10 +143,12 @@ int ipa_rm_inactivity_timer_init(enum ipa_rm_resource_name resource_name,
 	ipa_rm_it_handles[resource_name].resource_requested = false;
 	ipa_rm_it_handles[resource_name].reschedule_work = false;
 	ipa_rm_it_handles[resource_name].work_in_progress = false;
-	pwlock = &(ipa_rm_it_handles[resource_name].w_lock);
 	name = ipa_rm_it_handles[resource_name].w_lock_name;
 	snprintf(name, MAX_WS_NAME, "IPA_RM%d", resource_name);
-	wakeup_source_init(pwlock, name);
+	pwlock = wakeup_source_create(name);
+	if (pwlock)
+		wakeup_source_add(pwlock);
+	ipa_rm_it_handles[resource_name].w_lock = pwlock;
 	INIT_DELAYED_WORK(&ipa_rm_it_handles[resource_name].work,
 			  ipa_rm_inactivity_timer_func);
 	ipa_rm_it_handles[resource_name].initied = 1;
@@ -179,8 +186,11 @@ int ipa_rm_inactivity_timer_destroy(enum ipa_rm_resource_name resource_name)
 	}
 
 	cancel_delayed_work_sync(&ipa_rm_it_handles[resource_name].work);
-	pwlock = &(ipa_rm_it_handles[resource_name].w_lock);
-	wakeup_source_trash(pwlock);
+	pwlock = ipa_rm_it_handles[resource_name].w_lock;
+	if (pwlock) {
+		wakeup_source_remove(pwlock);
+		wakeup_source_destroy(pwlock);
+	}
 
 	memset(&ipa_rm_it_handles[resource_name], 0,
 	       sizeof(struct ipa_rm_it_private));
@@ -276,7 +286,7 @@ int ipa_rm_inactivity_timer_release_resource(
 	}
 	ipa_rm_it_handles[resource_name].work_in_progress = true;
 	ipa_rm_it_handles[resource_name].reschedule_work = false;
-	__pm_stay_awake(&ipa_rm_it_handles[resource_name].w_lock);
+	__pm_stay_awake(ipa_rm_it_handles[resource_name].w_lock);
 	IPA_RM_DBG_LOW("%s: setting delayed work\n", __func__);
 	queue_delayed_work(system_unbound_wq,
 			      &ipa_rm_it_handles[resource_name].work,
