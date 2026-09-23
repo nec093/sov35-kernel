@@ -40,84 +40,13 @@
 #define mmc_card_clr_suspended(c) ((c)->state &= ~MMC_STATE_SUSPENDED)
 
 /*
- * The world is not perfect and supplies us with broken mmc/sdio devices.
- * For at least some of these bugs we need a work-around.
+ * struct mmc_fixup and the MMC_FIXUP()/SDIO_FIXUP()/add_quirk()-family
+ * helpers pristine originally defined here privately, but CAF's own
+ * include/linux/mmc/card.h (the public header, already #included
+ * above) defines the identical apparatus for wider reuse outside this
+ * driver -- keeping both caused a redefinition error, so this driver-
+ * private copy was dropped in favor of the public one.
  */
-struct mmc_fixup {
-	/* CID-specific fields. */
-	const char *name;
-
-	/* Valid revision range */
-	u64 rev_start, rev_end;
-
-	unsigned int manfid;
-	unsigned short oemid;
-
-	/* SDIO-specific fields. You can use SDIO_ANY_ID here of course */
-	u16 cis_vendor, cis_device;
-
-	/* for MMC cards */
-	unsigned int ext_csd_rev;
-
-	void (*vendor_fixup)(struct mmc_card *card, int data);
-	int data;
-};
-
-#define CID_MANFID_ANY (-1u)
-#define CID_OEMID_ANY ((unsigned short) -1)
-#define CID_NAME_ANY (NULL)
-
-#define EXT_CSD_REV_ANY (-1u)
-
-#define CID_MANFID_SANDISK      0x2
-#define CID_MANFID_ATP          0x9
-#define CID_MANFID_TOSHIBA      0x11
-#define CID_MANFID_MICRON       0x13
-#define CID_MANFID_SAMSUNG      0x15
-#define CID_MANFID_APACER       0x27
-#define CID_MANFID_KINGSTON     0x70
-#define CID_MANFID_HYNIX	0x90
-#define CID_MANFID_NUMONYX	0xFE
-
-#define END_FIXUP { NULL }
-
-#define _FIXUP_EXT(_name, _manfid, _oemid, _rev_start, _rev_end,	\
-		   _cis_vendor, _cis_device,				\
-		   _fixup, _data, _ext_csd_rev)				\
-	{						\
-		.name = (_name),			\
-		.manfid = (_manfid),			\
-		.oemid = (_oemid),			\
-		.rev_start = (_rev_start),		\
-		.rev_end = (_rev_end),			\
-		.cis_vendor = (_cis_vendor),		\
-		.cis_device = (_cis_device),		\
-		.vendor_fixup = (_fixup),		\
-		.data = (_data),			\
-		.ext_csd_rev = (_ext_csd_rev),		\
-	}
-
-#define MMC_FIXUP_REV(_name, _manfid, _oemid, _rev_start, _rev_end,	\
-		      _fixup, _data, _ext_csd_rev)			\
-	_FIXUP_EXT(_name, _manfid,					\
-		   _oemid, _rev_start, _rev_end,			\
-		   SDIO_ANY_ID, SDIO_ANY_ID,				\
-		   _fixup, _data, _ext_csd_rev)				\
-
-#define MMC_FIXUP(_name, _manfid, _oemid, _fixup, _data) \
-	MMC_FIXUP_REV(_name, _manfid, _oemid, 0, -1ull, _fixup, _data,	\
-		      EXT_CSD_REV_ANY)
-
-#define MMC_FIXUP_EXT_CSD_REV(_name, _manfid, _oemid, _fixup, _data,	\
-			      _ext_csd_rev)				\
-	MMC_FIXUP_REV(_name, _manfid, _oemid, 0, -1ull, _fixup, _data,	\
-		      _ext_csd_rev)
-
-#define SDIO_FIXUP(_vendor, _device, _fixup, _data)			\
-	_FIXUP_EXT(CID_NAME_ANY, CID_MANFID_ANY,			\
-		    CID_OEMID_ANY, 0, -1ull,				\
-		   _vendor, _device,					\
-		   _fixup, _data, EXT_CSD_REV_ANY)			\
 
 #define cid_rev(hwrev, fwrev, year, month)	\
 	(((u64) hwrev) << 40 |			\
@@ -130,57 +59,6 @@ struct mmc_fixup {
 		    card->cid.fwrev,		\
 		    card->cid.year,		\
 		    card->cid.month)
-
-/*
- * Unconditionally quirk add/remove.
- */
-static inline void __maybe_unused add_quirk(struct mmc_card *card, int data)
-{
-	card->quirks |= data;
-}
-
-static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
-{
-	card->quirks &= ~data;
-}
-
-static inline void __maybe_unused add_limit_rate_quirk(struct mmc_card *card,
-						       int data)
-{
-	card->quirk_max_rate = data;
-}
-
-/*
- * Quirk add/remove for MMC products.
- */
-static inline void __maybe_unused add_quirk_mmc(struct mmc_card *card, int data)
-{
-	if (mmc_card_mmc(card))
-		card->quirks |= data;
-}
-
-static inline void __maybe_unused remove_quirk_mmc(struct mmc_card *card,
-						   int data)
-{
-	if (mmc_card_mmc(card))
-		card->quirks &= ~data;
-}
-
-/*
- * Quirk add/remove for SD products.
- */
-static inline void __maybe_unused add_quirk_sd(struct mmc_card *card, int data)
-{
-	if (mmc_card_sd(card))
-		card->quirks |= data;
-}
-
-static inline void __maybe_unused remove_quirk_sd(struct mmc_card *card,
-						   int data)
-{
-	if (mmc_card_sd(card))
-		card->quirks &= ~data;
-}
 
 static inline int mmc_card_lenient_fn0(const struct mmc_card *c)
 {

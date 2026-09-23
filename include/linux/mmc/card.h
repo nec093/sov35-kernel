@@ -378,6 +378,7 @@ struct mmc_card {
 #define MMC_STATE_CMDQ		(1<<12)         /* card is in cmd queue mode */
 #define MMC_STATE_AUTO_BKOPS	(1<<13)		/* card is doing auto BKOPS */
 	unsigned int		quirks; 	/* card quirks */
+	unsigned int		quirk_max_rate;	/* max rate set by quirks, mainline addition */
 #define MMC_QUIRK_LENIENT_FN0	(1<<0)		/* allow SDIO FN0 writes outside of the VS CCCR range */
 #define MMC_QUIRK_BLKSZ_FOR_BYTE_MODE (1<<1)	/* use func->cur_blksize */
 						/* for byte mode */
@@ -586,6 +587,13 @@ static inline void __maybe_unused add_quirk(struct mmc_card *card, int data)
 static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 {
 	card->quirks &= ~data;
+}
+
+/* Mainline addition (not originally in CAF's card.h). */
+static inline void __maybe_unused add_limit_rate_quirk(struct mmc_card *card,
+						       int data)
+{
+	card->quirk_max_rate = data;
 }
 
 #define mmc_card_mmc(c)		((c)->type == MMC_TYPE_MMC)

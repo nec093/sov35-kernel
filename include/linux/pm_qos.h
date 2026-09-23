@@ -9,6 +9,8 @@
 #include <linux/notifier.h>
 #include <linux/device.h>
 #include <linux/workqueue.h>
+#include <linux/cpumask.h>
+#include <linux/interrupt.h>
 
 enum {
 	PM_QOS_RESERVED = 0,
@@ -38,10 +40,37 @@ enum pm_qos_flags_status {
 
 #define PM_QOS_FLAG_NO_POWER_OFF	(1 << 0)
 
+/*
+ * CAF addition (not in mainline): CPU/IRQ-affine PM QoS requests, used
+ * by drivers/mmc/host/sdhci-msm.c to pin latency constraints to the
+ * CPUs handling a controller's interrupt. Only the struct fields are
+ * ported here, not the core enforcement logic in kernel/power/qos.c
+ * (pm_qos_update_target()'s signature and internals are left pristine
+ * and unaware of these fields) -- callers only use the ordinary
+ * pm_qos_add_request()/pm_qos_update_request() API, so these requests
+ * still work as plain (non-CPU-affine) QoS votes, just without the
+ * CPU-pinning optimization CAF intended. TODO for Phase B if the
+ * affinity behavior itself turns out to matter.
+ */
+enum pm_qos_req_type {
+	PM_QOS_REQ_ALL_CORES = 0,
+	PM_QOS_REQ_AFFINE_CORES,
+#ifdef CONFIG_SMP
+	PM_QOS_REQ_AFFINE_IRQ,
+#endif
+};
+
 struct pm_qos_request {
 	struct plist_node node;
 	int pm_qos_class;
 	struct delayed_work work; /* for pm_qos_update_request_timeout */
+	/* CAF additions (not in mainline), see comment above. */
+	enum pm_qos_req_type type;
+	struct cpumask cpus_affine;
+#ifdef CONFIG_SMP
+	uint32_t irq;
+	struct irq_affinity_notify irq_notify;
+#endif
 };
 
 struct pm_qos_flags_request {

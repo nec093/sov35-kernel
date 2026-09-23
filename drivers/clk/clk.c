@@ -3024,6 +3024,22 @@ bool clk_is_match(const struct clk *p, const struct clk *q)
 }
 EXPORT_SYMBOL_GPL(clk_is_match);
 
+/*
+ * CAF addition (not in mainline): the public wrapper for clk_ops's
+ * optional set_flags member (see include/linux/clk-provider.h).
+ */
+int clk_set_flags(struct clk *clk, unsigned long flags)
+{
+	if (!clk)
+		return 0;
+
+	if (!clk->core->ops->set_flags)
+		return -EINVAL;
+
+	return clk->core->ops->set_flags(clk->core->hw, flags);
+}
+EXPORT_SYMBOL_GPL(clk_set_flags);
+
 /***        debugfs support        ***/
 
 #ifdef CONFIG_DEBUG_FS

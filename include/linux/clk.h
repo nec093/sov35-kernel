@@ -172,6 +172,16 @@ int clk_get_scaled_duty_cycle(struct clk *clk, unsigned int scale);
  */
 bool clk_is_match(const struct clk *p, const struct clk *q);
 
+/*
+ * clk_set_flags - set the custom HW specific flags for this clock
+ * @clk: clock source
+ * @flags: flags to set
+ *
+ * CAF addition (not in mainline). Returns 0 on success, -EINVAL if
+ * the clock's clk_ops doesn't implement set_flags.
+ */
+int clk_set_flags(struct clk *clk, unsigned long flags);
+
 /**
  * clk_rate_exclusive_get - get exclusivity over the rate control of a
  *                          producer
