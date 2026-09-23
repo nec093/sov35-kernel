@@ -18,7 +18,6 @@
 
 #include <uapi/linux/sched/types.h>
 #include <linux/videodev2.h>
-#include <linux/bootmem.h>
 #include <linux/console.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -142,13 +141,10 @@ static inline uint64_t __user to_user_u64(void *ptr)
 	return (uint64_t)((uintptr_t)ptr);
 }
 
-void mdss_fb_no_update_notify_timer_cb(unsigned long data)
+void mdss_fb_no_update_notify_timer_cb(struct timer_list *t)
 {
-	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)data;
-	if (!mfd) {
-		pr_err("%s mfd NULL\n", __func__);
-		return;
-	}
+	struct msm_fb_data_type *mfd = from_timer(mfd, t, no_update.timer);
+
 	mfd->no_update.value = NOTIFY_TYPE_NO_UPDATE;
 	complete(&mfd->no_update.comp);
 }
@@ -3036,9 +3032,8 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	atomic_set(&mfd->ioctl_ref_cnt, 0);
 	atomic_set(&mfd->kickoff_pending, 0);
 
-	init_timer(&mfd->no_update.timer);
-	mfd->no_update.timer.function = mdss_fb_no_update_notify_timer_cb;
-	mfd->no_update.timer.data = (unsigned long)mfd;
+	timer_setup(&mfd->no_update.timer,
+			mdss_fb_no_update_notify_timer_cb, 0);
 	mfd->update.ref_count = 0;
 	mfd->no_update.ref_count = 0;
 	mfd->update.init_done = false;
