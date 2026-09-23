@@ -81,6 +81,18 @@ config USB
 	  To compile this driver as a module, choose M here: the
 	  module will be called usbcore.
 
+config USB_PCI
+	bool "PCI based USB host interface"
+	depends on PCI
+	default y
+	---help---
+	  Many embedded system SOCs (e.g. freescale T2080) have both
+	  PCI and USB modules with the USB module directly controlled by
+	  registers and having no relationship to the PCI module.
+
+	  If you have such a device you may say N here and PCI related code
+	  will not be built in the USB driver.
+
 if USB
 
 source "drivers/usb/core/Kconfig"

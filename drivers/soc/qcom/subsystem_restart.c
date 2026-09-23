@@ -158,7 +158,7 @@ struct subsys_soc_restart_order {
 };
 
 struct restart_log {
-	struct timeval time;
+	struct timespec64 time;
 	struct subsys_device *dev;
 	struct list_head list;
 };
@@ -187,7 +187,11 @@ struct restart_log {
 struct subsys_device {
 	struct subsys_desc *desc;
 	struct work_struct work;
-	struct wakeup_source ssr_wlock;
+	/* wakeup_source_init()/wakeup_source_trash() removed upstream;
+	 * switched to a pointer + wakeup_source_create()/_add()/_remove()/
+	 * _destroy(), same pattern used for drivers/platform/msm/ipa/ and
+	 * peripheral-loader.c earlier this session. */
+	struct wakeup_source *ssr_wlock;
 	char wlname[64];
 	struct work_struct device_restart_work;
 	struct subsys_tracking track;
@@ -457,7 +461,7 @@ module_param(max_history_time, long, 0644);
 static void do_epoch_check(struct subsys_device *dev)
 {
 	int n = 0;
-	struct timeval *time_first = NULL, *curr_time;
+	struct timespec64 *time_first = NULL, *curr_time;
 	struct restart_log *r_log, *temp;
 	static int max_restarts_check;
 	static long max_history_time_check;
@@ -475,7 +479,7 @@ static void do_epoch_check(struct subsys_device *dev)
 	if (!r_log)
 		goto out;
 	r_log->dev = dev;
-	do_gettimeofday(&r_log->time);
+	ktime_get_real_ts64(&r_log->time);
 	curr_time = &r_log->time;
 	INIT_LIST_HEAD(&r_log->list);
 
@@ -813,7 +817,7 @@ static int subsystem_powerup(struct subsys_device *dev, void *data)
 	return 0;
 }
 
-static int __find_subsys(struct device *dev, void *data)
+static int __find_subsys(struct device *dev, const void *data)
 {
 	struct subsys_device *subsys = to_subsys(dev);
 
@@ -827,7 +831,7 @@ static struct subsys_device *find_subsys(const char *str)
 	if (!str)
 		return NULL;
 
-	dev = bus_find_device(&subsys_bus_type, NULL, (void *)str,
+	dev = bus_find_device(&subsys_bus_type, NULL, str,
 			__find_subsys);
 	return dev ? to_subsys(dev) : NULL;
 }
@@ -1159,7 +1163,7 @@ err:
 
 	spin_lock_irqsave(&track->s_lock, flags);
 	track->p_state = SUBSYS_NORMAL;
-	__pm_relax(&dev->ssr_wlock);
+	__pm_relax(dev->ssr_wlock);
 	spin_unlock_irqrestore(&track->s_lock, flags);
 }
 
@@ -1183,7 +1187,7 @@ static void __subsystem_restart_dev(struct subsys_device *dev)
 					dev->track.state == SUBSYS_ONLINE) {
 		if (track->p_state != SUBSYS_RESTARTING) {
 			track->p_state = SUBSYS_CRASHED;
-			__pm_stay_awake(&dev->ssr_wlock);
+			__pm_stay_awake(dev->ssr_wlock);
 			queue_work(ssr_wq, &dev->work);
 		} else {
 			panic("Subsystem %s crashed during SSR!", name);
@@ -1249,7 +1253,7 @@ int subsystem_restart_dev(struct subsys_device *dev)
 		__subsystem_restart_dev(dev);
 		break;
 	case RESET_SOC:
-		__pm_stay_awake(&dev->ssr_wlock);
+		__pm_stay_awake(dev->ssr_wlock);
 		schedule_work(&dev->device_restart_work);
 		return 0;
 	default:
@@ -1393,7 +1397,8 @@ static void subsys_device_release(struct device *dev)
 {
 	struct subsys_device *subsys = to_subsys(dev);
 
-	wakeup_source_trash(&subsys->ssr_wlock);
+	wakeup_source_remove(subsys->ssr_wlock);
+	wakeup_source_destroy(subsys->ssr_wlock);
 	mutex_destroy(&subsys->track.lock);
 	ida_simple_remove(&subsys_ida, subsys->id);
 	kfree(subsys);
@@ -1767,7 +1772,12 @@ struct subsys_device *subsys_register(struct subsys_desc *desc)
 	subsys->notify = subsys_notif_add_subsys(desc->name);
 
 	snprintf(subsys->wlname, sizeof(subsys->wlname), "ssr(%s)", desc->name);
-	wakeup_source_init(&subsys->ssr_wlock, subsys->wlname);
+	subsys->ssr_wlock = wakeup_source_create(subsys->wlname);
+	if (!subsys->ssr_wlock) {
+		kfree(subsys);
+		return ERR_PTR(-ENOMEM);
+	}
+	wakeup_source_add(subsys->ssr_wlock);
 	INIT_WORK(&subsys->work, subsystem_restart_wq_func);
 	INIT_WORK(&subsys->device_restart_work, device_restart_work_hdlr);
 	spin_lock_init(&subsys->track.s_lock);
@@ -1775,7 +1785,8 @@ struct subsys_device *subsys_register(struct subsys_desc *desc)
 
 	subsys->id = ida_simple_get(&subsys_ida, 0, 0, GFP_KERNEL);
 	if (subsys->id < 0) {
-		wakeup_source_trash(&subsys->ssr_wlock);
+		wakeup_source_remove(subsys->ssr_wlock);
+		wakeup_source_destroy(subsys->ssr_wlock);
 		ret = subsys->id;
 		kfree(subsys);
 		return ERR_PTR(ret);

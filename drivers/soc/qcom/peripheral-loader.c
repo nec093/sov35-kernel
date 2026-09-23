@@ -124,7 +124,13 @@ struct pil_seg {
  */
 struct pil_priv {
 	struct delayed_work proxy;
-	struct wakeup_source ws;
+	/* CAF's wakeup_source_init()/wakeup_source_trash() (in-place
+	 * init/teardown of an embedded struct wakeup_source) were removed
+	 * upstream; switched to a pointer + wakeup_source_create()/
+	 * wakeup_source_add() + wakeup_source_remove()/
+	 * wakeup_source_destroy(), same pattern used for
+	 * drivers/platform/msm/ipa/ earlier this session. */
+	struct wakeup_source *ws;
 	char wname[32];
 	struct pil_desc *desc;
 	struct list_head segs;
@@ -426,7 +432,7 @@ static void __pil_proxy_unvote(struct pil_priv *priv)
 
 	desc->ops->proxy_unvote(desc);
 	notify_proxy_unvote(desc->dev);
-	__pm_relax(&priv->ws);
+	__pm_relax(priv->ws);
 	module_put(desc->owner);
 
 }
@@ -445,10 +451,10 @@ static int pil_proxy_vote(struct pil_desc *desc)
 	struct pil_priv *priv = desc->priv;
 
 	if (desc->ops->proxy_vote) {
-		__pm_stay_awake(&priv->ws);
+		__pm_stay_awake(priv->ws);
 		ret = desc->ops->proxy_vote(desc);
 		if (ret)
-			__pm_relax(&priv->ws);
+			__pm_relax(priv->ws);
 	}
 
 	if (desc->proxy_unvote_irq)
@@ -804,17 +810,21 @@ static void pil_clear_segment(struct pil_desc *desc)
 
 static void *map_fw_mem(phys_addr_t paddr, size_t size, void *data)
 {
-	struct pil_map_fw_info *info = data;
-
-	return dma_remap(info->dev, info->region, paddr, size,
-					info->attrs);
+	/*
+	 * dma_remap()/dma_unremap() (thin wrappers over the removed
+	 * dma_map_ops.remap/.unremap callbacks) don't exist upstream.
+	 * priv->region here was allocated with DMA_ATTR_NO_KERNEL_MAPPING
+	 * (see pil_alloc_region() above), i.e. deliberately without a CPU
+	 * mapping, so the actual job of dma_remap() is to create an
+	 * on-demand kernel VA mapping for this physical range -- exactly
+	 * what memremap()/memunmap() do for plain system RAM.
+	 */
+	return memremap(paddr, size, MEMREMAP_WB);
 }
 
 static void unmap_fw_mem(void *vaddr, size_t size, void *data)
 {
-	struct pil_map_fw_info *info = data;
-
-	dma_unremap(info->dev, vaddr, size);
+	memunmap(vaddr);
 }
 
 static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
@@ -1287,7 +1297,12 @@ int pil_desc_init(struct pil_desc *desc)
 	}
 
 	snprintf(priv->wname, sizeof(priv->wname), "pil-%s", desc->name);
-	wakeup_source_init(&priv->ws, priv->wname);
+	priv->ws = wakeup_source_create(priv->wname);
+	if (!priv->ws) {
+		ret = -ENOMEM;
+		goto err_parse_dt;
+	}
+	wakeup_source_add(priv->ws);
 	INIT_DELAYED_WORK(&priv->proxy, pil_proxy_unvote_work);
 	INIT_LIST_HEAD(&priv->segs);
 
@@ -1318,7 +1333,8 @@ void pil_desc_release(struct pil_desc *desc)
 	if (priv) {
 		ida_simple_remove(&pil_ida, priv->id);
 		flush_delayed_work(&priv->proxy);
-		wakeup_source_trash(&priv->ws);
+		wakeup_source_remove(priv->ws);
+		wakeup_source_destroy(priv->ws);
 	}
 	desc->priv = NULL;
 	kfree(priv);
