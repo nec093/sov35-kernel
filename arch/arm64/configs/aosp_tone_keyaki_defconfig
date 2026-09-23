@@ -682,7 +682,7 @@ CONFIG_MSM_PIL=y
 CONFIG_MSM_SYSMON_GLINK_COMM=y
 CONFIG_MSM_PIL_SSR_GENERIC=y
 CONFIG_MSM_PIL_MSS_QDSP6V5=y
-CONFIG_MSM_PERFORMANCE=y
+# CONFIG_MSM_PERFORMANCE is not set  # Phase A: userspace CPU-hotplug/min-max-freq perf-tuning driver (drivers/soc/qcom/msm_performance.c), default n upstream too; its core mechanism (perf_adjust_notify() reacting to a per-verify CPUFREQ_ADJUST notifier event) was removed entirely upstream in favor of a freq_qos_add_request()-based aggregation model -- would need a real rewrite, not a rename, and this is an optional perf knob, not core functionality; also touches CPU hotplug, which Part 1's 4.14 milestone already has an open _cpu_down hang issue with
 CONFIG_QCOM_SMCINVOKE=y
 CONFIG_MSM_AVTIMER=y
 # CONFIG_MSM_PM is not set  # Phase A: WALT-dependent lpm-levels.c (drivers/cpuidle/lpm-levels.c: sched_get_cpu_last_busy_time(), pm_qos_request_for_cpu[mask](), get_next_event_cpu(), clock_debug_print_enabled()); lpm-levels-legacy.c (obj-y, unconditional) remains as the LPM fallback, and Part 1's 4.14 milestone already boots with cpuidle.off=1

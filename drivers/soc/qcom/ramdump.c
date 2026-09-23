@@ -167,8 +167,14 @@ static ssize_t ramdump_read(struct file *filep, char __user *buf, size_t count,
 
 	rd_dev->attrs = 0;
 	rd_dev->attrs |= DMA_ATTR_SKIP_ZEROING;
-	device_mem = vaddr ?: dma_remap(rd_dev->dev->parent, NULL, addr,
-						copy_size, rd_dev->attrs);
+	/*
+	 * dma_remap()/dma_unremap() (thin wrappers over the removed
+	 * dma_map_ops.remap/.unremap callbacks) don't exist upstream;
+	 * memremap()/memunmap() do the same job (an on-demand kernel VA
+	 * mapping over a physical range of plain system RAM), same fix
+	 * as drivers/soc/qcom/peripheral-loader.c earlier this session.
+	 */
+	device_mem = vaddr ?: memremap(addr, copy_size, MEMREMAP_WB);
 	origdevice_mem = device_mem;
 
 	if (device_mem == NULL) {
@@ -219,7 +225,7 @@ static ssize_t ramdump_read(struct file *filep, char __user *buf, size_t count,
 
 	kfree(finalbuf);
 	if (!vaddr && origdevice_mem)
-		dma_unremap(rd_dev->dev->parent, origdevice_mem, copy_size);
+		memunmap(origdevice_mem);
 
 	*pos += copy_size;
 
@@ -230,7 +236,7 @@ static ssize_t ramdump_read(struct file *filep, char __user *buf, size_t count,
 
 ramdump_done:
 	if (!vaddr && origdevice_mem)
-		dma_unremap(rd_dev->dev->parent, origdevice_mem, copy_size);
+		memunmap(origdevice_mem);
 
 	kfree(finalbuf);
 	rd_dev->data_ready = 0;

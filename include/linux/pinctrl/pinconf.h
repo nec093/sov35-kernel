@@ -53,6 +53,11 @@ struct pinconf_ops {
 				     unsigned selector,
 				     unsigned long *configs,
 				     unsigned num_configs);
+	/* CAF addition (not in mainline): optional debugfs hook to modify
+	 * a pin configuration. */
+	int (*pin_config_dbg_parse_modify) (struct pinctrl_dev *pctldev,
+					   const char *arg,
+					   unsigned long *config);
 	void (*pin_config_dbg_show) (struct pinctrl_dev *pctldev,
 				     struct seq_file *s,
 				     unsigned offset);

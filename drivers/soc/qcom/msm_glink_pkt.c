@@ -126,7 +126,10 @@ struct glink_pkt_dev {
 	struct list_head pkt_list;
 	spinlock_t pkt_list_lock;
 
-	struct wakeup_source pa_ws;	/* Packet Arrival Wakeup Source */
+	/* wakeup_source_init()/wakeup_source_trash() removed upstream;
+	 * switched to a pointer + wakeup_source_create()/_add()/_remove()/
+	 * _destroy(), same pattern used repeatedly elsewhere this session. */
+	struct wakeup_source *pa_ws;	/* Packet Arrival Wakeup Source */
 	struct work_struct packet_arrival_work;
 	spinlock_t pa_spinlock;
 	int ws_locked;
@@ -305,7 +308,7 @@ static void packet_arrival_worker(struct work_struct *work)
 		 * Keep system awake long enough to allow userspace client
 		 * to process the packet.
 		 */
-		__pm_wakeup_event(&devp->pa_ws, WAKEUPSOURCE_TIMEOUT);
+		__pm_wakeup_event(devp->pa_ws, WAKEUPSOURCE_TIMEOUT);
 	}
 	spin_unlock_irqrestore(&devp->pa_spinlock, flags);
 	mutex_unlock(&devp->ch_lock);
@@ -374,7 +377,7 @@ void glink_pkt_notify_rx(void *handle, const void *priv,
 	spin_unlock_irqrestore(&devp->pkt_list_lock, flags);
 
 	spin_lock_irqsave(&devp->pa_spinlock, flags);
-	__pm_stay_awake(&devp->pa_ws);
+	__pm_stay_awake(devp->pa_ws);
 	devp->ws_locked = 1;
 	spin_unlock_irqrestore(&devp->pa_spinlock, flags);
 	wake_up(&devp->ch_read_wait_queue);
@@ -715,7 +718,7 @@ ssize_t glink_pkt_read(struct file *file,
 	mutex_lock(&devp->ch_lock);
 	spin_lock_irqsave(&devp->pa_spinlock, flags);
 	if (devp->poll_mode && !glink_pkt_read_avail(devp)) {
-		__pm_relax(&devp->pa_ws);
+		__pm_relax(devp->pa_ws);
 		devp->ws_locked = 0;
 		devp->poll_mode = 0;
 		GLINK_PKT_INFO("%s unlocked pkt_dev id:%d wakeup_source\n",
@@ -1154,7 +1157,7 @@ int glink_pkt_release(struct inode *inode, struct file *file)
 		devp->poll_mode = 0;
 		spin_lock_irqsave(&devp->pa_spinlock, flags);
 		if (devp->ws_locked) {
-			__pm_relax(&devp->pa_ws);
+			__pm_relax(devp->pa_ws);
 			devp->ws_locked = 0;
 		}
 		spin_unlock_irqrestore(&devp->pa_spinlock, flags);
@@ -1218,7 +1221,10 @@ static int glink_pkt_init_add_device(struct glink_pkt_dev *devp, int i)
 	spin_lock_init(&devp->pa_spinlock);
 	INIT_LIST_HEAD(&devp->pkt_list);
 	spin_lock_init(&devp->pkt_list_lock);
-	wakeup_source_init(&devp->pa_ws, devp->dev_name);
+	devp->pa_ws = wakeup_source_create(devp->dev_name);
+	if (!devp->pa_ws)
+		return -ENOMEM;
+	wakeup_source_add(devp->pa_ws);
 	INIT_WORK(&devp->packet_arrival_work, packet_arrival_worker);
 
 	devp->link_state_handle =
@@ -1237,7 +1243,8 @@ static int glink_pkt_init_add_device(struct glink_pkt_dev *devp, int i)
 	if (ret) {
 		GLINK_PKT_ERR("%s: cdev_add() failed for dev id:%d ret:%i\n",
 			__func__, i, ret);
-		wakeup_source_trash(&devp->pa_ws);
+		wakeup_source_remove(devp->pa_ws);
+		wakeup_source_destroy(devp->pa_ws);
 		return ret;
 	}
 
@@ -1252,7 +1259,8 @@ static int glink_pkt_init_add_device(struct glink_pkt_dev *devp, int i)
 			__func__, i);
 		ret = -ENOMEM;
 		cdev_del(&devp->cdev);
-		wakeup_source_trash(&devp->pa_ws);
+		wakeup_source_remove(devp->pa_ws);
+		wakeup_source_destroy(devp->pa_ws);
 		return ret;
 	}
 

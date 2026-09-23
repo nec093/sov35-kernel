@@ -598,8 +598,14 @@ static int qpnp_rtc_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(&pdev->dev, rtc_dd);
 
-	/* Register the RTC device */
-	rtc_dd->rtc = rtc_device_register("qpnp_rtc", &pdev->dev,
+	/*
+	 * rtc_device_register()/rtc_device_unregister() were removed
+	 * upstream in favor of the devm_ variant (which self-unregisters
+	 * on device teardown, making the explicit rtc_device_unregister()
+	 * call below redundant -- removed rather than kept, to avoid a
+	 * double unregister).
+	 */
+	rtc_dd->rtc = devm_rtc_device_register(&pdev->dev, "qpnp_rtc",
 					  rtc_ops, THIS_MODULE);
 	if (IS_ERR(rtc_dd->rtc)) {
 		dev_err(&pdev->dev, "%s: RTC registration failed (%ld)\n",
@@ -625,7 +631,6 @@ static int qpnp_rtc_probe(struct platform_device *pdev)
 	return 0;
 
 fail_req_irq:
-	rtc_device_unregister(rtc_dd->rtc);
 fail_rtc_enable:
 	dev_set_drvdata(&pdev->dev, NULL);
 
@@ -638,7 +643,9 @@ static int qpnp_rtc_remove(struct platform_device *pdev)
 
 	device_init_wakeup(&pdev->dev, 0);
 	free_irq(rtc_dd->rtc_alarm_irq, rtc_dd);
-	rtc_device_unregister(rtc_dd->rtc);
+	/* devm_rtc_device_register() above self-unregisters on device
+	 * teardown; no explicit rtc_device_unregister() needed (or safe --
+	 * it would double-unregister against devres' own cleanup). */
 	dev_set_drvdata(&pdev->dev, NULL);
 
 	return 0;
