@@ -677,10 +677,12 @@ static u32 brcmf_chip_tcm_rambase(struct brcmf_chip_priv *ci)
 	case BRCM_CC_43569_CHIP_ID:
 	case BRCM_CC_43570_CHIP_ID:
 	case BRCM_CC_4358_CHIP_ID:
-	case BRCM_CC_4359_CHIP_ID:
 	case BRCM_CC_43602_CHIP_ID:
 	case BRCM_CC_4371_CHIP_ID:
 		return 0x180000;
+	case BRCM_CC_4359_CHIP_ID:
+		/* rev 9+ (BCM43596 / CYW89459, e.g. Xperia XZs): from mainline */
+		return (ci->pub.chiprev < 9) ? 0x180000 : 0x160000;
 	case BRCM_CC_43465_CHIP_ID:
 	case BRCM_CC_43525_CHIP_ID:
 	case BRCM_CC_4365_CHIP_ID:

@@ -372,13 +372,12 @@ CONFIG_USB_USBNET=y
 # CONFIG_USB_NET_ZAURUS is not set
 CONFIG_WLAN=y
 CONFIG_WLAN_VENDOR_BROADCOM=y
-# CONFIG_BRCMFMAC is not set (Phase A): brcmfmac/sdio.c calls
-# sdio_retune_crc_disable()/sdio_retune_hold_now()/sdio_retune_release()/
-# sdio_retune_crc_enable(), mainline MMC-core bus-retuning-during-transfer
-# APIs that don't exist anywhere in this tree -- a real feature gap
-# needing actual drivers/mmc/core content ported, not a one-line fix.
-# WiFi is already known-unwired from the Part 1 4.14 milestone; deferred
-# the same way MSM_PM/QCOM_EUD/MSM_EXT_DISPLAY/MSM_PERFORMANCE were.
+# The XZs BCM4359 sits on PCIe (pcie0, vddpe-3v3 = WL_EN), so brcmfmac is
+# built for PCIe only; its SDIO bus code needs the mainline
+# sdio_retune_*() MMC-core APIs this tree's CAF mmc core lacks.
+CONFIG_BRCMFMAC=y
+CONFIG_BRCMFMAC_PCIE=y
+# CONFIG_BRCMFMAC_SDIO is not set
 CONFIG_CFG80211=y
 CONFIG_INPUT_EVDEV=y
 CONFIG_INPUT_KEYRESET=y

@@ -43,6 +43,8 @@
 #define BRCM_CC_43570_CHIP_ID		43570
 #define BRCM_CC_4358_CHIP_ID		0x4358
 #define BRCM_CC_4359_CHIP_ID		0x4359
+/* BCM4359 rev 9 reports itself as 43596 once its firmware runs */
+#define BRCM_CC_43596_CHIP_ID		43596
 #define BRCM_CC_43602_CHIP_ID		43602
 #define BRCM_CC_4365_CHIP_ID		0x4365
 #define BRCM_CC_4366_CHIP_ID		0x4366
@@ -70,6 +72,8 @@
 #define BRCM_PCIE_43570_DEVICE_ID	0x43d9
 #define BRCM_PCIE_4358_DEVICE_ID	0x43e9
 #define BRCM_PCIE_4359_DEVICE_ID	0x43ef
+/* Cypress 89459 (BCM4359 variant, e.g. Sony Xperia XZs); from mainline */
+#define CY_PCIE_89459_DEVICE_ID		0x4415
 #define BRCM_PCIE_43602_DEVICE_ID	0x43ba
 #define BRCM_PCIE_43602_2G_DEVICE_ID	0x43bb
 #define BRCM_PCIE_43602_5G_DEVICE_ID	0x43bc
