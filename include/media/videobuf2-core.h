@@ -19,7 +19,8 @@
 #include <linux/bitops.h>
 #include <media/media-request.h>
 
-#define VB2_MAX_FRAME	(32)
+/* CAF: the msm camera stack queues up to 64 buffers per stream */
+#define VB2_MAX_FRAME	(64)
 #define VB2_MAX_PLANES	(8)
 
 /**
