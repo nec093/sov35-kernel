@@ -1,0 +1,13 @@
+# Xperia XZs, Linux 5.4 kernel: init fragment for a Magisk overlay.d.
+
+# The eMMC RPMB partition is a char device (/dev/mmcblk0rpmb) since 4.15,
+# but the vendor librpmb (qseecomd) only looks for the old block node.
+on early-fs
+    chown root system /dev/mmcblk0rpmb
+    chmod 0660 /dev/mmcblk0rpmb
+    symlink /dev/mmcblk0rpmb /dev/block/mmcblk0rpmb
+
+# extcon is not wired to dwc3-msm yet, so it never sees VBUS and never
+# starts the gadget; force peripheral mode so adb works.
+on boot
+    write /sys/devices/platform/soc/6a00000.ssusb/mode peripheral

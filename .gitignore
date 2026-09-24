@@ -145,3 +145,6 @@ x509.genkey
 
 # Clang's compilation database file
 /compile_commands.json
+
+# Xperia XZs build output (scripts/xzs/build.sh)
+/out/
