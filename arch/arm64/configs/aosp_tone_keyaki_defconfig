@@ -493,13 +493,14 @@ CONFIG_REGULATOR_QPNP=y
 CONFIG_REGULATOR_RPM_SMD=y
 CONFIG_REGULATOR_SPM=y
 CONFIG_REGULATOR_STUB=y
-# CONFIG_MEDIA_SUPPORT (the whole v4l2-core framework:
-# drivers/media/v4l2-core/*, media-entity.c, media-device.c) is
-# disabled too -- nothing needs it now that camera/video below are
-# disabled, and it was still contributing ~230 compile errors of its
-# own (v4l2-ioctl.c, media-entity.c, v4l2-compat-ioctl32.c,
-# v4l2-async.c, v4l2-mc.c) despite that.
-# CONFIG_MEDIA_SUPPORT is not set
+# Media core: upstream 5.4 drivers/media (v4l2-core, mc, videobuf2) with the
+# CAF/Sony drivers/media/platform/msm tree on top.
+CONFIG_MEDIA_SUPPORT=y
+CONFIG_MEDIA_CAMERA_SUPPORT=y
+CONFIG_MEDIA_CONTROLLER=y
+CONFIG_VIDEO_V4L2_SUBDEV_API=y
+CONFIG_V4L_PLATFORM_DRIVERS=y
+# CONFIG_MEDIA_SUBDRV_AUTOSELECT is not set
 # Camera (CONFIG_MSM_CAMERA and its whole camera_v2 subtree), the video
 # codec (CONFIG_MSM_VIDC_3X_*) and the display rotator
 # (CONFIG_MSM_SDE_ROTATOR) are disabled for Phase A of the 5.4 port:
@@ -508,7 +509,23 @@ CONFIG_REGULATOR_STUB=y
 # camera stack, msm_venc.c/msm_vdec.c/msm_vidc_common.c and
 # msm_sde_rotator.h), and neither camera nor video/rotation is required
 # to reach a touch-interactive boot milestone. TODO for Phase B.
-# CONFIG_MSM_CAMERA is not set
+CONFIG_MSM_CAMERA=y
+CONFIG_MSMB_CAMERA=y
+CONFIG_MSM_CAMERA_SENSOR=y
+CONFIG_MSM_CPP=y
+CONFIG_MSM_CCI=y
+CONFIG_MSM_CSI20_HEADER=y
+CONFIG_MSM_CSI22_HEADER=y
+CONFIG_MSM_CSI30_HEADER=y
+CONFIG_MSM_CSI31_HEADER=y
+CONFIG_MSM_CSIPHY=y
+CONFIG_MSM_CSID=y
+CONFIG_MSM_EEPROM=y
+CONFIG_MSM_ISPIF=y
+CONFIG_MSMB_JPEG=y
+CONFIG_MSM_FD=y
+CONFIG_MSM_JPEGDMA=y
+CONFIG_SONY_CAM_V4L2=y
 # CONFIG_VGA_ARB is not set
 CONFIG_QCOM_KGSL=y
 CONFIG_FB=y
@@ -726,7 +743,8 @@ CONFIG_MSM_PIL_SSR_GENERIC=y
 CONFIG_MSM_PIL_MSS_QDSP6V5=y
 # CONFIG_MSM_PERFORMANCE is not set  # Phase A: userspace CPU-hotplug/min-max-freq perf-tuning driver (drivers/soc/qcom/msm_performance.c), default n upstream too; its core mechanism (perf_adjust_notify() reacting to a per-verify CPUFREQ_ADJUST notifier event) was removed entirely upstream in favor of a freq_qos_add_request()-based aggregation model -- would need a real rewrite, not a rename, and this is an optional perf knob, not core functionality; also touches CPU hotplug, which Part 1's 4.14 milestone already has an open _cpu_down hang issue with
 CONFIG_QCOM_SMCINVOKE=y
-CONFIG_MSM_AVTIMER=y
+# CONFIG_MSM_AVTIMER is not set (provided by techpack/audio, not built yet;
+# camera VT timestamps fall back to the monotonic clock)
 # CONFIG_MSM_PM is not set  # Phase A: WALT-dependent lpm-levels.c (drivers/cpuidle/lpm-levels.c: sched_get_cpu_last_busy_time(), pm_qos_request_for_cpu[mask](), get_next_event_cpu(), clock_debug_print_enabled()); lpm-levels-legacy.c (obj-y, unconditional) remains as the LPM fallback, and Part 1's 4.14 milestone already boots with cpuidle.off=1
 CONFIG_MEM_SHARE_QMI_SERVICE=y
 CONFIG_QSEE_IPC_IRQ_BRIDGE=y
