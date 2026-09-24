@@ -4950,6 +4950,10 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	unsigned long flags;
 	struct qcrypto_req_control *pqcrypto_req_control = NULL;
 
+	/* msm_bus probes late on 5.4; a client registered before that is lost */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
 	pengine = kzalloc(sizeof(*pengine), GFP_KERNEL);
 	if (!pengine)
 		return -ENOMEM;

@@ -239,6 +239,10 @@ int devfreq_resume_devbw(struct device *dev)
 
 static int devfreq_devbw_probe(struct platform_device *pdev)
 {
+	/* msm_bus probes late on 5.4; a client registered before that is lost */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
 	return devfreq_add_devbw(&pdev->dev);
 }
 

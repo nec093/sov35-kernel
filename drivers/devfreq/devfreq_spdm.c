@@ -314,6 +314,10 @@ static int probe(struct platform_device *pdev)
 	struct spdm_args desc = { { 0 } };
 	int ext_status = 0;
 
+	/* msm_bus probes late on 5.4; a client registered before that is lost */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;

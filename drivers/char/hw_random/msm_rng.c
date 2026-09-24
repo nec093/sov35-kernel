@@ -260,6 +260,10 @@ static int msm_rng_probe(struct platform_device *pdev)
 
 	struct msm_bus_scale_pdata *qrng_platform_support = NULL;
 
+	/* msm_bus probes late on 5.4; a client registered before that is lost */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
 		dev_err(&pdev->dev, "invalid address\n");
@@ -289,8 +293,9 @@ static int msm_rng_probe(struct platform_device *pdev)
 	else
 		msm_rng_dev->prng_clk = clk_get(&pdev->dev, "core_clk");
 	if (IS_ERR(msm_rng_dev->prng_clk)) {
-		dev_err(&pdev->dev, "failed to register clock source\n");
-		error = -EPERM;
+		error = PTR_ERR(msm_rng_dev->prng_clk);
+		if (error != -EPROBE_DEFER)
+			dev_err(&pdev->dev, "failed to register clock source\n");
 		goto err_clk_get;
 	}
 

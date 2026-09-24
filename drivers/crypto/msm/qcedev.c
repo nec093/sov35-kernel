@@ -1985,6 +1985,10 @@ static int qcedev_probe_device(struct platform_device *pdev)
 	struct qcedev_control *podev;
 	struct msm_ce_hw_support *platform_support;
 
+	/* msm_bus probes late on 5.4; a client registered before that is lost */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
 	podev = &qce_dev[0];
 
 	podev->high_bw_req_count = 0;
