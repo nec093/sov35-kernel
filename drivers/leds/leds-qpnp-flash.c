@@ -2079,9 +2079,10 @@ static int qpnp_flash_led_init_settings(struct qpnp_flash_led *led)
 
 	led->battery_psy = power_supply_get_by_name("battery");
 	if (!led->battery_psy) {
-		dev_err(&led->pdev->dev,
-			"Failed to get battery power supply\n");
-		return -EINVAL;
+		/* the PMI8994 charger/FG may register after us */
+		dev_dbg(&led->pdev->dev,
+			"battery power supply not there yet, deferring\n");
+		return -EPROBE_DEFER;
 	}
 
 	return 0;
