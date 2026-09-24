@@ -502,7 +502,8 @@ static int vfe_probe(struct platform_device *pdev)
 	msm_isp_v4l2_subdev_fops.release = v4l2_subdev_fops.release;
 	msm_isp_v4l2_subdev_fops.poll = v4l2_subdev_fops.poll;
 
-	vfe_dev->subdev.sd.devnode->fops = &msm_isp_v4l2_subdev_fops;
+	if (vfe_dev->subdev.sd.devnode)
+		vfe_dev->subdev.sd.devnode->fops = &msm_isp_v4l2_subdev_fops;
 
 	vfe_dev->buf_mgr = &vfe_buf_mgr;
 	v4l2_subdev_notify(&vfe_dev->subdev.sd,

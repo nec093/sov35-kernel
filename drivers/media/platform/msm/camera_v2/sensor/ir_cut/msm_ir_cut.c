@@ -612,7 +612,8 @@ static int32_t msm_ir_cut_platform_probe(struct platform_device *pdev)
 	msm_ir_cut_v4l2_subdev_fops.compat_ioctl32 =
 		msm_ir_cut_subdev_fops_ioctl;
 #endif
-	ir_cut_ctrl->msm_sd.sd.devnode->fops = &msm_ir_cut_v4l2_subdev_fops;
+	if (ir_cut_ctrl->msm_sd.sd.devnode)
+		ir_cut_ctrl->msm_sd.sd.devnode->fops = &msm_ir_cut_v4l2_subdev_fops;
 
 	CDBG("probe success\n");
 	return rc;

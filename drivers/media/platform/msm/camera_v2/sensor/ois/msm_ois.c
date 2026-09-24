@@ -1041,8 +1041,8 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 	msm_ois_v4l2_subdev_fops.compat_ioctl32 =
 		msm_ois_subdev_fops_ioctl;
 #endif
-	msm_ois_t->msm_sd.sd.devnode->fops =
-		&msm_ois_v4l2_subdev_fops;
+	if (msm_ois_t->msm_sd.sd.devnode)
+		msm_ois_t->msm_sd.sd.devnode->fops = &msm_ois_v4l2_subdev_fops;
 
 	CDBG("Exit\n");
 	return rc;

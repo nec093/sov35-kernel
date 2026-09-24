@@ -13,6 +13,7 @@
 
 
 #include <linux/init.h>
+#include "cam_soc_api.h"
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
@@ -276,6 +277,9 @@ static void msm_jpeg_exit(struct msm_jpeg_device *msm_jpeg_device_p)
 
 static int __msm_jpeg_probe(struct platform_device *pdev)
 {
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	return msm_jpeg_init_dev(pdev);
 }
 

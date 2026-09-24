@@ -577,8 +577,8 @@ static int32_t msm_laser_led_platform_probe(struct platform_device *pdev)
 	msm_laser_led_v4l2_subdev_fops.compat_ioctl32 =
 		msm_laser_led_subdev_fops_ioctl;
 #endif
-	laser_led_ctrl->msm_sd.sd.devnode->fops =
-		&msm_laser_led_v4l2_subdev_fops;
+	if (laser_led_ctrl->msm_sd.sd.devnode)
+		laser_led_ctrl->msm_sd.sd.devnode->fops = &msm_laser_led_v4l2_subdev_fops;
 
 	CDBG("probe success\n");
 	return rc;

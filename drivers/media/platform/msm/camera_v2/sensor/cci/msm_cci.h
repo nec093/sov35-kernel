@@ -236,4 +236,18 @@ static inline struct v4l2_subdev *msm_cci_get_subdev(void)
 #define VIDIOC_MSM_CCI_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 23, struct msm_camera_cci_ctrl *)
 
+
+/*
+ * The CCI may probe after its clients (on 5.4 its clocks come up late), so
+ * a cci_subdev pointer looked up at client probe time can still be NULL:
+ * resolve it on use.
+ */
+static inline struct v4l2_subdev *
+msm_cci_client_subdev(struct msm_camera_cci_client *c)
+{
+	if (!c->cci_subdev)
+		c->cci_subdev = msm_cci_get_subdev();
+	return c->cci_subdev;
+}
+
 #endif

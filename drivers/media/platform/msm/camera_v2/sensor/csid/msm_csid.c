@@ -11,6 +11,7 @@
  */
 
 #include <linux/delay.h>
+#include "cam_soc_api.h"
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/irqreturn.h>
@@ -1023,6 +1024,9 @@ static int csid_probe(struct platform_device *pdev)
 	uint32_t csi_vdd_voltage = 0;
 	int rc = 0;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	new_csid_dev = kzalloc(sizeof(struct csid_device), GFP_KERNEL);
 	if (!new_csid_dev)
 		return -ENOMEM;
@@ -1116,7 +1120,8 @@ static int csid_probe(struct platform_device *pdev)
 #ifdef CONFIG_COMPAT
 	msm_cam_copy_v4l2_subdev_fops(&msm_csid_v4l2_subdev_fops);
 	msm_csid_v4l2_subdev_fops.compat_ioctl32 = msm_csid_subdev_fops_ioctl32;
-	new_csid_dev->msm_sd.sd.devnode->fops = &msm_csid_v4l2_subdev_fops;
+	if (new_csid_dev->msm_sd.sd.devnode)
+		new_csid_dev->msm_sd.sd.devnode->fops = &msm_csid_v4l2_subdev_fops;
 #endif
 
 	rc = msm_camera_register_irq(pdev, new_csid_dev->irq,

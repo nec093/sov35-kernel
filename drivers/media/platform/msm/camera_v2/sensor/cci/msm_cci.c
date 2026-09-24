@@ -11,6 +11,7 @@
  */
 
 #include <linux/delay.h>
+#include "cam_soc_api.h"
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/module.h>
@@ -2092,6 +2093,9 @@ static int msm_cci_probe(struct platform_device *pdev)
 	struct cci_device *new_cci_dev;
 	int rc = 0, i = 0;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	CDBG("%s: pdev %pK device id = %d\n", __func__, pdev, pdev->id);
 	new_cci_dev = kzalloc(sizeof(struct cci_device), GFP_KERNEL);
 	if (!new_cci_dev) {
@@ -2116,7 +2120,8 @@ static int msm_cci_probe(struct platform_device *pdev)
 	if (rc < 0) {
 		pr_err("%s: msm_cci_get_clk_info() failed", __func__);
 		kfree(new_cci_dev);
-		return -EFAULT;
+		/* keep -EPROBE_DEFER: the camss clocks may not be up yet */
+		return rc == -EPROBE_DEFER ? rc : -EFAULT;
 	}
 
 	new_cci_dev->ref_count = 0;

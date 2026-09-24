@@ -44,6 +44,8 @@ struct cam_ahb_client_data {
 	u32 *votes;
 	u32 cnt;
 	u32 probe_done;
+	/* msm_bus client registration postponed until msm_bus is up */
+	bool ahb_client_pending;
 	struct cam_ahb_client clients[CAM_AHB_CLIENT_MAX];
 	struct mutex lock;
 };
@@ -165,19 +167,34 @@ int cam_ahb_clk_init(struct platform_device *pdev)
 		.usecase = data.usecases,
 	};
 
+	index = get_vector_index("suspend");
+	if (index < 0) {
+		pr_err("svs vector not supported\n");
+		rc = -EINVAL;
+		goto err5;
+	}
+
+	/*
+	 * On 5.4 the msm_bus driver only comes up after this (early) probe.
+	 * Failing here took the whole msm-cam core down, and with it every
+	 * camera subdev (their msm_sd_register() found no v4l2 device).
+	 * Register the AHB client on the first vote instead.
+	 */
+	if (!msm_bus_scale_driver_ready()) {
+		data.ahb_client = 0;
+		data.ahb_client_pending = true;
+		data.ahb_clk_state = CAM_AHB_SUSPEND_VOTE;
+		data.probe_done = TRUE;
+		mutex_init(&data.lock);
+		return 0;
+	}
+
 	data.ahb_client =
 		msm_bus_scale_register_client(data.pbus_data);
 	if (!data.ahb_client) {
 		pr_err("ahb vote registering failed\n");
 		rc = -EINVAL;
 		goto err5;
-	}
-
-	index = get_vector_index("suspend");
-	if (index < 0) {
-		pr_err("svs vector not supported\n");
-		rc = -EINVAL;
-		goto err6;
 	}
 
 	/* request for svs in init */
@@ -192,8 +209,6 @@ int cam_ahb_clk_init(struct platform_device *pdev)
 		data.ahb_clk_state, data.probe_done);
 	return rc;
 
-err6:
-	msm_bus_scale_unregister_client(data.ahb_client);
 err5:
 	devm_kfree(&pdev->dev, data.votes);
 	data.votes = NULL;
@@ -221,6 +236,14 @@ static int cam_consolidate_ahb_vote(enum cam_ahb_clk_client id,
 
 	CDBG("dbg: id :%u, vote : 0x%x\n", id, vote);
 	mutex_lock(&data.lock);
+	if (data.ahb_client_pending && msm_bus_scale_driver_ready()) {
+		data.ahb_client =
+			msm_bus_scale_register_client(data.pbus_data);
+		if (data.ahb_client)
+			data.ahb_client_pending = false;
+		else
+			pr_err("ahb vote registering failed\n");
+	}
 	data.clients[id].vote = vote;
 
 	if (vote == data.ahb_clk_state) {
@@ -235,7 +258,7 @@ static int cam_consolidate_ahb_vote(enum cam_ahb_clk_client id,
 	}
 
 	CDBG("dbg: max vote : %u\n", max);
-	if (max != data.ahb_clk_state) {
+	if (max != data.ahb_clk_state && data.ahb_client) {
 		msm_bus_scale_client_update_request(data.ahb_client,
 			max);
 		data.ahb_clk_state = max;

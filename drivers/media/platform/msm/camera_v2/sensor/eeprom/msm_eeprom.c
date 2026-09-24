@@ -11,6 +11,7 @@
  */
 
 #include <linux/module.h>
+#include "cam_soc_api.h"
 #include <linux/of_gpio.h>
 #include <linux/delay.h>
 #include <linux/crc32.h>
@@ -1596,6 +1597,9 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	int j = 0;
 	uint32_t temp;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	struct msm_camera_cci_client *cci_client = NULL;
 	struct msm_eeprom_ctrl_t *e_ctrl = NULL;
 	struct msm_eeprom_board_info *eb_info = NULL;
@@ -1762,7 +1766,8 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	msm_cam_copy_v4l2_subdev_fops(&msm_eeprom_v4l2_subdev_fops);
 	msm_eeprom_v4l2_subdev_fops.compat_ioctl32 =
 		msm_eeprom_subdev_fops_ioctl32;
-	e_ctrl->msm_sd.sd.devnode->fops = &msm_eeprom_v4l2_subdev_fops;
+	if (e_ctrl->msm_sd.sd.devnode)
+		e_ctrl->msm_sd.sd.devnode->fops = &msm_eeprom_v4l2_subdev_fops;
 #endif
 
 	e_ctrl->is_supported = (e_ctrl->is_supported << 1) | 1;

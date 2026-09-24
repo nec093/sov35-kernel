@@ -2270,8 +2270,8 @@ static int32_t msm_actuator_i2c_probe(struct i2c_client *client,
 	msm_actuator_v4l2_subdev_fops.compat_ioctl32 =
 		msm_actuator_subdev_fops_ioctl;
 #endif
-	act_ctrl_t->msm_sd.sd.devnode->fops =
-		&msm_actuator_v4l2_subdev_fops;
+	if (act_ctrl_t->msm_sd.sd.devnode)
+		act_ctrl_t->msm_sd.sd.devnode->fops = &msm_actuator_v4l2_subdev_fops;
 	act_ctrl_t->actuator_state = ACT_DISABLE_STATE;
 	pr_info("msm_actuator_i2c_probe: succeeded\n");
 	CDBG("Exit\n");
@@ -2385,8 +2385,8 @@ static int32_t msm_actuator_platform_probe(struct platform_device *pdev)
 	msm_actuator_v4l2_subdev_fops.compat_ioctl32 =
 		msm_actuator_subdev_fops_ioctl;
 #endif
-	msm_actuator_t->msm_sd.sd.devnode->fops =
-		&msm_actuator_v4l2_subdev_fops;
+	if (msm_actuator_t->msm_sd.sd.devnode)
+		msm_actuator_t->msm_sd.sd.devnode->fops = &msm_actuator_v4l2_subdev_fops;
 
 	CDBG("Exit\n");
 	return rc;

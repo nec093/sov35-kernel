@@ -903,7 +903,8 @@ static int32_t __init msm_buf_mngr_init(void)
 		goto end;
 	}
 
-	msm_buf_mngr_dev->subdev.sd.devnode->fops = &msm_buf_v4l2_subdev_fops;
+	if (msm_buf_mngr_dev->subdev.sd.devnode)
+		msm_buf_mngr_dev->subdev.sd.devnode->fops = &msm_buf_v4l2_subdev_fops;
 
 	v4l2_subdev_notify(&msm_buf_mngr_dev->subdev.sd, MSM_SD_NOTIFY_REQ_CB,
 		&msm_buf_mngr_dev->vb2_ops);

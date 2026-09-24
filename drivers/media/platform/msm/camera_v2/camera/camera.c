@@ -11,6 +11,7 @@
  */
 
 #include <linux/of.h>
+#include <media/v4l2-crop-compat.h>
 #include <linux/module.h>
 #include <linux/workqueue.h>
 #include <linux/delay.h>
@@ -264,7 +265,7 @@ static int camera_v4l2_qbuf(struct file *filep, void *fh,
 	if (WARN_ON(!session))
 		return -EIO;
 	mutex_lock(&sp->lock);
-	ret = vb2_qbuf(&sp->vb2_q, pb);
+	ret = vb2_qbuf(&sp->vb2_q, NULL, pb);
 	mutex_unlock(&sp->lock);
 	return ret;
 }
@@ -519,10 +520,23 @@ static long camera_v4l2_vidioc_private_ioctl(struct file *filep, void *fh,
 	return rc;
 }
 
+
+static int camera_v4l2_g_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_g_selection(file, fh, s, camera_v4l2_g_crop, NULL, true);
+}
+
+static int camera_v4l2_s_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_s_selection(file, fh, s, camera_v4l2_s_crop, true);
+}
+
 static const struct v4l2_ioctl_ops camera_v4l2_ioctl_ops = {
 	.vidioc_querycap = camera_v4l2_querycap,
-	.vidioc_s_crop = camera_v4l2_s_crop,
-	.vidioc_g_crop = camera_v4l2_g_crop,
+	.vidioc_g_selection = camera_v4l2_g_selection,
+	.vidioc_s_selection = camera_v4l2_s_selection,
 	.vidioc_queryctrl = camera_v4l2_queryctrl,
 	.vidioc_g_ctrl = camera_v4l2_g_ctrl,
 	.vidioc_s_ctrl = camera_v4l2_s_ctrl,
@@ -925,6 +939,9 @@ int camera_init_v4l2(struct device *dev, unsigned int *session)
 	pvdev->vdev->release  = video_device_release;
 	pvdev->vdev->fops     = &camera_v4l2_fops;
 	pvdev->vdev->ioctl_ops = &camera_v4l2_ioctl_ops;
+	/* 5.4: video_register_device() requires device_caps */
+	pvdev->vdev->device_caps = V4L2_CAP_VIDEO_CAPTURE_MPLANE |
+				   V4L2_CAP_STREAMING;
 	pvdev->vdev->minor     = -1;
 	pvdev->vdev->vfl_type  = VFL_TYPE_GRABBER;
 	rc = video_register_device(pvdev->vdev,

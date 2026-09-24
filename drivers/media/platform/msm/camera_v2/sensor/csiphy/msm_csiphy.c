@@ -11,6 +11,7 @@
  */
 
 #include <linux/delay.h>
+#include "cam_soc_api.h"
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/of.h>
@@ -2359,6 +2360,9 @@ static int csiphy_probe(struct platform_device *pdev)
 	struct csiphy_device *new_csiphy_dev;
 	int rc = 0;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	new_csiphy_dev = kzalloc(sizeof(struct csiphy_device), GFP_KERNEL);
 	if (!new_csiphy_dev)
 		return -ENOMEM;
@@ -2516,8 +2520,8 @@ static int csiphy_probe(struct platform_device *pdev)
 	msm_csiphy_v4l2_subdev_fops.compat_ioctl32 =
 		msm_csiphy_subdev_fops_ioctl;
 #endif
-	new_csiphy_dev->msm_sd.sd.devnode->fops =
-		&msm_csiphy_v4l2_subdev_fops;
+	if (new_csiphy_dev->msm_sd.sd.devnode)
+		new_csiphy_dev->msm_sd.sd.devnode->fops = &msm_csiphy_v4l2_subdev_fops;
 	new_csiphy_dev->csiphy_state = CSIPHY_POWER_DOWN;
 	return 0;
 

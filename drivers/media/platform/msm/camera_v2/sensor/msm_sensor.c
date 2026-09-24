@@ -891,8 +891,8 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			cdata->cfg.sensor_i2c_sync_params.cid;
 		cci_ctrl.cfg.cci_wait_sync_cfg.csid =
 			cdata->cfg.sensor_i2c_sync_params.csid;
-		rc = v4l2_subdev_call(s_ctrl->sensor_i2c_client->
-				cci_client->cci_subdev,
+		rc = v4l2_subdev_call(msm_cci_client_subdev(
+				s_ctrl->sensor_i2c_client->cci_client),
 				core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 		if (rc < 0) {
 			pr_err("%s: line %d rc = %d\n", __func__, __LINE__, rc);
@@ -1380,8 +1380,8 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void *argp)
 			cdata->cfg.sensor_i2c_sync_params.cid;
 		cci_ctrl.cfg.cci_wait_sync_cfg.csid =
 			cdata->cfg.sensor_i2c_sync_params.csid;
-		rc = v4l2_subdev_call(s_ctrl->sensor_i2c_client->
-				cci_client->cci_subdev,
+		rc = v4l2_subdev_call(msm_cci_client_subdev(
+				s_ctrl->sensor_i2c_client->cci_client),
 				core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 		if (rc < 0) {
 			pr_err("%s: line %d rc = %d\n", __func__, __LINE__, rc);

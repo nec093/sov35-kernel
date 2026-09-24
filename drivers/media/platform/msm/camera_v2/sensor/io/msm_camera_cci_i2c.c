@@ -41,7 +41,7 @@ int32_t msm_camera_cci_i2c_read(struct msm_camera_i2c_client *client,
 	cci_ctrl.cfg.cci_i2c_read_cfg.addr_type = client->addr_type;
 	cci_ctrl.cfg.cci_i2c_read_cfg.data = buf;
 	cci_ctrl.cfg.cci_i2c_read_cfg.num_byte = data_type;
-	rc = v4l2_subdev_call(client->cci_client->cci_subdev,
+	rc = v4l2_subdev_call(msm_cci_client_subdev(client->cci_client),
 			core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 	if (rc < 0) {
 		pr_err("%s: line %d rc = %d\n", __func__, __LINE__, rc);
@@ -88,7 +88,7 @@ int32_t msm_camera_cci_i2c_read_seq(struct msm_camera_i2c_client *client,
 	cci_ctrl.cfg.cci_i2c_read_cfg.data = buf;
 	cci_ctrl.cfg.cci_i2c_read_cfg.num_byte = num_byte;
 	cci_ctrl.status = -EFAULT;
-	rc = v4l2_subdev_call(client->cci_client->cci_subdev,
+	rc = v4l2_subdev_call(msm_cci_client_subdev(client->cci_client),
 			core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 	CDBG("%s line %d rc = %d\n", __func__, __LINE__, rc);
 	rc = cci_ctrl.status;
@@ -128,7 +128,7 @@ int32_t msm_camera_cci_i2c_write(struct msm_camera_i2c_client *client,
 	cci_ctrl.cfg.cci_i2c_write_cfg.data_type = data_type;
 	cci_ctrl.cfg.cci_i2c_write_cfg.addr_type = client->addr_type;
 	cci_ctrl.cfg.cci_i2c_write_cfg.size = 1;
-	rc = v4l2_subdev_call(client->cci_client->cci_subdev,
+	rc = v4l2_subdev_call(msm_cci_client_subdev(client->cci_client),
 			core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 	if (rc < 0) {
 		pr_err("%s: line %d rc = %d\n", __func__, __LINE__, rc);
@@ -177,7 +177,7 @@ int32_t msm_camera_cci_i2c_write_seq(struct msm_camera_i2c_client *client,
 	cci_ctrl.cfg.cci_i2c_write_cfg.addr_type = client->addr_type;
 	cci_ctrl.cfg.cci_i2c_write_cfg.size = num_byte;
 	cci_ctrl.status = -EFAULT;
-	rc = v4l2_subdev_call(client->cci_client->cci_subdev,
+	rc = v4l2_subdev_call(msm_cci_client_subdev(client->cci_client),
 			core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 	CDBG("%s line %d rc = %d\n", __func__, __LINE__, rc);
 	rc = cci_ctrl.status;
@@ -210,7 +210,7 @@ static int32_t msm_camera_cci_i2c_write_table_cmd(
 	cci_ctrl.cfg.cci_i2c_write_cfg.data_type = write_setting->data_type;
 	cci_ctrl.cfg.cci_i2c_write_cfg.addr_type = client->addr_type;
 	cci_ctrl.cfg.cci_i2c_write_cfg.size = write_setting->size;
-	rc = v4l2_subdev_call(client->cci_client->cci_subdev,
+	rc = v4l2_subdev_call(msm_cci_client_subdev(client->cci_client),
 			core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 	if (rc < 0) {
 		pr_err("%s: line %d rc = %d\n", __func__, __LINE__, rc);
@@ -327,7 +327,7 @@ int32_t msm_camera_cci_i2c_write_table_w_microdelay(
 	cci_ctrl.cfg.cci_i2c_write_cfg.data_type = write_setting->data_type;
 	cci_ctrl.cfg.cci_i2c_write_cfg.addr_type = client->addr_type;
 	cci_ctrl.cfg.cci_i2c_write_cfg.size = write_setting->size;
-	rc = v4l2_subdev_call(client->cci_client->cci_subdev,
+	rc = v4l2_subdev_call(msm_cci_client_subdev(client->cci_client),
 			core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 	if (rc < 0) {
 		pr_err("%s: line %d rc = %d\n", __func__, __LINE__, rc);
@@ -569,7 +569,7 @@ int32_t msm_sensor_cci_i2c_util(struct msm_camera_i2c_client *client,
 	CDBG("%s line %d\n", __func__, __LINE__);
 	cci_ctrl.cmd = cci_cmd;
 	cci_ctrl.cci_info = client->cci_client;
-	rc = v4l2_subdev_call(client->cci_client->cci_subdev,
+	rc = v4l2_subdev_call(msm_cci_client_subdev(client->cci_client),
 			core, ioctl, VIDIOC_MSM_CCI_CFG, &cci_ctrl);
 	if (rc < 0) {
 		pr_err("%s line %d rc = %d\n", __func__, __LINE__, rc);

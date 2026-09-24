@@ -11,6 +11,7 @@
  */
 
 #include <linux/vmalloc.h>
+#include "cam_soc_api.h"
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -20,6 +21,7 @@
 #include <linux/ion.h>
 #include <linux/msm_ion.h>
 #include <media/v4l2-ioctl.h>
+#include <media/v4l2-crop-compat.h>
 #include <media/v4l2-event.h>
 #include <media/videobuf2-v4l2.h>
 #include <linux/clk/qcom.h>
@@ -664,7 +666,8 @@ static int msm_fd_querycap(struct file *file,
 	cap->bus_info[0] = 0;
 	strlcpy(cap->driver, MSM_FD_DRV_NAME, sizeof(cap->driver));
 	strlcpy(cap->card, MSM_FD_DRV_NAME, sizeof(cap->card));
-	cap->capabilities = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_OUTPUT;
+	cap->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_OUTPUT;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 
 	return 0;
 }
@@ -778,7 +781,7 @@ static int msm_fd_qbuf(struct file *file, void *fh,
 	struct fd_ctx *ctx = msm_fd_ctx_from_fh(fh);
 
 	mutex_lock(&ctx->lock);
-	ret = vb2_qbuf(&ctx->vb2_q, pb);
+	ret = vb2_qbuf(&ctx->vb2_q, NULL, pb);
 	mutex_unlock(&ctx->lock);
 	return ret;
 
@@ -1171,6 +1174,19 @@ static int msm_fd_s_crop(struct file *file, void *fh,
 }
 
 /* V4l2 ioctl handlers */
+
+static int msm_fd_g_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_g_selection(file, fh, s, msm_fd_g_crop, msm_fd_cropcap, false);
+}
+
+static int msm_fd_s_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_s_selection(file, fh, s, msm_fd_s_crop, false);
+}
+
 static const struct v4l2_ioctl_ops fd_ioctl_ops = {
 	.vidioc_querycap          = msm_fd_querycap,
 	.vidioc_enum_fmt_vid_out  = msm_fd_enum_fmt_vid_out,
@@ -1185,9 +1201,8 @@ static const struct v4l2_ioctl_ops fd_ioctl_ops = {
 	.vidioc_queryctrl         = msm_fd_guery_ctrl,
 	.vidioc_s_ctrl            = msm_fd_s_ctrl,
 	.vidioc_g_ctrl            = msm_fd_g_ctrl,
-	.vidioc_cropcap           = msm_fd_cropcap,
-	.vidioc_g_crop            = msm_fd_g_crop,
-	.vidioc_s_crop            = msm_fd_s_crop,
+	.vidioc_g_selection       = msm_fd_g_selection,
+	.vidioc_s_selection       = msm_fd_s_selection,
 	.vidioc_subscribe_event   = msm_fd_subscribe_event,
 	.vidioc_unsubscribe_event = msm_fd_unsubscribe_event,
 	.vidioc_default           = msm_fd_private_ioctl,
@@ -1317,6 +1332,9 @@ static int fd_probe(struct platform_device *pdev)
 	int ret;
 	int i;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	/* Face detection device struct */
 	fd = kzalloc(sizeof(struct msm_fd_device), GFP_KERNEL);
 	if (!fd)
@@ -1396,6 +1414,8 @@ static int fd_probe(struct platform_device *pdev)
 
 	fd->video.fops  = &fd_fops;
 	fd->video.ioctl_ops = &fd_ioctl_ops;
+	/* 5.4: video_register_device() requires device_caps */
+	fd->video.device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_OUTPUT;
 	fd->video.minor = -1;
 	fd->video.release  = video_device_release;
 	fd->video.v4l2_dev = &fd->v4l2_dev;

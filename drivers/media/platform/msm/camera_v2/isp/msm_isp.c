@@ -11,6 +11,7 @@
  */
 
 #include <linux/delay.h>
+#include "cam_soc_api.h"
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/module.h>
@@ -454,7 +455,7 @@ static void isp_vma_close(struct vm_area_struct *vma)
 	pr_debug("%s: close called\n", __func__);
 }
 
-static int isp_vma_fault(struct vm_fault *vmf)
+static vm_fault_t isp_vma_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct page *page;
@@ -548,6 +549,9 @@ static int vfe_probe(struct platform_device *pdev)
 	uint32_t i = 0;
 	char name[10] = "\0";
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	vfe_parent_dev = kzalloc(sizeof(struct vfe_parent_device),
 		GFP_KERNEL);
 	if (!vfe_parent_dev) {
@@ -636,6 +640,9 @@ int vfe_hw_probe(struct platform_device *pdev)
 	/*struct msm_cam_subdev_info sd_info;*/
 	const struct of_device_id *match_dev;
 	int rc = 0;
+
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
 
 	vfe_dev = kzalloc(sizeof(struct vfe_device), GFP_KERNEL);
 	if (!vfe_dev) {
@@ -729,7 +736,8 @@ int vfe_hw_probe(struct platform_device *pdev)
 #endif
 	msm_isp_v4l2_fops.mmap = msm_isp_v4l2_fops_mmap;
 
-	vfe_dev->subdev.sd.devnode->fops = &msm_isp_v4l2_fops;
+	if (vfe_dev->subdev.sd.devnode)
+		vfe_dev->subdev.sd.devnode->fops = &msm_isp_v4l2_fops;
 
 	vfe_dev->buf_mgr = &vfe_buf_mgr;
 	v4l2_subdev_notify(&vfe_dev->subdev.sd,

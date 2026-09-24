@@ -1098,3 +1098,31 @@ uint32_t msm_camera_unregister_bus_client(enum cam_bus_client id)
 	return 0;
 }
 EXPORT_SYMBOL(msm_camera_unregister_bus_client);
+
+/*
+ * 5.4: the camera platform devices can probe before the multimedia clock
+ * controller, and most of their probes turn the resulting -EPROBE_DEFER
+ * into a hard error (after having registered their subdev already).
+ * Let them bail out up front instead, before touching anything.
+ */
+bool msm_camera_clocks_not_ready(struct device *dev)
+{
+	struct device_node *np = dev->of_node;
+	int i, n;
+
+	if (!np)
+		return false;
+	n = of_count_phandle_with_args(np, "clocks", "#clock-cells");
+	for (i = 0; i < n; i++) {
+		struct clk *clk = of_clk_get(np, i);
+
+		if (IS_ERR(clk)) {
+			if (PTR_ERR(clk) == -EPROBE_DEFER)
+				return true;
+			continue;
+		}
+		clk_put(clk);
+	}
+	return false;
+}
+EXPORT_SYMBOL(msm_camera_clocks_not_ready);

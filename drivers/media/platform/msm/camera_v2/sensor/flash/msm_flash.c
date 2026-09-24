@@ -1515,7 +1515,8 @@ error_register:
 	msm_flash_v4l2_subdev_fops.compat_ioctl32 =
 		msm_flash_subdev_fops_ioctl;
 #endif
-	flash_ctrl->msm_sd.sd.devnode->fops = &msm_flash_v4l2_subdev_fops;
+	if (flash_ctrl->msm_sd.sd.devnode)
+		flash_ctrl->msm_sd.sd.devnode->fops = &msm_flash_v4l2_subdev_fops;
 
 	if (flash_ctrl->flash_driver_type == FLASH_DRIVER_PMIC)
 		rc = msm_torch_create_classdev(pdev, flash_ctrl);

@@ -13,6 +13,7 @@
 #define pr_fmt(fmt) "MSM-VPE %s:%d " fmt, __func__, __LINE__
 
 #include <linux/module.h>
+#include "cam_soc_api.h"
 #include <linux/mutex.h>
 #include <linux/videodev2.h>
 #include <linux/msm_ion.h>
@@ -1523,6 +1524,9 @@ static int vpe_probe(struct platform_device *pdev)
 	struct vpe_device *vpe_dev;
 	int rc = 0;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	vpe_dev = kzalloc(sizeof(struct vpe_device), GFP_KERNEL);
 	if (!vpe_dev)
 		return -ENOMEM;
@@ -1592,7 +1596,8 @@ static int vpe_probe(struct platform_device *pdev)
 	vpe_dev->msm_sd.sd.entity.name = pdev->name;
 	msm_sd_register(&vpe_dev->msm_sd);
 	msm_cam_copy_v4l2_subdev_fops(&msm_vpe_v4l2_subdev_fops);
-	vpe_dev->msm_sd.sd.devnode->fops = &msm_vpe_v4l2_subdev_fops;
+	if (vpe_dev->msm_sd.sd.devnode)
+		vpe_dev->msm_sd.sd.devnode->fops = &msm_vpe_v4l2_subdev_fops;
 	vpe_dev->msm_sd.sd.entity.revision = vpe_dev->msm_sd.sd.devnode->num;
 	vpe_dev->state = VPE_STATE_BOOT;
 	rc = vpe_init_hardware(vpe_dev);

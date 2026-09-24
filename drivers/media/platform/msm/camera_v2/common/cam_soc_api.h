@@ -468,4 +468,7 @@ uint32_t msm_camera_unregister_bus_client(enum cam_bus_client id);
 uint32_t msm_camera_get_res_size(struct platform_device *pdev,
 	char *device_name);
 
+/* true if a DT clock of @dev is not registered yet (-EPROBE_DEFER) */
+bool msm_camera_clocks_not_ready(struct device *dev);
+
 #endif

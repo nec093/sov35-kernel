@@ -13,6 +13,7 @@
 #define pr_fmt(fmt) "MSM-CPP %s:%d " fmt, __func__, __LINE__
 
 #include <linux/delay.h>
+#include "cam_soc_api.h"
 #include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/of.h>
@@ -298,7 +299,7 @@ static void msm_enqueue(struct msm_device_queue *queue,
 static int msm_cpp_notify_frame_done(struct cpp_device *cpp_dev,
 	uint8_t put_buf);
 static int32_t cpp_load_fw(struct cpp_device *cpp_dev, char *fw_name_bin);
-static void cpp_timer_callback(unsigned long data);
+static void cpp_timer_callback(struct timer_list *t);
 
 static uint8_t induce_error;
 static int msm_cpp_enable_debugfs(struct cpp_device *cpp_dev);
@@ -1993,7 +1994,7 @@ error:
 	pr_debug("%s:%d] exit\n", __func__, __LINE__);
 }
 
-static void cpp_timer_callback(unsigned long data)
+static void cpp_timer_callback(struct timer_list *t)
 {
 	struct msm_cpp_work_t *work =
 		cpp_timer.data.cpp_dev->work;
@@ -4553,6 +4554,9 @@ static int cpp_probe(struct platform_device *pdev)
 	int rc = 0;
 	int i = 0;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	CPP_DBG("E");
 
 	cpp_dev = kzalloc(sizeof(struct cpp_device), GFP_KERNEL);
@@ -4692,7 +4696,8 @@ static int cpp_probe(struct platform_device *pdev)
 		msm_cpp_subdev_fops_compat_ioctl;
 #endif
 
-	cpp_dev->msm_sd.sd.devnode->fops = &msm_cpp_v4l2_subdev_fops;
+	if (cpp_dev->msm_sd.sd.devnode)
+		cpp_dev->msm_sd.sd.devnode->fops = &msm_cpp_v4l2_subdev_fops;
 
 
 	msm_camera_io_w(0x0, cpp_dev->base +
@@ -4727,8 +4732,7 @@ static int cpp_probe(struct platform_device *pdev)
 	atomic_set(&cpp_timer.used, 0);
 	/* install timer for cpp timeout */
 	CPP_DBG("Installing cpp_timer\n");
-	setup_timer(&cpp_timer.cpp_timer,
-		cpp_timer_callback, (unsigned long)&cpp_timer);
+	timer_setup(&cpp_timer.cpp_timer, cpp_timer_callback, 0);
 	cpp_dev->fw_name_bin = NULL;
 	cpp_dev->max_timeout_trial_cnt = MSM_CPP_MAX_TIMEOUT_TRIAL;
 

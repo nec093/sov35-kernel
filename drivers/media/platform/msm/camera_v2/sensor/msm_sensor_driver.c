@@ -118,8 +118,8 @@ static int32_t msm_sensor_driver_create_i2c_v4l_subdev
 	msm_sensor_v4l2_subdev_fops.compat_ioctl32 =
 		msm_sensor_subdev_fops_ioctl;
 #endif
-	s_ctrl->msm_sd.sd.devnode->fops =
-		&msm_sensor_v4l2_subdev_fops;
+	if (s_ctrl->msm_sd.sd.devnode)
+		s_ctrl->msm_sd.sd.devnode->fops = &msm_sensor_v4l2_subdev_fops;
 	CDBG("%s:%d\n", __func__, __LINE__);
 	return rc;
 }
@@ -161,8 +161,8 @@ static int32_t msm_sensor_driver_create_v4l_subdev
 	msm_sensor_v4l2_subdev_fops.compat_ioctl32 =
 		msm_sensor_subdev_fops_ioctl;
 #endif
-	s_ctrl->msm_sd.sd.devnode->fops =
-		&msm_sensor_v4l2_subdev_fops;
+	if (s_ctrl->msm_sd.sd.devnode)
+		s_ctrl->msm_sd.sd.devnode->fops = &msm_sensor_v4l2_subdev_fops;
 
 	return rc;
 }

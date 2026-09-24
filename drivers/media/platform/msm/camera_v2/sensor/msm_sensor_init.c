@@ -200,8 +200,8 @@ static int __init msm_sensor_init_module(void)
 	msm_sensor_init_v4l2_subdev_fops.compat_ioctl32 =
 		msm_sensor_init_subdev_fops_ioctl;
 #endif
-	s_init->msm_sd.sd.devnode->fops =
-		&msm_sensor_init_v4l2_subdev_fops;
+	if (s_init->msm_sd.sd.devnode)
+		s_init->msm_sd.sd.devnode->fops = &msm_sensor_init_v4l2_subdev_fops;
 
 	init_waitqueue_head(&s_init->state_wait);
 

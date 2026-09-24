@@ -2018,6 +2018,9 @@ static int ispif_probe(struct platform_device *pdev)
 	int rc;
 	struct ispif_device *ispif;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	ispif = kzalloc(sizeof(struct ispif_device), GFP_KERNEL);
 	if (!ispif)
 		return -ENOMEM;
@@ -2093,7 +2096,8 @@ static int ispif_probe(struct platform_device *pdev)
 #ifdef CONFIG_COMPAT
 	msm_ispif_v4l2_subdev_fops.compat_ioctl32 = msm_ispif_subdev_fops_ioctl;
 #endif
-	ispif->msm_sd.sd.devnode->fops = &msm_ispif_v4l2_subdev_fops;
+	if (ispif->msm_sd.sd.devnode)
+		ispif->msm_sd.sd.devnode->fops = &msm_ispif_v4l2_subdev_fops;
 	ispif->ispif_state = ISPIF_POWER_DOWN;
 	ispif->open_cnt = 0;
 	init_completion(&ispif->reset_complete[VFE0]);

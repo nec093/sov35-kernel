@@ -11,6 +11,7 @@
  */
 
 #include <linux/vmalloc.h>
+#include "cam_soc_api.h"
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -20,6 +21,7 @@
 #include <linux/uaccess.h>
 #include <linux/compat.h>
 #include <media/v4l2-ioctl.h>
+#include <media/v4l2-crop-compat.h>
 #include <media/v4l2-event.h>
 #include <media/videobuf2-core.h>
 #include <media/v4l2-mem2mem.h>
@@ -431,14 +433,14 @@ static void *msm_jpegdma_get_userptr(struct device *alloc_ctx,
 
 	msm_jpegdma_cast_long_to_buff_ptr(vaddr, &up_buff);
 
-	if (!access_ok(VERIFY_READ, up_buff,
+	if (!access_ok(up_buff,
 		sizeof(struct msm_jpeg_dma_buff)) ||
 		get_user(kp_buff.fd, &up_buff->fd)) {
 		dev_err(dma->dev, "Error getting user data\n");
 		return ERR_PTR(-ENOMEM);
 	}
 
-	if (!access_ok(VERIFY_WRITE, up_buff,
+	if (!access_ok(up_buff,
 		sizeof(struct msm_jpeg_dma_buff)) ||
 		put_user(kp_buff.fd, &up_buff->fd)) {
 		dev_err(dma->dev, "Error putting user data\n");
@@ -842,7 +844,7 @@ static int msm_jpegdma_qbuf(struct file *file, void *fh,
 
 	msm_jpegdma_cast_long_to_buff_ptr(buf->m.userptr, &up_buff);
 	mutex_lock(&ctx->lock);
-	if (!access_ok(VERIFY_READ, up_buff,
+	if (!access_ok(up_buff,
 		sizeof(struct msm_jpeg_dma_buff)) ||
 		get_user(kp_buff.fd, &up_buff->fd) ||
 		get_user(kp_buff.offset, &up_buff->offset)) {
@@ -851,7 +853,7 @@ static int msm_jpegdma_qbuf(struct file *file, void *fh,
 		return -EFAULT;
 	}
 
-	if (!access_ok(VERIFY_WRITE, up_buff,
+	if (!access_ok(up_buff,
 		sizeof(struct msm_jpeg_dma_buff)) ||
 		put_user(kp_buff.fd, &up_buff->fd) ||
 		put_user(kp_buff.offset, &up_buff->offset)) {
@@ -1123,6 +1125,19 @@ static int msm_jpegdma_g_ctrl(struct file *file, void *fh,
 }
 
 /* V4l2 ioctl handlers */
+
+static int msm_jpegdma_g_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_g_selection(file, fh, s, msm_jpegdma_g_crop, msm_jpegdma_cropcap, false);
+}
+
+static int msm_jpegdma_s_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_s_selection(file, fh, s, msm_jpegdma_s_crop, false);
+}
+
 static const struct v4l2_ioctl_ops fd_ioctl_ops = {
 	.vidioc_querycap          = msm_jpegdma_querycap,
 	.vidioc_enum_fmt_vid_out  = msm_jpegdma_enum_fmt_vid_out,
@@ -1138,9 +1153,8 @@ static const struct v4l2_ioctl_ops fd_ioctl_ops = {
 	.vidioc_dqbuf             = msm_jpegdma_dqbuf,
 	.vidioc_streamon          = msm_jpegdma_streamon,
 	.vidioc_streamoff         = msm_jpegdma_streamoff,
-	.vidioc_cropcap           = msm_jpegdma_cropcap,
-	.vidioc_g_crop            = msm_jpegdma_g_crop,
-	.vidioc_s_crop            = msm_jpegdma_s_crop,
+	.vidioc_g_selection       = msm_jpegdma_g_selection,
+	.vidioc_s_selection       = msm_jpegdma_s_selection,
 	.vidioc_g_parm            = msm_jpegdma_g_parm,
 	.vidioc_s_parm            = msm_jpegdma_s_parm,
 	.vidioc_g_ctrl            = msm_jpegdma_g_ctrl,
@@ -1293,6 +1307,9 @@ static int jpegdma_probe(struct platform_device *pdev)
 	int ret;
 	int i;
 
+	if (msm_camera_clocks_not_ready(&pdev->dev))
+		return -EPROBE_DEFER;
+
 	dev_dbg(&pdev->dev, "jpeg v4l2 DMA probed\n");
 	/* Jpeg dma device struct */
 	jpegdma = kzalloc(sizeof(struct msm_jpegdma_device), GFP_KERNEL);
@@ -1397,6 +1414,9 @@ static int jpegdma_probe(struct platform_device *pdev)
 
 	jpegdma->video.fops = &fd_fops;
 	jpegdma->video.ioctl_ops = &fd_ioctl_ops;
+	/* 5.4: video_register_device() requires device_caps */
+	jpegdma->video.device_caps = V4L2_CAP_STREAMING |
+			V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_CAPTURE;
 	jpegdma->video.minor = -1;
 	jpegdma->video.release = video_device_release;
 	jpegdma->video.v4l2_dev = &jpegdma->v4l2_dev;

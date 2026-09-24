@@ -1356,6 +1356,8 @@ static int msm_probe(struct platform_device *pdev)
 	pvdev->vdev->release  = video_device_release;
 	pvdev->vdev->fops     = &msm_fops;
 	pvdev->vdev->ioctl_ops = &g_msm_ioctl_ops;
+	/* 5.4: video_register_device() requires device_caps */
+	pvdev->vdev->device_caps = V4L2_CAP_STREAMING;
 	pvdev->vdev->minor     = -1;
 	pvdev->vdev->vfl_type  = VFL_TYPE_GRABBER;
 	rc = video_register_device(pvdev->vdev,

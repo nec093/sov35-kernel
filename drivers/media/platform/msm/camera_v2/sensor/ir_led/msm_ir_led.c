@@ -368,7 +368,7 @@ static int32_t msm_ir_led_platform_probe(struct platform_device *pdev)
 	ir_led_ctrl->pdev = pdev;
 
 	/* Reading PWM device node */
-	ir_led_ctrl->pwm_dev = of_pwm_get(pdev->dev.of_node, NULL);
+	ir_led_ctrl->pwm_dev = of_pwm_get(&pdev->dev, pdev->dev.of_node, NULL);
 
 	if (IS_ERR(ir_led_ctrl->pwm_dev)) {
 		rc = PTR_ERR(ir_led_ctrl->pwm_dev);
@@ -409,7 +409,8 @@ static int32_t msm_ir_led_platform_probe(struct platform_device *pdev)
 	msm_ir_led_v4l2_subdev_fops.compat_ioctl32 =
 		msm_ir_led_subdev_fops_ioctl;
 #endif
-	ir_led_ctrl->msm_sd.sd.devnode->fops = &msm_ir_led_v4l2_subdev_fops;
+	if (ir_led_ctrl->msm_sd.sd.devnode)
+		ir_led_ctrl->msm_sd.sd.devnode->fops = &msm_ir_led_v4l2_subdev_fops;
 
 	CDBG("probe success\n");
 	return rc;
