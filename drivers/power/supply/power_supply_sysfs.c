@@ -47,20 +47,21 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"Unknown", "Battery", "UPS", "Mains", "USB", "USB_DCP",
 		"USB_CDP", "USB_ACA", "USB_HVDCP", "USB_HVDCP_3", "USB_PD",
 		"Wireless", "USB_FLOAT", "BMS", "Parallel", "Main", "Wipower",
-		"TYPEC", "TYPEC_UFP", "TYPEC_DFP", "RETRY_DET"
+		"TYPEC", "TYPEC_UFP", "TYPEC_DFP", "RETRY_DET",
+		"USB_C", "USB_PD_DRP", "BrickID"
 	};
 	static char *status_text[] = {
 		"Unknown", "Charging", "Discharging", "Not charging", "Full"
 	};
 	static char *charge_type[] = {
 		"Unknown", "N/A", "Trickle", "Fast",
-		"Taper"
+		"Taper", "Standard", "Adaptive", "Custom"
 	};
 	static char *health_text[] = {
 		"Unknown", "Good", "Overheat", "Dead", "Over voltage",
 		"Unspecified failure", "Cold", "Watchdog timer expire",
 		"Safety timer expire",
-		"Warm", "Cool", "Hot"
+		"Warm", "Cool", "Hot", "Over current"
 	};
 	static char *technology_text[] = {
 		"Unknown", "NiMH", "Li-ion", "Li-poly", "LiFe", "NiCd",
@@ -177,6 +178,7 @@ static ssize_t power_supply_store_property(struct device *dev,
 
 /* Must be in the same order as POWER_SUPPLY_PROP_* */
 static struct device_attribute power_supply_attrs[] = {
+	/* Generated from enum power_supply_property: keep 1:1 */
 	/* Properties of type `int' */
 	POWER_SUPPLY_ATTR(status),
 	POWER_SUPPLY_ATTR(charge_type),
@@ -258,14 +260,14 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(input_current_trim),
 	POWER_SUPPLY_ATTR(input_current_settled),
 	POWER_SUPPLY_ATTR(input_voltage_settled),
-	POWER_SUPPLY_ATTR(bypass_vchg_loop_debouncer),
+	POWER_SUPPLY_ATTR(vchg_loop_dbc_bypass),
 	POWER_SUPPLY_ATTR(charge_counter_shadow),
 	POWER_SUPPLY_ATTR(hi_power),
 	POWER_SUPPLY_ATTR(low_power),
-	POWER_SUPPLY_ATTR(temp_cool),
-	POWER_SUPPLY_ATTR(temp_warm),
-	POWER_SUPPLY_ATTR(temp_cold),
-	POWER_SUPPLY_ATTR(temp_hot),
+	POWER_SUPPLY_ATTR(cool_temp),
+	POWER_SUPPLY_ATTR(warm_temp),
+	POWER_SUPPLY_ATTR(cold_temp),
+	POWER_SUPPLY_ATTR(hot_temp),
 	POWER_SUPPLY_ATTR(system_temp_level),
 	POWER_SUPPLY_ATTR(resistance),
 	POWER_SUPPLY_ATTR(resistance_capacitive),
@@ -276,7 +278,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(esr_count),
 	POWER_SUPPLY_ATTR(buck_freq),
 	POWER_SUPPLY_ATTR(boost_current),
-	POWER_SUPPLY_ATTR(safety_timer_enabled),
+	POWER_SUPPLY_ATTR(safety_timer_enable),
 	POWER_SUPPLY_ATTR(charge_done),
 	POWER_SUPPLY_ATTR(flash_active),
 	POWER_SUPPLY_ATTR(flash_trigger),
@@ -359,7 +361,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(batt_aging),
 	POWER_SUPPLY_ATTR(input_current_state),
 	POWER_SUPPLY_ATTR(chgerr_sts),
-#endif /* CONFIG_QPNP_SMBCHARGER_EXTENSION || CONFIG_QPNP_FG_EXTENSION */
+#endif
 #if defined(CONFIG_QPNP_SMBFG_NEWGEN_EXTENSION) || \
     defined(CONFIG_QPNP_SMBCHARGER_EXTENSION)   || \
     defined(CONFIG_QPNP_FG_EXTENSION)
@@ -383,9 +385,13 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(running_status),
 	POWER_SUPPLY_ATTR(charger_type_determined),
 	POWER_SUPPLY_ATTR(monotonic_soc),
-#endif /* CONFIG_QPNP_SMBFG_NEWGEN_EXTENSION ||
-	* CONFIG_QPNP_SMBCHARGER_EXTENSION   ||
-	* CONFIG_QPNP_FG_EXTENSION */
+#endif
+	/* mainline 5.4 additions (kept after the CAF/SoMC ones) */
+	POWER_SUPPLY_ATTR(charge_control_start_threshold),
+	POWER_SUPPLY_ATTR(charge_control_end_threshold),
+	POWER_SUPPLY_ATTR(input_voltage_limit),
+	POWER_SUPPLY_ATTR(input_power_limit),
+	POWER_SUPPLY_ATTR(usb_type),
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_ATTR(charge_counter_ext),
 	/* Properties of type `const char *' */
