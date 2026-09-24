@@ -545,10 +545,15 @@ static int fpc1145_get_regulators(struct fpc1145_data *fpc1145)
 				devm_regulator_get(dev, vreg_conf[i].name);
 
 		if (IS_ERR_OR_NULL(fpc1145->vreg[i])) {
+			int rc = fpc1145->vreg[i] ?
+				PTR_ERR(fpc1145->vreg[i]) : -EINVAL;
+
 			fpc1145->vreg[i] = NULL;
-			dev_err(dev, "CRITICAL: Cannot get %s regulator.\n",
-				vreg_conf[i].name);
-			return -EINVAL;
+			/* the RPM regulators may register after us */
+			if (rc != -EPROBE_DEFER)
+				dev_err(dev, "CRITICAL: Cannot get %s regulator.\n",
+					vreg_conf[i].name);
+			return rc;
 		}
 	}
 
