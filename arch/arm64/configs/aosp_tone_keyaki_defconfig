@@ -759,6 +759,7 @@ CONFIG_SENSORS_SSC=y
 # CAF code vs 4.14's percpu-rwsem hotplug lock; root cause not yet found.
 # Disabled for Phase A, like SCHED_TUNE/EAS/WALT -- TODO for Phase B.
 CONFIG_EXT4_FS=y
+CONFIG_EXT4_FS_POSIX_ACL=y
 CONFIG_EXT4_FS_SECURITY=y
 # CONFIG_EXT4_ENCRYPTION and CONFIG_EXT4_FS_ENCRYPTION (4.14-era per-fs
 # symbols) were replaced by a single shared fs/crypto/ subsystem in
@@ -776,7 +777,10 @@ CONFIG_TMPFS=y
 CONFIG_TMPFS_POSIX_ACL=y
 CONFIG_ECRYPT_FS=y
 CONFIG_ECRYPT_FS_MESSAGING=y
-CONFIG_SDCARD_FS=y
+# Android 12 uses FUSE for emulated storage; if sdcardfs is present vold
+# stacks it under FUSE and passes options (unshared_obb) this sdcardfs does
+# not know, leaving /storage/emulated unmountable. Stock does not use it.
+# CONFIG_SDCARD_FS is not set
 CONFIG_PSTORE=y
 CONFIG_PSTORE_CONSOLE=y
 CONFIG_PSTORE_PMSG=y
