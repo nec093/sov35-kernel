@@ -677,7 +677,16 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	 * Old ida_pre_get()/ida_get_new() retry-loop API removed upstream;
 	 * ida_simple_get() is a single thread-safe call, no retry needed.
 	 */
-	err = ida_simple_get(&mmc_host_ida, 0, 0, GFP_KERNEL);
+	/*
+	 * Take the index from the CAF "sdhcN" DT alias (sdhc1 = eMMC) so the
+	 * eMMC is always mmc0/mmcblk0 no matter which controller finishes
+	 * (deferred) probing first; vendor blobs hard-code mmcblk0 paths.
+	 */
+	err = dev->of_node ? of_alias_get_id(dev->of_node, "sdhc") : -ENODEV;
+	if (err > 0)
+		err = ida_simple_get(&mmc_host_ida, err - 1, err, GFP_KERNEL);
+	else
+		err = ida_simple_get(&mmc_host_ida, 2, 0, GFP_KERNEL);
 	if (err < 0) {
 		kfree(host);
 		return NULL;
