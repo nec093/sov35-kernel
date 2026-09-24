@@ -746,7 +746,10 @@ CONFIG_MSM_PIL_MSS_QDSP6V5=y
 CONFIG_QCOM_SMCINVOKE=y
 # CONFIG_MSM_AVTIMER is not set (provided by techpack/audio, not built yet;
 # camera VT timestamps fall back to the monotonic clock)
-# CONFIG_MSM_PM is not set  # Phase A: WALT-dependent lpm-levels.c (drivers/cpuidle/lpm-levels.c: sched_get_cpu_last_busy_time(), pm_qos_request_for_cpu[mask](), get_next_event_cpu(), clock_debug_print_enabled()); lpm-levels-legacy.c (obj-y, unconditional) remains as the LPM fallback, and Part 1's 4.14 milestone already boots with cpuidle.off=1
+# CAF lpm-levels (CONFIG_MSM_PM) needs the WALT scheduler hooks; the idle
+# states are driven by the upstream PSCI cpuidle driver instead
+# (CONFIG_ARM_PSCI_CPUIDLE, idle-states in msm8996.dtsi).
+# CONFIG_MSM_PM is not set
 CONFIG_MEM_SHARE_QMI_SERVICE=y
 CONFIG_QSEE_IPC_IRQ_BRIDGE=y
 CONFIG_QCOM_BIMC_BWMON=y
