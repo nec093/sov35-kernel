@@ -3304,3 +3304,14 @@
 	status = "disabled";
 };
 
+
+/*
+ * The CBF devfreq follows the CPU through the cpufreq governor, but this
+ * kernel has no MSM cpufreq driver yet, so it parks the CBF at its 307.2 MHz
+ * floor; once clk_disable_unused() drops the boot-time vdd handoff vote, CPR
+ * then takes the APC0 rail to its lowest corner and the SoC dies. Keep the
+ * CBF at its boot rate until cpufreq is ported.
+ */
+&m4m_cache {
+	status = "disabled";
+};
