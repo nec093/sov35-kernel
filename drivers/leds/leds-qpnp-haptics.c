@@ -2031,7 +2031,7 @@ static int qpnp_haptics_parse_pwm_dt(struct hap_chip *chip)
 	if (chip->pwm_data.period_us > 0 && chip->pwm_data.duty_us > 0)
 		return 0;
 
-	chip->pwm_data.pwm_dev = of_pwm_get(node, NULL);
+	chip->pwm_data.pwm_dev = of_pwm_get(&chip->pdev->dev, node, NULL);
 	if (IS_ERR(chip->pwm_data.pwm_dev)) {
 		rc = PTR_ERR(chip->pwm_data.pwm_dev);
 		pr_err("Cannot get PWM device rc=%d\n", rc);
