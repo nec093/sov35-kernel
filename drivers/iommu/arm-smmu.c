@@ -1456,6 +1456,33 @@ static int arm_smmu_domain_get_attr(struct iommu_domain *domain,
 		case DOMAIN_ATTR_NESTING:
 			*(int *)data = (smmu_domain->stage == ARM_SMMU_DOMAIN_NESTED);
 			return 0;
+		/*
+		 * CAF attributes kgsl reads once its domain is attached: it
+		 * programs and flushes its context bank directly and hands the
+		 * pagetable base to the GPU.
+		 */
+		case DOMAIN_ATTR_CONTEXT_BANK:
+			if (!smmu_domain->smmu)
+				return -ENODEV;
+			*(unsigned int *)data = smmu_domain->cfg.cbndx;
+			return 0;
+		case DOMAIN_ATTR_TTBR0:
+			if (!smmu_domain->smmu)
+				return -ENODEV;
+			*(u64 *)data =
+				smmu_domain->smmu->cbs[smmu_domain->cfg.cbndx].ttbr[0];
+			return 0;
+		case DOMAIN_ATTR_CONTEXTIDR:
+			*(u32 *)data = smmu_domain->procid;
+			return 0;
+		case DOMAIN_ATTR_PROCID:
+			*(u32 *)data = smmu_domain->procid;
+			return 0;
+		case DOMAIN_ATTR_SECURE_VMID:
+			if (!smmu_domain->secure_vmid)
+				return -ENODEV;
+			*(int *)data = smmu_domain->secure_vmid;
+			return 0;
 		default:
 			return -ENODEV;
 		}
@@ -1507,6 +1534,13 @@ static int arm_smmu_domain_set_attr(struct iommu_domain *domain,
 			break;
 		case DOMAIN_ATTR_SECURE_VMID:
 			smmu_domain->secure_vmid = *(int *)data;
+			break;
+		case DOMAIN_ATTR_PROCID:
+			if (smmu_domain->smmu) {
+				ret = -EBUSY;
+				break;
+			}
+			smmu_domain->procid = *(u32 *)data;
 			break;
 		default:
 			ret = -ENODEV;

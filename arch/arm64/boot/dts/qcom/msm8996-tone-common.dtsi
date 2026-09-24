@@ -3315,3 +3315,11 @@
 &m4m_cache {
 	status = "disabled";
 };
+
+/*
+ * Per-process GPU pagetables need the CAF "dynamic domain" SMMU extension,
+ * which the 5.4 arm-smmu driver does not have yet; share one pagetable.
+ */
+&kgsl_msm_iommu {
+	qcom,global_pt;
+};
