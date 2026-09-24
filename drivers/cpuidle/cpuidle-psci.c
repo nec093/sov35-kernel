@@ -17,6 +17,7 @@
 #include <linux/of_device.h>
 #include <linux/psci.h>
 #include <linux/slab.h>
+#include <linux/topology.h>
 
 #include <asm/cpuidle.h>
 
@@ -24,13 +25,86 @@
 
 static DEFINE_PER_CPU_READ_MOSTLY(u32 *, psci_power_state);
 
+/*
+ * Some firmware (the MSM8996 TZ) only implements the OS-initiated suspend
+ * mode and cannot be switched to platform coordination, so a request
+ * that also powers down the cluster is DENIED unless every other online
+ * core of that cluster already sits in a core power-down state. This
+ * kernel has no PSCI power-domain hierarchy to do that election, so keep
+ * a per-cluster count of cores in a non-WFI state and only issue the
+ * cluster request from the last one; the others use the preceding
+ * (core-only) state. The firmware still denies a request that lost a
+ * race with a waking sibling, in which case the core-only state is used.
+ *
+ * Cluster states are recognised by a non-zero affinity level in
+ * StateID[25:24], which is how the Qualcomm StateIDs encode it.
+ */
+#define PSCI_MAX_CLUSTERS		8
+#define PSCI_STATEID_AFF_LEVEL(s)	(((s) >> 24) & 0x3)
+
+static atomic_t psci_cluster_nr_down[PSCI_MAX_CLUSTERS];
+
+/* allows turning the cluster states off at runtime for debugging */
+static bool cluster_idle = true;
+module_param(cluster_idle, bool, 0644);
+
+static bool psci_cluster_last_man(int cpu, int nr_down)
+{
+	int cluster = topology_physical_package_id(cpu);
+	int c, online = 0;
+
+	for_each_online_cpu(c)
+		if (topology_physical_package_id(c) == cluster)
+			online++;
+
+	return nr_down >= online;
+}
+
+/* deepest core-only state below @idx, 0 if there is none */
+static int psci_core_state(const u32 *state, int idx)
+{
+	while (--idx > 0)
+		if (!PSCI_STATEID_AFF_LEVEL(state[idx - 1]))
+			return idx;
+	return 0;
+}
+
 static int psci_enter_idle_state(struct cpuidle_device *dev,
 				struct cpuidle_driver *drv, int idx)
 {
 	u32 *state = __this_cpu_read(psci_power_state);
+	int cluster = topology_physical_package_id(dev->cpu);
+	atomic_t *nr_down;
+	u32 param;
+	int ret, n;
 
-	return CPU_PM_CPU_IDLE_ENTER_PARAM(psci_cpu_suspend_enter,
-					   idx, state[idx - 1]);
+	if (!idx || cluster < 0 || cluster >= PSCI_MAX_CLUSTERS)
+		return CPU_PM_CPU_IDLE_ENTER_PARAM(psci_cpu_suspend_enter,
+						   idx, state[idx - 1]);
+
+	nr_down = &psci_cluster_nr_down[cluster];
+	n = atomic_inc_return(nr_down);
+	param = state[idx - 1];
+	if (PSCI_STATEID_AFF_LEVEL(param) && psci_core_state(state, idx) &&
+	    (!READ_ONCE(cluster_idle) ||
+	     !psci_cluster_last_man(dev->cpu, n))) {
+		idx = psci_core_state(state, idx);
+		param = state[idx - 1];
+	}
+
+	ret = cpu_pm_enter();
+	if (!ret) {
+		ret = psci_cpu_suspend_enter(param);
+		if (ret == -EPERM && PSCI_STATEID_AFF_LEVEL(param) &&
+		    psci_core_state(state, idx)) {
+			idx = psci_core_state(state, idx);
+			ret = psci_cpu_suspend_enter(state[idx - 1]);
+		}
+		cpu_pm_exit();
+	}
+	atomic_dec(nr_down);
+
+	return ret ? -1 : idx;
 }
 
 static struct cpuidle_driver psci_idle_driver __initdata = {
