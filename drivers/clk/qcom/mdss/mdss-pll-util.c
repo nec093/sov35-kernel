@@ -337,6 +337,23 @@ static void mdss_pll_free_bootmem(u32 mem_addr, u32 size)
 		free_reserved_page(pfn_to_page(pfn_idx));
 }
 
+/*
+ * The dfps handoff buffer (DT "memory-region", dfps_data_mem@83400000 on
+ * msm8996) is a bootloader-reserved region that must be copied out and
+ * given back to the page allocator exactly once. mdss_pll_probe() parses
+ * resources before it acquires its regulators, so it is routinely retried
+ * via -EPROBE_DEFER while the gdsc supply isn't registered yet -- and every
+ * retry used to copy from and free_reserved_page() the same, already-freed
+ * page again. free_reserved_page() forces the refcount back to 1, so each
+ * extra call really frees the page again: it ended up on a pcp list while
+ * also sitting in the buddy free lists, and free_pcppages_bulk() later hit
+ * "Bad page state ... nonzero mapcount" / LIST_POISON at that same pfn on
+ * every boot. Keep the first copy and hand it out on later probe attempts.
+ */
+static struct dfps_info *mdss_pll_dfps_cache;
+static u32 mdss_pll_dfps_region_addr;
+static bool mdss_pll_dfps_region_released;
+
 static int mdss_pll_util_parse_dt_dfps(struct platform_device *pdev,
 					struct mdss_pll_resources *pll_res)
 {
@@ -364,6 +381,19 @@ static int mdss_pll_util_parse_dt_dfps(struct platform_device *pdev,
 	offsets[0] = (u32) of_read_ulong(addr, 2);
 	offsets[1] = (u32) size;
 
+	if (mdss_pll_dfps_region_released) {
+		if (offsets[0] != mdss_pll_dfps_region_addr) {
+			pr_err("dfps region %x differs from consumed %x\n",
+				offsets[0], mdss_pll_dfps_region_addr);
+			rc = -EINVAL;
+		} else if (!mdss_pll_dfps_cache) {
+			rc = -ENODATA;
+		} else {
+			pll_res->dfps = mdss_pll_dfps_cache;
+		}
+		goto pnode_err;
+	}
+
 	area = get_vm_area(offsets[1], VM_IOREMAP);
 	if (!area) {
 		rc = -ENOMEM;
@@ -379,14 +409,15 @@ static int mdss_pll_util_parse_dt_dfps(struct platform_device *pdev,
 	}
 
 	pll_res->dfps = kzalloc(sizeof(struct dfps_info), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(pll_res->dfps)) {
-		rc = PTR_ERR(pll_res->dfps);
+	if (!pll_res->dfps) {
+		rc = -ENOMEM;
 		pr_err("couldn't allocate dfps kernel memory\n");
 		goto addr_err;
 	}
 
 	/* memcopy complete dfps structure from kernel virtual memory */
 	memcpy_fromio(pll_res->dfps, area->addr, sizeof(struct dfps_info));
+	mdss_pll_dfps_cache = pll_res->dfps;
 
 addr_err:
 	if (virt_add)
@@ -395,9 +426,11 @@ ioremap_err:
 	if (area)
 		vfree(area->addr);
 dfps_mem_err:
-	/* free the dfps memory here */
+	/* free the dfps memory here -- only ever once, see above */
 	memblock_free(offsets[0], offsets[1]);
 	mdss_pll_free_bootmem(offsets[0], offsets[1]);
+	mdss_pll_dfps_region_addr = offsets[0];
+	mdss_pll_dfps_region_released = true;
 pnode_err:
 	if (pnode)
 		of_node_put(pnode);
