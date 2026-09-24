@@ -123,7 +123,7 @@ struct qcom_pcie_resources_1_0_0 {
 	struct regulator *vdda;
 };
 
-#define QCOM_PCIE_2_3_2_MAX_SUPPLY	2
+#define QCOM_PCIE_2_3_2_MAX_SUPPLY	6
 struct qcom_pcie_resources_2_3_2 {
 	struct clk *aux_clk;
 	struct clk *master_clk;
@@ -591,8 +591,17 @@ static int qcom_pcie_get_resources_2_3_2(struct qcom_pcie *pcie)
 	struct device *dev = pci->dev;
 	int ret;
 
-	res->supplies[0].supply = "vdda";
-	res->supplies[1].supply = "vddpe-3v3";
+	/*
+	 * Sony/CAF MSM8996: the GDSCs (SMMU/aggre0 NoC and PCIe) are
+	 * regulators on downstream kernels and must come up first; vreg-cx is
+	 * the CX corner; vddpe-3v3 powers the endpoint (BCM4359 WL_EN).
+	 */
+	res->supplies[0].supply = "gdsc-smmu";
+	res->supplies[1].supply = "gdsc-vdd";
+	res->supplies[2].supply = "vdda-1p8";
+	res->supplies[3].supply = "vdda";
+	res->supplies[4].supply = "vreg-cx";
+	res->supplies[5].supply = "vddpe-3v3";
 	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(res->supplies),
 				      res->supplies);
 	if (ret)
@@ -1179,9 +1188,19 @@ static int qcom_pcie_host_init(struct pcie_port *pp)
 	if (ret)
 		return ret;
 
-	ret = phy_power_on(pcie->phy);
+	/*
+	 * MSM8996: the QMP PHY lanes only report PHYSTATUS once the
+	 * controller is clocked and PARF has released the PHY
+	 * (PARF_PHY_CTRL test power-down, MAC PHY_POWERDOWN mux), which
+	 * ops->init() does. Initialize the PHY after that, not in probe.
+	 */
+	ret = phy_init(pcie->phy);
 	if (ret)
 		goto err_deinit;
+
+	ret = phy_power_on(pcie->phy);
+	if (ret)
+		goto err_phy_exit;
 
 	if (pcie->ops->post_init) {
 		ret = pcie->ops->post_init(pcie);
@@ -1207,6 +1226,8 @@ err:
 		pcie->ops->post_deinit(pcie);
 err_disable_phy:
 	phy_power_off(pcie->phy);
+err_phy_exit:
+	phy_exit(pcie->phy);
 err_deinit:
 	pcie->ops->deinit(pcie);
 
@@ -1342,22 +1363,17 @@ static int qcom_pcie_probe(struct platform_device *pdev)
 		}
 	}
 
-	ret = phy_init(pcie->phy);
-	if (ret)
-		goto err_pm_runtime_put;
-
+	/* phy_init() happens in qcom_pcie_host_init(), after ops->init() */
 	platform_set_drvdata(pdev, pcie);
 
 	ret = dw_pcie_host_init(pp);
 	if (ret) {
 		dev_err(dev, "cannot initialize host\n");
-		goto err_phy_exit;
+		goto err_pm_runtime_put;
 	}
 
 	return 0;
 
-err_phy_exit:
-	phy_exit(pcie->phy);
 err_pm_runtime_put:
 	pm_runtime_put(dev);
 	pm_runtime_disable(dev);
