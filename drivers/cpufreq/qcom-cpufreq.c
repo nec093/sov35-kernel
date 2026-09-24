@@ -57,17 +57,13 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 
 	freqs.old = policy->cur;
 	freqs.new = new_freq;
-	freqs.cpu = policy->cpu;
 
-	trace_cpu_frequency_switch_start(freqs.old, freqs.new, policy->cpu);
 	cpufreq_freq_transition_begin(policy, &freqs);
 
 	rate = new_freq * 1000;
 	rate = clk_round_rate(cpu_clk[policy->cpu], rate);
 	ret = clk_set_rate(cpu_clk[policy->cpu], rate);
 	cpufreq_freq_transition_end(policy, &freqs, ret);
-	if (!ret)
-		trace_cpu_frequency_switch_end(policy->cpu);
 
 	return ret;
 }
@@ -128,11 +124,9 @@ static unsigned int msm_cpufreq_resolve_freq(struct cpufreq_policy *policy,
 	return freq;
 }
 
-static int msm_cpufreq_verify(struct cpufreq_policy *policy)
+static int msm_cpufreq_verify(struct cpufreq_policy_data *policy)
 {
-	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
-			policy->cpuinfo.max_freq);
-	return 0;
+	return cpufreq_frequency_table_verify(policy, policy->freq_table);
 }
 
 static unsigned int msm_cpufreq_get_freq(unsigned int cpu)
@@ -159,16 +153,23 @@ static int msm_cpufreq_init(struct cpufreq_policy *policy)
 		if (cpu_clk[cpu] == cpu_clk[policy->cpu])
 			cpumask_set_cpu(cpu, policy->cpus);
 
-	ret = cpufreq_table_validate_and_show(policy, table);
-	if (ret) {
-		pr_err("cpufreq: failed to get policy min/max\n");
-		return ret;
-	}
+	/* 5.4: the core validates the table and sets cpuinfo min/max */
+	policy->freq_table = table;
 
 	cur_freq = clk_get_rate(cpu_clk[policy->cpu])/1000;
 
-	index =  cpufreq_frequency_table_target(policy, cur_freq,
-						CPUFREQ_RELATION_H);
+	/*
+	 * policy->min/max are not set up yet at ->init() time on 5.4, so
+	 * cpufreq_frequency_table_target() cannot be used here.
+	 */
+	index = 0;
+	{
+		struct cpufreq_frequency_table *pos;
+
+		cpufreq_for_each_valid_entry(pos, table)
+			if (pos->frequency <= cur_freq)
+				index = pos - table;
+	}
 	/*
 	 * Call set_cpu_freq unconditionally so that when cpu is set to
 	 * online, frequency limit will always be updated.
@@ -310,7 +311,6 @@ static struct freq_attr *msm_freq_attr[] = {
 static void msm_cpufreq_ready(struct cpufreq_policy *policy)
 {
 	struct device_node *np, *lmh_node;
-	unsigned int cpu = 0;
 
 	if (cdev[policy->cpu])
 		return;
@@ -330,22 +330,12 @@ static void msm_cpufreq_ready(struct cpufreq_policy *policy)
 			goto ready_exit;
 		}
 
-		for_each_cpu(cpu, policy->related_cpus) {
-			cpumask_t cpu_mask  = CPU_MASK_NONE;
-
-			of_node_put(np);
-			np = of_cpu_device_node_get(cpu);
-			if (WARN_ON(!np))
-				return;
-
-			cpumask_set_cpu(cpu, &cpu_mask);
-			cdev[cpu] = of_cpufreq_cooling_register(np, &cpu_mask);
-			if (IS_ERR(cdev[cpu])) {
-				pr_err(
-				"running cpufreq for CPU%d without cooling dev: %ld\n",
-				cpu, PTR_ERR(cdev[cpu]));
-				cdev[cpu] = NULL;
-			}
+		/* 5.4: one cooling device per policy (cluster) */
+		cdev[policy->cpu] = of_cpufreq_cooling_register(policy);
+		if (IS_ERR_OR_NULL(cdev[policy->cpu])) {
+			pr_err("running cpufreq for CPU%d without cooling dev: %ld\n",
+			       policy->cpu, PTR_ERR(cdev[policy->cpu]));
+			cdev[policy->cpu] = NULL;
 		}
 	}
 
