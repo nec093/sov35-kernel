@@ -8536,6 +8536,15 @@ static int qseecom_probe(struct platform_device *pdev)
 	struct qseecom_command_scm_resp resp;
 	struct qseecom_ce_info_use *pce_info_use = NULL;
 
+	/*
+	 * The bus client is registered unconditionally further down and a 0
+	 * handle makes every later bandwidth vote (app loads, listener
+	 * registration from qseecomd) fail. msm_bus only probes once the GCC
+	 * fabric clocks exist, so wait for it instead.
+	 */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
 	qseecom.qsee_bw_count = 0;
 	qseecom.qsee_perf_client = 0;
 	qseecom.qsee_sfpb_bw_count = 0;

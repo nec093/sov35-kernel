@@ -1056,6 +1056,10 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 	u32 proxy_timeout, crypto_id;
 	int len, rc;
 
+	/* bus clients registered below stay 0 if msm_bus is not up yet */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
 	d = devm_kzalloc(&pdev->dev, sizeof(*d), GFP_KERNEL);
 	if (!d)
 		return -ENOMEM;
