@@ -330,7 +330,15 @@ static void msm_iommu_map_release(struct kref *kref)
 						ref);
 
 	list_del(&map->lnode);
-	dma_unmap_sg(map->dev, &map->sgl, map->nents, map->dir);
+	/*
+	 * map->sgl is only a copy of the first entry (dma_address/length of
+	 * the whole IOVA range). Unmapping it with CPU sync would walk
+	 * map->nents entries past that single struct and sync garbage
+	 * "pages" (seen as a DABT in __dma_inv_area on camera buffer free);
+	 * the original arm64 arm_iommu_unmap_sg() never synced here either.
+	 */
+	dma_unmap_sg_attrs(map->dev, &map->sgl, map->nents, map->dir,
+			   map->map_attrs | DMA_ATTR_SKIP_CPU_SYNC);
 	kfree(map);
 }
 
