@@ -2059,30 +2059,41 @@ static int regulator_ena_gpio_request(struct regulator_dev *rdev,
 	struct gpio_desc *gpiod;
 	int ret;
 
-	gpiod = gpio_to_desc(config->ena_gpio);
+	/*
+	 * 5.4 drivers (fixed.c, ...) hand over an already requested
+	 * descriptor in config->ena_gpiod; the core takes ownership of it.
+	 * The CAF raw-number config->ena_gpio path is kept for older drivers.
+	 */
+	if (config->ena_gpiod)
+		gpiod = config->ena_gpiod;
+	else
+		gpiod = gpio_to_desc(config->ena_gpio);
 
 	list_for_each_entry(pin, &regulator_ena_gpio_list, list) {
 		if (pin->gpiod == gpiod) {
-			rdev_dbg(rdev, "GPIO %d is already used\n",
-				config->ena_gpio);
+			rdev_dbg(rdev, "enable GPIO is already used\n");
 			goto update_ena_gpio_to_rdev;
 		}
 	}
 
-	ret = gpio_request_one(config->ena_gpio,
-				GPIOF_DIR_OUT | config->ena_gpio_flags,
-				rdev_get_name(rdev));
-	if (ret)
-		return ret;
+	if (!config->ena_gpiod) {
+		ret = gpio_request_one(config->ena_gpio,
+					GPIOF_DIR_OUT | config->ena_gpio_flags,
+					rdev_get_name(rdev));
+		if (ret)
+			return ret;
+	}
 
 	pin = kzalloc(sizeof(struct regulator_enable_gpio), GFP_KERNEL);
 	if (pin == NULL) {
-		gpio_free(config->ena_gpio);
+		if (!config->ena_gpiod)
+			gpio_free(config->ena_gpio);
 		return -ENOMEM;
 	}
 
 	pin->gpiod = gpiod;
-	pin->ena_gpio_invert = config->ena_gpio_invert;
+	/* a descriptor already carries its active-low flag */
+	pin->ena_gpio_invert = config->ena_gpiod ? 0 : config->ena_gpio_invert;
 	list_add(&pin->list, &regulator_ena_gpio_list);
 
 update_ena_gpio_to_rdev:
@@ -4570,8 +4581,9 @@ regulator_register(const struct regulator_desc *regulator_desc,
 			goto clean;
 	}
 
-	if ((config->ena_gpio || config->ena_gpio_initialized) &&
-	    gpio_is_valid(config->ena_gpio)) {
+	if (config->ena_gpiod ||
+	    ((config->ena_gpio || config->ena_gpio_initialized) &&
+	     gpio_is_valid(config->ena_gpio))) {
 		mutex_lock(&regulator_list_mutex);
 		ret = regulator_ena_gpio_request(rdev, config);
 		mutex_unlock(&regulator_list_mutex);
