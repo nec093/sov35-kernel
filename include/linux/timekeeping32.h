@@ -11,6 +11,19 @@ static inline unsigned long get_seconds(void)
 	return ktime_get_real_seconds();
 }
 
+/*
+ * CAF addition: do_gettimeofday() was removed in 5.0; the msm camera/video
+ * drivers still fill struct timeval fields of their uapi structs with it.
+ */
+static inline void do_gettimeofday(struct timeval *tv)
+{
+	struct timespec64 ts64;
+
+	ktime_get_real_ts64(&ts64);
+	tv->tv_sec = ts64.tv_sec;
+	tv->tv_usec = ts64.tv_nsec / NSEC_PER_USEC;
+}
+
 static inline void getnstimeofday(struct timespec *ts)
 {
 	struct timespec64 ts64;

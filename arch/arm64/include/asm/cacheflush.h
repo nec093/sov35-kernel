@@ -117,6 +117,20 @@ extern void __dma_unmap_area(const void *, size_t, int);
 extern void __dma_flush_area(const void *, size_t);
 
 /*
+ * CAF: range-based cache maintenance used by msm drivers (camera, kgsl,
+ * qseecom, ...). __inval_dcache_area/__clean_dcache_area_poc are the
+ * global entry points of __dma_inv_area/__dma_clean_area.
+ */
+#define dmac_flush_range(start, end) \
+	__dma_flush_area((const void *)(start), \
+			 (void *)(end) - (void *)(start))
+#define dmac_inv_range(start, end) \
+	__inval_dcache_area((void *)(start), (void *)(end) - (void *)(start))
+#define dmac_clean_range(start, end) \
+	__clean_dcache_area_poc((void *)(start), \
+				(void *)(end) - (void *)(start))
+
+/*
  * Copy user data from/to a page which is mapped into a different
  * processes address space.  Really, we want to allow our "user
  * space" model to handle this.
