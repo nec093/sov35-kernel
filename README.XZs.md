@@ -25,8 +25,10 @@ partition.
 | Video codec (vidc), rotator | not yet |
 | Audio, ADSP | not yet |
 | Sensor hub (SLPI), modem | not yet (also offline on the stock 4.9 kernel here) |
-| Bluetooth, fingerprint, NFC | not yet |
-| cpuidle low-power modes, LMH | not yet |
+| Fingerprint (FPC1145) | kernel driver probes, the HAL talks to the sensor; enrolment not reachable from the GSI settings |
+| Bluetooth, NFC | not yet |
+| cpuidle (PSCI: core power collapse, L2 retention) | working; L2 power collapse not enabled yet |
+| LMH | not yet |
 
 ## Build
 
@@ -82,5 +84,6 @@ GSI を stock の vendor パーティションのまま起動できます(SOV35 
 - ビルド: `scripts/xzs/build.sh`(Ubuntu 22.04 の `gcc-aarch64-linux-gnu` で確認)
 - ブートイメージ: 各自の端末の **Magisk パッチ済み** boot.img から ramdisk を取り出し、
   `scripts/xzs/add-overlay.sh` で設定を追加してから、`scripts/xzs/mkbootimg.sh` で作成します。
-- 動作状況は上の表のとおりです(カメラ・Wi-Fi・電池・CPU クロック制御・ストレージは動作、
-  動画コーデック・音声・センサーハブ・Bluetooth・指紋などは未対応)。
+- 動作状況は上の表のとおりです(カメラ・Wi-Fi・電池・CPU クロック制御・cpuidle・
+  ストレージは動作、動画コーデック・音声・センサーハブ・Bluetooth などは未対応、
+  指紋はドライバのみ動作)。
