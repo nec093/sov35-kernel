@@ -2338,6 +2338,14 @@ static int sdhci_msm_bus_register(struct sdhci_msm_host *host,
 		host->pdata->voting_data->bw_vecs_size) {
 
 		bus_pdata = host->pdata->voting_data->bus_pdata;
+		/*
+		 * msm_bus itself probe-defers until its fabric clocks are
+		 * registered; wait for it rather than failing for good.
+		 */
+		if (!msm_bus_scale_driver_ready()) {
+			rc = -EPROBE_DEFER;
+			goto out;
+		}
 		host->msm_bus_vote.client_handle =
 				msm_bus_scale_register_client(bus_pdata);
 		if (!host->msm_bus_vote.client_handle) {

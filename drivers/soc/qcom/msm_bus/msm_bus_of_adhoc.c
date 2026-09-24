@@ -683,13 +683,40 @@ static int get_bus_node_device_data(
 	return 0;
 }
 
+static void msm_bus_of_put_clk(struct nodeclk *nclk)
+{
+	if (!IS_ERR_OR_NULL(nclk->clk))
+		clk_put(nclk->clk);
+	nclk->clk = NULL;
+}
+
+/* Drop the clk references get_bus_node_device_data() took for a node. */
+static void msm_bus_of_put_node_clks(struct msm_bus_node_device_type *node)
+{
+	int ctx;
+	uint32_t i;
+
+	for (ctx = 0; ctx < NUM_CTX; ctx++)
+		msm_bus_of_put_clk(&node->clk[ctx]);
+	msm_bus_of_put_clk(&node->bus_qos_clk);
+	for (i = 0; node->node_qos_clks && i < node->num_node_qos_clks; i++)
+		msm_bus_of_put_clk(&node->node_qos_clks[i]);
+}
+
+/*
+ * Returns ERR_PTR(-EPROBE_DEFER) when a fabric's bus clock provider isn't
+ * registered yet. On this port the GCC/MMCC providers are platform drivers
+ * that bind well after this fs_initcall driver first probes; turning that
+ * into a hard failure left msm_bus permanently unregistered, so every
+ * msm_bus_scale_register_client() user (sdhci, usb, ...) failed for good.
+ */
 struct msm_bus_device_node_registration
 	*msm_bus_of_to_pdata(struct platform_device *pdev)
 {
 	struct device_node *of_node, *child_node;
 	struct msm_bus_device_node_registration *pdata;
 	unsigned int i = 0, j;
-	unsigned int ret;
+	int ret;
 
 	if (!pdev) {
 		pr_err("Error: Null platform device\n");
@@ -724,7 +751,9 @@ struct msm_bus_device_node_registration
 		ret = get_bus_node_device_data(child_node, pdev,
 				&pdata->info[i]);
 		if (ret) {
-			dev_err(&pdev->dev, "Error: unable to initialize bus nodes\n");
+			if (ret != -EPROBE_DEFER)
+				dev_err(&pdev->dev, "Error: unable to initialize bus nodes\n");
+			of_node_put(child_node);
 			goto node_reg_err_1;
 		}
 		pdata->info[i].of_node = child_node;
@@ -760,10 +789,14 @@ struct msm_bus_device_node_registration
 	return pdata;
 
 node_reg_err_1:
+	/* node i failed part-way and may hold clk references too */
+	for (j = 0; j <= i; j++)
+		msm_bus_of_put_node_clks(&pdata->info[j]);
 	devm_kfree(&pdev->dev, pdata->info);
+	devm_kfree(&pdev->dev, pdata);
+	return ERR_PTR(ret);
 node_reg_err:
 	devm_kfree(&pdev->dev, pdata);
-	pdata = NULL;
 	return NULL;
 }
 

@@ -1135,7 +1135,8 @@ int msm_bus_device_remove(struct platform_device *pdev)
 
 static int msm_bus_device_probe(struct platform_device *pdev)
 {
-	unsigned int i, ret;
+	unsigned int i;
+	int ret;
 	struct msm_bus_device_node_registration *pdata;
 
 	/* If possible, get pdata from device-tree */
@@ -1146,7 +1147,14 @@ static int msm_bus_device_probe(struct platform_device *pdev)
 			dev.platform_data;
 	}
 
-	if (IS_ERR_OR_NULL(pdata)) {
+	/* keep -EPROBE_DEFER (bus clk provider not registered yet) */
+	if (IS_ERR(pdata)) {
+		ret = PTR_ERR(pdata);
+		if (ret != -EPROBE_DEFER)
+			MSM_BUS_ERR("No platform data found");
+		goto exit_device_probe;
+	}
+	if (!pdata) {
 		MSM_BUS_ERR("No platform data found");
 		ret = -ENODATA;
 		goto exit_device_probe;
