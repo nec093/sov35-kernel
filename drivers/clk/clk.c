@@ -21,6 +21,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/sched.h>
 #include <linux/clkdev.h>
+#include <linux/regulator/consumer.h>
 
 #include "clk.h"
 
@@ -94,7 +95,17 @@ struct clk_core {
 	struct hlist_node	debug_node;
 #endif
 	struct kref		ref;
+	struct clk_vdd_class	*vdd_class;
+	unsigned long		*rate_max;
+	int			num_rate_max;
 };
+
+struct clk_handoff_vdd {
+	struct list_head list;
+	struct clk_vdd_class *vdd_class;
+};
+
+static LIST_HEAD(clk_handoff_vdd_list);
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/clk.h>
@@ -952,6 +963,265 @@ int clk_rate_exclusive_get(struct clk *clk)
 }
 EXPORT_SYMBOL_GPL(clk_rate_exclusive_get);
 
+/*
+ * CAF voltage scaling: clocks carrying a clk_vdd_class vote for the voltage
+ * level their current rate needs whenever they are prepared, and move that
+ * vote before/after every rate change. Without this, the MSM8996 CPU/CBF
+ * clocks get raised to their boot rates while CPR keeps the rails wherever
+ * the bootloader left them.
+ */
+
+/*
+ *  Find the voltage level required for a given clock rate.
+ */
+static int clk_find_vdd_level(struct clk_core *clk, unsigned long rate)
+{
+	int level;
+
+	/*
+	 * For certain PLLs, due to the limitation in the bits allocated for
+	 * programming the fractional divider, the actual rate of the PLL will
+	 * be slightly higher than the requested rate (in the order of several
+	 * Hz). To accommodate this difference, convert the FMAX rate and the
+	 * clock frequency to KHz and use that for deriving the voltage level.
+	 */
+	for (level = 0; level < clk->num_rate_max; level++)
+		if (DIV_ROUND_CLOSEST(rate, 1000) <=
+				DIV_ROUND_CLOSEST(clk->rate_max[level], 1000))
+			break;
+
+	if (level == clk->num_rate_max) {
+		pr_err("Rate %lu for %s is greater than highest Fmax\n", rate,
+				clk->name);
+		return -EINVAL;
+	}
+
+	return level;
+}
+
+/*
+ * Update voltage level given the current votes.
+ */
+static int clk_update_vdd(struct clk_vdd_class *vdd_class)
+{
+	int level, rc = 0, i, ignore;
+	struct regulator **r = vdd_class->regulator;
+	int *uv = vdd_class->vdd_uv;
+	int n_reg = vdd_class->num_regulators;
+	int cur_lvl = vdd_class->cur_level;
+	int max_lvl = vdd_class->num_levels - 1;
+	int cur_base = cur_lvl * n_reg;
+	int new_base;
+
+	/* aggregate votes */
+	for (level = max_lvl; level > 0; level--)
+		if (vdd_class->level_votes[level])
+			break;
+
+	if (level == cur_lvl)
+		return 0;
+
+	max_lvl = max_lvl * n_reg;
+	new_base = level * n_reg;
+
+	for (i = 0; i < vdd_class->num_regulators; i++) {
+		pr_debug("Set Voltage level Min %d, Max %d\n", uv[new_base + i],
+				uv[max_lvl + i]);
+		rc = regulator_set_voltage(r[i], uv[new_base + i],
+			vdd_class->use_max_uV ? INT_MAX : uv[max_lvl + i]);
+		if (rc)
+			goto set_voltage_fail;
+
+		if (cur_lvl == 0 || cur_lvl == vdd_class->num_levels)
+			rc = regulator_enable(r[i]);
+		else if (level == 0)
+			rc = regulator_disable(r[i]);
+		if (rc)
+			goto enable_disable_fail;
+	}
+
+	if (vdd_class->set_vdd && !vdd_class->num_regulators)
+		rc = vdd_class->set_vdd(vdd_class, level);
+
+	if (!rc)
+		vdd_class->cur_level = level;
+
+	return rc;
+
+enable_disable_fail:
+	regulator_set_voltage(r[i], uv[cur_base + i],
+			vdd_class->use_max_uV ? INT_MAX : uv[max_lvl + i]);
+
+set_voltage_fail:
+	for (i--; i >= 0; i--) {
+		regulator_set_voltage(r[i], uv[cur_base + i],
+		       vdd_class->use_max_uV ? INT_MAX : uv[max_lvl + i]);
+		if (cur_lvl == 0 || cur_lvl == vdd_class->num_levels)
+			regulator_disable(r[i]);
+		else if (level == 0)
+			ignore = regulator_enable(r[i]);
+	}
+
+	return rc;
+}
+
+/*
+ * A vdd_class can only be voted on once its driver filled in the regulators
+ * (and, for DEFINE_VDD_REGS_INIT classes, the level tables from DT).
+ */
+static bool clk_vdd_class_ready(struct clk_vdd_class *vdd_class)
+{
+	int i;
+
+	if (!vdd_class->level_votes || vdd_class->num_levels <= 0)
+		return false;
+	if (vdd_class->num_regulators && !vdd_class->vdd_uv)
+		return false;
+	for (i = 0; i < vdd_class->num_regulators; i++)
+		if (IS_ERR_OR_NULL(vdd_class->regulator[i]))
+			return false;
+	return vdd_class->num_regulators || vdd_class->set_vdd;
+}
+
+/*
+ *  Vote for a voltage level.
+ */
+static int clk_vote_vdd_level(struct clk_vdd_class *vdd_class, int level)
+{
+	int rc = 0;
+
+	if (level >= vdd_class->num_levels)
+		return -EINVAL;
+
+	if (!clk_vdd_class_ready(vdd_class)) {
+		WARN_ONCE(1, "clk: vote on uninitialized vdd_class %s\n",
+			  vdd_class->class_name);
+		return 0;
+	}
+
+	mutex_lock(&vdd_class->lock);
+
+	vdd_class->level_votes[level]++;
+
+	rc = clk_update_vdd(vdd_class);
+	if (rc)
+		vdd_class->level_votes[level]--;
+
+	mutex_unlock(&vdd_class->lock);
+
+	return rc;
+}
+
+/*
+ * Remove vote for a voltage level.
+ */
+static int clk_unvote_vdd_level(struct clk_vdd_class *vdd_class, int level)
+{
+	int rc = 0;
+
+	if (level >= vdd_class->num_levels)
+		return -EINVAL;
+
+	if (!clk_vdd_class_ready(vdd_class))
+		return 0;
+
+	mutex_lock(&vdd_class->lock);
+
+	if (WARN(!vdd_class->level_votes[level],
+				"Reference counts are incorrect for %s level %d\n",
+				vdd_class->class_name, level))
+		goto out;
+
+	vdd_class->level_votes[level]--;
+
+	rc = clk_update_vdd(vdd_class);
+	if (rc)
+		vdd_class->level_votes[level]++;
+
+out:
+	mutex_unlock(&vdd_class->lock);
+	return rc;
+}
+
+/*
+ * Vote for a voltage level corresponding to a clock's rate.
+ */
+static int clk_vote_rate_vdd(struct clk_core *core, unsigned long rate)
+{
+	int level;
+
+	if (!core->vdd_class)
+		return 0;
+
+	level = clk_find_vdd_level(core, rate);
+	if (level < 0)
+		return level;
+
+	return clk_vote_vdd_level(core->vdd_class, level);
+}
+
+/*
+ * Remove vote for a voltage level corresponding to a clock's rate.
+ */
+static void clk_unvote_rate_vdd(struct clk_core *core, unsigned long rate)
+{
+	int level;
+
+	if (!core->vdd_class)
+		return;
+
+	level = clk_find_vdd_level(core, rate);
+	if (level < 0)
+		return;
+
+	clk_unvote_vdd_level(core->vdd_class, level);
+}
+
+static bool clk_is_rate_level_valid(struct clk_core *core, unsigned long rate)
+{
+	int level;
+
+	if (!core->vdd_class)
+		return true;
+
+	level = clk_find_vdd_level(core, rate);
+
+	return level >= 0;
+}
+
+/*
+ * Until clk_disable_unused(), hold every vdd_class at its highest level so
+ * nothing the bootloader left running is undervolted before its consumers
+ * have probed and voted.
+ */
+static int clk_vdd_class_init(struct clk_vdd_class *vdd)
+{
+	struct clk_handoff_vdd *v;
+
+	if (vdd->skip_handoff || !clk_vdd_class_ready(vdd))
+		return 0;
+
+	list_for_each_entry(v, &clk_handoff_vdd_list, list) {
+		if (v->vdd_class == vdd)
+			return 0;
+	}
+
+	pr_debug("voting for vdd_class %s\n", vdd->class_name);
+
+	if (clk_vote_vdd_level(vdd, vdd->num_levels - 1))
+		pr_err("failed to vote for %s\n", vdd->class_name);
+
+	v = kmalloc(sizeof(*v), GFP_KERNEL);
+	if (!v)
+		return -ENOMEM;
+
+	v->vdd_class = vdd;
+
+	list_add_tail(&v->list, &clk_handoff_vdd_list);
+
+	return 0;
+}
+
 static void clk_core_unprepare(struct clk_core *core)
 {
 	lockdep_assert_held(&prepare_lock);
@@ -981,6 +1251,7 @@ static void clk_core_unprepare(struct clk_core *core)
 		core->ops->unprepare(core->hw);
 
 	trace_clk_unprepare_complete(core);
+	clk_unvote_rate_vdd(core, core->rate);
 	clk_core_unprepare(core->parent);
 	clk_pm_runtime_put(core);
 }
@@ -1032,13 +1303,19 @@ static int clk_core_prepare(struct clk_core *core)
 
 		trace_clk_prepare(core);
 
+		ret = clk_vote_rate_vdd(core, core->rate);
+		if (ret)
+			goto unprepare;
+
 		if (core->ops->prepare)
 			ret = core->ops->prepare(core->hw);
 
 		trace_clk_prepare_complete(core);
 
-		if (ret)
+		if (ret) {
+			clk_unvote_rate_vdd(core, core->rate);
 			goto unprepare;
+		}
 	}
 
 	core->prepare_count++;
@@ -1413,6 +1690,7 @@ __setup("clk_ignore_unused", clk_ignore_unused_setup);
 static int clk_disable_unused(void)
 {
 	struct clk_core *core;
+	struct clk_handoff_vdd *v, *v_temp;
 	int ret;
 
 	if (clk_ignore_unused) {
@@ -1442,6 +1720,13 @@ static int clk_disable_unused(void)
 
 	hlist_for_each_entry(core, &clk_orphan_list, child_node)
 		clk_unprepare_unused_subtree(core);
+
+	list_for_each_entry_safe(v, v_temp, &clk_handoff_vdd_list, list) {
+		clk_unvote_vdd_level(v->vdd_class,
+				v->vdd_class->num_levels - 1);
+		list_del(&v->list);
+		kfree(v);
+	}
 
 	clk_prepare_unlock();
 
@@ -2106,6 +2391,9 @@ static struct clk_core *clk_calc_new_rates(struct clk_core *core,
 		top = clk_calc_new_rates(parent, best_parent_rate);
 
 out:
+	if (!clk_is_rate_level_valid(core, rate))
+		return NULL;
+
 	clk_calc_subtree(core, new_rate, parent, p_index);
 
 	return top;
@@ -2186,6 +2474,22 @@ static void clk_change_rate(struct clk_core *core)
 		clk_enable_unlock(flags);
 	}
 
+	/* Enforce vdd requirements for new frequency. */
+	if (core->prepare_count && clk_vote_rate_vdd(core, core->new_rate)) {
+		pr_err("clk: %s: vdd vote for %lu failed, rate unchanged\n",
+		       core->name, core->new_rate);
+		if (core->flags & CLK_SET_RATE_UNGATE) {
+			unsigned long flags;
+
+			flags = clk_enable_lock();
+			clk_core_disable(core);
+			clk_enable_unlock(flags);
+			clk_core_unprepare(core);
+		}
+		clk_pm_runtime_put(core);
+		return;
+	}
+
 	if (core->new_parent && core->new_parent != core->parent) {
 		old_parent = __clk_set_parent_before(core, core->new_parent);
 		trace_clk_set_parent(core, core->new_parent);
@@ -2212,6 +2516,10 @@ static void clk_change_rate(struct clk_core *core)
 		core->ops->set_rate(core->hw, core->new_rate, best_parent_rate);
 
 	trace_clk_set_rate_complete(core, core->new_rate);
+
+	/* Release vdd requirements for old frequency. */
+	if (core->prepare_count)
+		clk_unvote_rate_vdd(core, old_rate);
 
 	core->rate = clk_recalc(core, best_parent_rate);
 
@@ -3908,10 +4216,21 @@ __clk_register(struct device *dev, struct device_node *np, struct clk_hw *hw)
 	core->num_parents = init->num_parents;
 	core->min_rate = 0;
 	core->max_rate = ULONG_MAX;
+	core->vdd_class = init->vdd_class;
+	core->rate_max = init->rate_max;
+	core->num_rate_max = init->num_rate_max;
 
 	ret = clk_core_populate_parent_map(core, init);
 	if (ret)
 		goto fail_parents;
+
+	if (core->vdd_class) {
+		ret = clk_vdd_class_init(core->vdd_class);
+		if (ret) {
+			pr_err("Failed to initialize vdd class\n");
+			goto fail_create_clk;
+		}
+	}
 
 	INIT_HLIST_HEAD(&core->clks);
 
