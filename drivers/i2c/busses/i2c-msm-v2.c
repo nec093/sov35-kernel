@@ -19,7 +19,8 @@
  * I2C controller driver for Qualcomm Technologies Inc platforms
  */
 
-#define pr_fmt(fmt) "#%d " fmt "\n", __LINE__
+/* no __LINE__ argument: 5.4 dev_fmt() expects a single format */
+#define pr_fmt(fmt) "i2c-msm-v2: " fmt "\n"
 
 #include <linux/module.h>
 #include <linux/clk.h>
@@ -27,6 +28,7 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/mutex.h>
