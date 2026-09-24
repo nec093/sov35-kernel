@@ -38,7 +38,7 @@ static inline bool is_device_dma_coherent(struct device *dev)
  * struct msm_iommu_map - represents a mapping of an ion buffer to an iommu
  * @lnode - list node to exist in the buffer's list of iommu mappings
  * @dev - Device this is mapped to. Used as key
- * @sgl - The scatterlist for this mapping
+ * @sgl - Copy of the full scatterlist of this mapping (all @nents entries)
  * @nents - Number of entries in sgl
  * @dir - The direction for the map.
  * @meta - Backpointer to the meta this guy belongs to.
@@ -54,7 +54,7 @@ struct msm_iommu_map {
 	struct list_head lnode;
 	struct rb_node node;
 	struct device *dev;
-	struct scatterlist sgl;
+	struct scatterlist *sgl;
 	unsigned int nents;
 	enum dma_data_direction dir;
 	struct msm_iommu_meta *meta;
@@ -209,12 +209,38 @@ static inline int __msm_dma_map_sg(struct device *dev, struct scatterlist *sg,
 			goto out_unlock;
 		}
 
+		/*
+		 * Keep a copy of every entry: the final unmap walks all
+		 * @nents entries (dma-direct devices always, and the IOMMU
+		 * path when syncing), and a reused dma-direct mapping needs
+		 * each entry's own dma_address, not just the first one.
+		 */
+		iommu_map->sgl = kmalloc_array(nents, sizeof(*iommu_map->sgl),
+					       GFP_KERNEL);
+		if (!iommu_map->sgl) {
+			dma_unmap_sg_attrs(dev, sg, nents, dir,
+					   attrs | DMA_ATTR_SKIP_CPU_SYNC);
+			kfree(iommu_map);
+			ret = -ENOMEM;
+			goto out_unlock;
+		}
+		sg_init_table(iommu_map->sgl, nents);
+		{
+			struct scatterlist *s;
+			int i;
+
+			for_each_sg(sg, s, nents, i) {
+				sg_set_page(&iommu_map->sgl[i], sg_page(s),
+					    s->length, s->offset);
+				iommu_map->sgl[i].dma_address = s->dma_address;
+				sg_dma_len(&iommu_map->sgl[i]) = sg_dma_len(s);
+			}
+		}
+
 		kref_init(&iommu_map->ref);
 		if (late_unmap)
 			kref_get(&iommu_map->ref);
 		iommu_map->meta = iommu_meta;
-		iommu_map->sgl.dma_address = sg->dma_address;
-		iommu_map->sgl.dma_length = sg->dma_length;
 		iommu_map->dev = dev;
 		iommu_map->dir = dir;
 		iommu_map->nents = nents;
@@ -227,8 +253,13 @@ static inline int __msm_dma_map_sg(struct device *dev, struct scatterlist *sg,
 		    dir == iommu_map->dir &&
 		    attrs == iommu_map->map_attrs &&
 		    sg_phys(sg) == iommu_map->buf_start_addr) {
-			sg->dma_address = iommu_map->sgl.dma_address;
-			sg->dma_length = iommu_map->sgl.dma_length;
+			struct scatterlist *s;
+			int i;
+
+			for_each_sg(sg, s, nents, i) {
+				s->dma_address = iommu_map->sgl[i].dma_address;
+				sg_dma_len(s) = sg_dma_len(&iommu_map->sgl[i]);
+			}
 
 			kref_get(&iommu_map->ref);
 			if (is_device_dma_coherent(dev))
@@ -331,14 +362,12 @@ static void msm_iommu_map_release(struct kref *kref)
 
 	list_del(&map->lnode);
 	/*
-	 * map->sgl is only a copy of the first entry (dma_address/length of
-	 * the whole IOVA range). Unmapping it with CPU sync would walk
-	 * map->nents entries past that single struct and sync garbage
-	 * "pages" (seen as a DABT in __dma_inv_area on camera buffer free);
-	 * the original arm64 arm_iommu_unmap_sg() never synced here either.
+	 * No CPU sync on the final unmap (as on CAF: the buffer is being
+	 * freed); map->sgl is a full copy of the mapped list.
 	 */
-	dma_unmap_sg_attrs(map->dev, &map->sgl, map->nents, map->dir,
+	dma_unmap_sg_attrs(map->dev, map->sgl, map->nents, map->dir,
 			   map->map_attrs | DMA_ATTR_SKIP_CPU_SYNC);
+	kfree(map->sgl);
 	kfree(map);
 }
 
