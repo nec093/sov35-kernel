@@ -1288,8 +1288,9 @@ static int alpha_trion_pll_set_rate(struct clk_hw *hw, unsigned long rate,
 
 	is_enabled = clk_hw_is_enabled(hw);
 
+	/* hw->init (and so init->ops) is NULL after registration on 5.4 */
 	if (is_enabled)
-		hw->init->ops->disable(hw);
+		alpha_trion_pll_disable(hw);
 
 	regmap_write(pll->clkr.regmap, PLL_L_VAL(pll), l);
 	regmap_write(pll->clkr.regmap, PLL_ALPHA_VAL(pll), a);
@@ -1307,7 +1308,7 @@ static int alpha_trion_pll_set_rate(struct clk_hw *hw, unsigned long rate,
 		alpha_pll_trion_latch_l(pll);
 
 	if (is_enabled)
-		hw->init->ops->enable(hw);
+		alpha_trion_pll_enable(hw);
 
 	/* Wait for PLL output to stabilize */
 	udelay(100);
@@ -1455,7 +1456,7 @@ static int clk_alpha_pll_calibrate(struct clk_hw *hw)
 			&l, &a, alpha_width);
 
 	pr_debug("pll %s: setting back to required rate %lu, freq_hz %ld\n",
-				hw->init->name, clk_hw_get_rate(hw), freq_hz);
+				clk_hw_get_name(hw), clk_hw_get_rate(hw), freq_hz);
 
 	/* Setup the PLL for the new frequency */
 	a <<= (ALPHA_REG_BITWIDTH - ALPHA_BITWIDTH);

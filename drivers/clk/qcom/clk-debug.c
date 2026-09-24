@@ -283,7 +283,8 @@ EXPORT_SYMBOL(clk_debug_measure_add);
 int clk_debug_measure_register(struct clk_hw *hw)
 {
 	if (IS_ERR_OR_NULL(measure)) {
-		if (hw->init->flags & CLK_IS_MEASURE) {
+		/* hw->init is NULL after registration on 5.4 */
+		if (clk_hw_get_flags(hw) & CLK_IS_MEASURE) {
 			measure = hw;
 			return 0;
 		}

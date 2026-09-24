@@ -388,7 +388,8 @@ EXPORT_SYMBOL_GPL(clk_branch2_ops);
 static int clk_branch2_hw_ctl_set_rate(struct clk_hw *hw, unsigned long rate,
 		unsigned long parent_rate)
 {
-	if (!(hw->init->flags & CLK_SET_RATE_PARENT)) {
+	/* hw->init is NULL after registration on 5.4 */
+	if (!(clk_hw_get_flags(hw) & CLK_SET_RATE_PARENT)) {
 		pr_err("SET_RATE_PARENT flag needs to be set for %s\n",
 					clk_hw_get_name(hw));
 		return -EINVAL;

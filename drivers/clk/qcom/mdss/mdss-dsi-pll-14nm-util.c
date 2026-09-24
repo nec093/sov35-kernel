@@ -1108,7 +1108,12 @@ int pll_vco_prepare_14nm(struct clk_hw *hw)
 
 	if ((pll->vco_cached_rate != 0)
 	    && (pll->vco_cached_rate == clk_hw_get_rate(hw))) {
-		rc = hw->init->ops->set_rate(hw, pll->vco_cached_rate,
+		/*
+		 * Was hw->init->ops->set_rate(); hw->init is NULL after
+		 * registration on 5.4. Only the main 14nm VCO uses this
+		 * prepare op (the shadow VCO has no .prepare).
+		 */
+		rc = pll_vco_set_rate_14nm(hw, pll->vco_cached_rate,
 						pll->vco_cached_rate);
 		if (rc) {
 			pr_err("index=%d vco_set_rate failed. rc=%d\n",

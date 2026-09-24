@@ -770,9 +770,11 @@ EXPORT_SYMBOL_GPL(clk_hw_set_rate_range);
  * child node which requests for clk_aggregate_rate.
  *
  * CAF addition (used by drivers/clk/qcom/clk-branch.c and
- * clk-voter.c-style CAF clock voting), ported to the 5.4 clk core
- * unmodified -- struct clk_core's children/child_node/enable_count/
- * name/rate fields are unchanged from 4.14.
+ * clk-voter.c-style CAF clock voting). The 4.14 version skipped the
+ * requesting clock by comparing names through hw->init->name, but the
+ * 5.4 core sets hw->init to NULL once registration finishes, which made
+ * every call a NULL dereference (first hit via msm_bus bandwidth votes
+ * reaching voter_clk_set_rate()). Compare the clk_core itself instead.
  */
 unsigned long clk_aggregate_rate(struct clk_hw *hw,
 					const struct clk_core *parent)
@@ -781,8 +783,7 @@ unsigned long clk_aggregate_rate(struct clk_hw *hw,
 	unsigned long aggre_rate = 0;
 
 	hlist_for_each_entry(child, &parent->children, child_node) {
-		if (child->enable_count &&
-				strcmp(child->name, hw->init->name))
+		if (child->enable_count && child != hw->core)
 			aggre_rate = max(child->rate, aggre_rate);
 	}
 
