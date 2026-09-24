@@ -74,6 +74,12 @@
 /* DMA_ATTR_SKIP_ZEROING: Do not zero mapping. */
 #define DMA_ATTR_SKIP_ZEROING		(1UL << 10)
 /* DMA_ATTR_EXEC_MAPPING: The mapping has executable permissions. */
+/*
+ * DMA_ATTR_NO_DELAYED_UNMAP: Used by msm specific lazy mapping to indicate
+ * that the mapping can be freed on unmap, rather than when the ion_buffer
+ * is freed.
+ */
+#define DMA_ATTR_NO_DELAYED_UNMAP	(1UL << 11)
 #define DMA_ATTR_EXEC_MAPPING		(1UL << 12)
 /*
  * When passed to a DMA map call the DMA_ATTR_FORCE_COHERENT DMA

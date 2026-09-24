@@ -531,6 +531,9 @@ static int arm_iommu_map_sg(struct device *dev, struct scatterlist *sg,
 
 	ret = iommu_map_sg(mapping->domain, iova, sg, nents, prot);
 	if (ret != total_length) {
+		dev_err_ratelimited(dev, "iommu_map_sg(iova %pad, %d ents, %u bytes, prot %#x) mapped %zu, sg0 off %u len %u phys %pa\n",
+			&iova, nents, total_length, prot, ret, sg->offset,
+			sg->length, &(phys_addr_t){ sg_phys(sg) });
 		__free_iova(mapping, iova, total_length);
 		return 0;
 	}
