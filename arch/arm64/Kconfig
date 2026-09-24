@@ -194,6 +194,15 @@ config 64BIT
 config MMU
 	def_bool y
 
+config ARM64_DMA_USE_IOMMU
+	bool "CAF arm_iommu_* DMA mapping API"
+	depends on IOMMU_API
+	help
+	  Provide the arm_iommu_create_mapping()/arm_iommu_attach_device()
+	  API used by the Qualcomm MSM multimedia drivers (display, rotator,
+	  video, camera, fastrpc) to run DMA through a driver-owned IOMMU
+	  domain instead of the iommu-dma default domain.
+
 config ARM64_PAGE_SHIFT
 	int
 	default 16 if ARM64_64K_PAGES

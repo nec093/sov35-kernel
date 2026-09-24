@@ -31,6 +31,8 @@ struct dma_iommu_mapping {
 
 #ifdef CONFIG_ARM64_DMA_USE_IOMMU
 
+#define to_dma_iommu_mapping(dev) ((dev)->archdata.mapping)
+
 struct dma_iommu_mapping *
 arm_iommu_create_mapping(struct bus_type *bus, dma_addr_t base, size_t size);
 
@@ -41,6 +43,8 @@ int arm_iommu_attach_device(struct device *dev,
 void arm_iommu_detach_device(struct device *dev);
 
 #else  /* !CONFIG_ARM64_DMA_USE_IOMMU */
+
+#define to_dma_iommu_mapping(dev) NULL
 
 static inline struct dma_iommu_mapping *
 arm_iommu_create_mapping(struct bus_type *bus, dma_addr_t base, size_t size)
