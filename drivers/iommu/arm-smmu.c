@@ -1496,6 +1496,18 @@ static int arm_smmu_domain_set_attr(struct iommu_domain *domain,
 			else
 				smmu_domain->stage = ARM_SMMU_DOMAIN_S1;
 			break;
+		/*
+		 * CAF attributes the MSM display driver sets on its domains.
+		 * EARLY_MAP only matters for continuous-splash handoff, which a
+		 * domain with no live mappings doesn't need. There is no
+		 * hypervisor VMID assignment here, so a "secure" domain is just
+		 * an ordinary one; content-protected buffers cannot be used.
+		 */
+		case DOMAIN_ATTR_EARLY_MAP:
+			break;
+		case DOMAIN_ATTR_SECURE_VMID:
+			smmu_domain->secure_vmid = *(int *)data;
+			break;
 		default:
 			ret = -ENODEV;
 		}
