@@ -374,7 +374,9 @@ static int smp2p_irq_map(struct irq_domain *domain_ptr, unsigned int virq,
 	}
 
 	/* map chip structures to device */
-	irq_set_lockdep_class(virq, &smp2p_gpio_lock_class);
+	/* 5.4: separate request-mutex class; reuse the same key */
+	irq_set_lockdep_class(virq, &smp2p_gpio_lock_class,
+			      &smp2p_gpio_lock_class);
 	irq_set_chip_and_handler(virq, &smp2p_gpio_irq_chip,
 				 handle_level_irq);
 	irq_set_chip_data(virq, chip);

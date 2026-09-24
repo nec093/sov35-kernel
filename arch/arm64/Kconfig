@@ -958,6 +958,21 @@ config HOTPLUG_CPU
 	  Say Y here to experiment with turning CPUs off and on.  CPUs
 	  can be controlled through /sys/devices/system/cpu.
 
+# The GPIO number here must be sorted by descending number. In case of
+# a multiplatform kernel, we just want the highest value required by the
+# selected platforms.
+# Restored from the CAF 4.x trees: MSM8996 registers ~14 SMP2P virtual
+# gpiochips of 32 lines each on top of TLMM/PMIC gpios, which overflows
+# the generic 512 and leaves the PIL err-fatal/stop-ack gpios missing.
+config ARCH_NR_GPIO
+	int
+	default 1280 if ARCH_QCOM
+	default 0
+	help
+	  Maximum number of GPIOs in the system.
+
+	  If unsure, leave the default value.
+
 # Common NUMA Features
 config NUMA
 	bool "Numa Memory Allocation and Scheduler Support"
