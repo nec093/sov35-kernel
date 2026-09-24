@@ -36,6 +36,7 @@
 #include <linux/pci.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 
 #include <linux/amba/bus.h>
@@ -2016,6 +2017,11 @@ static void arm_smmu_bus_init(void)
 #endif
 }
 
+static void arm_smmu_vdd_disable(void *vdd)
+{
+	regulator_disable(vdd);
+}
+
 static int arm_smmu_device_probe(struct platform_device *pdev)
 {
 	struct resource *res;
@@ -2090,6 +2096,33 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 		return err;
 	}
 	smmu->num_clks = err;
+
+	/*
+	 * Only touch the GDSC once every clock is available: an SMMU that
+	 * still defers on its clocks must not switch off a GDSC the bootloader
+	 * left on for the (not yet probed) clock controller.
+	 */
+	smmu->vdd = devm_regulator_get_optional(dev, "vdd");
+	if (IS_ERR(smmu->vdd)) {
+		err = PTR_ERR(smmu->vdd);
+		if (err != -ENODEV) {
+			if (err != -EPROBE_DEFER)
+				dev_err(dev, "failed to get vdd supply %d\n",
+					err);
+			return err;
+		}
+		smmu->vdd = NULL;
+	} else {
+		err = regulator_enable(smmu->vdd);
+		if (err) {
+			dev_err(dev, "failed to enable vdd supply %d\n", err);
+			return err;
+		}
+		err = devm_add_action_or_reset(dev, arm_smmu_vdd_disable,
+					       smmu->vdd);
+		if (err)
+			return err;
+	}
 
 	err = clk_bulk_prepare_enable(smmu->num_clks, smmu->clks);
 	if (err)

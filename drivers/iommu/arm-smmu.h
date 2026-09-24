@@ -286,6 +286,13 @@ struct arm_smmu_device {
 	 */
 	bool				skip_init;
 
+	/*
+	 * CAF DTs power multimedia SMMUs from a GDSC given as "vdd-supply"
+	 * (qcom,regulator-names = "vdd") rather than a power domain; it must
+	 * be on before the SMMU clocks will turn on.
+	 */
+	struct regulator		*vdd;
+
 	/* IOMMU core code handle */
 	struct iommu_device		iommu;
 };
