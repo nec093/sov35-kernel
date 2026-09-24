@@ -1532,6 +1532,12 @@ static int arm_smmu_domain_set_attr(struct iommu_domain *domain,
 		 */
 		case DOMAIN_ATTR_EARLY_MAP:
 			break;
+		/*
+		 * The msm camera drivers turn stall-on-fault off; this driver
+		 * never enables it (faults terminate the transaction).
+		 */
+		case DOMAIN_ATTR_CB_STALL_DISABLE:
+			break;
 		case DOMAIN_ATTR_SECURE_VMID:
 			smmu_domain->secure_vmid = *(int *)data;
 			break;
