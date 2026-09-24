@@ -1478,6 +1478,22 @@ int mmc_attach_sd(struct mmc_host *host)
 		err = mmc_sd_init_card(host, rocr, NULL);
 		if (err) {
 			retries--;
+			/*
+			 * On the XZs SD/UIM2 slot some cards never pass
+			 * SDR104 tuning ("no tuning point found"), on the
+			 * stock 4.9 kernel as well. After two failed UHS-I
+			 * attempts, drop UHS-I and bring the card up in
+			 * 3.3 V high-speed mode instead of giving up.
+			 */
+			if (retries <= 3 && mmc_host_uhs(host)) {
+				pr_warn("%s: UHS-I init failed (%d), falling back to high speed\n",
+					mmc_hostname(host), err);
+				host->caps &= ~(MMC_CAP_UHS_SDR12 |
+						MMC_CAP_UHS_SDR25 |
+						MMC_CAP_UHS_SDR50 |
+						MMC_CAP_UHS_SDR104 |
+						MMC_CAP_UHS_DDR50);
+			}
 			mmc_power_off(host);
 			usleep_range(5000, 5500);
 			mmc_power_up(host, rocr);
