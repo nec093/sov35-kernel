@@ -183,6 +183,25 @@ static inline void pm_wakeup_dev_event(struct device *dev, unsigned int msec,
 
 #endif /* !CONFIG_PM_SLEEP */
 
+/*
+ * 4.x-era helpers for a struct wakeup_source embedded in driver data,
+ * still used by the CAF/SoMC drivers in this tree. 5.4 only has
+ * wakeup_source_add()/wakeup_source_remove() for that case.
+ */
+static inline void wakeup_source_init(struct wakeup_source *ws,
+				      const char *name)
+{
+	memset(ws, 0, sizeof(*ws));
+	ws->name = name;
+	wakeup_source_add(ws);
+}
+
+static inline void wakeup_source_trash(struct wakeup_source *ws)
+{
+	__pm_relax(ws);
+	wakeup_source_remove(ws);
+}
+
 static inline void __pm_wakeup_event(struct wakeup_source *ws, unsigned int msec)
 {
 	return pm_wakeup_ws_event(ws, msec, false);

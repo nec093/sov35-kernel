@@ -1923,6 +1923,22 @@ config SENSORS_XGENE
 	  If you say yes here you get support for the temperature
 	  and power sensors for APM X-Gene SoC.
 
+config SENSORS_QPNP_ADC_VOLTAGE
+	tristate "Support for Qualcomm Technologies Inc. QPNP Voltage ADC"
+	depends on SPMI
+	help
+	  This is the VADC arbiter driver for Qualcomm Technologies Inc. QPNP ADC Chip.
+
+	  The driver supports reading the HKADC, XOADC through the ADC AMUX arbiter.
+	  The VADC includes support for the conversion sequencer. The driver supports
+	  reading the ADC through the AMUX channels for external pull-ups simultaneously.
+
+config SENSORS_QPNP_ADC_CURRENT
+	tristate "Support for Qualcomm Technologies Inc. QPNP current ADC"
+	depends on SPMI
+	help
+	  This is the IADC driver for Qualcomm Technologies Inc. QPNP ADC Chip.
+
 if ACPI
 
 comment "ACPI drivers"

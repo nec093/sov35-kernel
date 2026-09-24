@@ -443,9 +443,11 @@ CONFIG_POWER_RESET_SYSCON=y
 # fuel-gauge/charger-IC management is not required to reach a
 # touch-interactive boot milestone. The PMIC still charges the battery
 # autonomously in hardware without a kernel driver. TODO for Phase B.
-# CONFIG_QPNP_FG is not set
-# CONFIG_QPNP_SMBCHARGER is not set
-# CONFIG_QPNP_TYPEC is not set
+CONFIG_QPNP_FG=y
+CONFIG_QPNP_FG_EXTENSION=y
+CONFIG_QPNP_SMBCHARGER=y
+CONFIG_QPNP_SMBCHARGER_EXTENSION=y
+CONFIG_QPNP_TYPEC=y
 CONFIG_MSM_APM=y
 CONFIG_SENSORS_QPNP_ADC_VOLTAGE=y
 CONFIG_SENSORS_QPNP_ADC_CURRENT=y
