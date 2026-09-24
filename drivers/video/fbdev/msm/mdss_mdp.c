@@ -2969,6 +2969,26 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	/*
+	 * The MDSS GDSC ("vdd") only appears once mmcc has probed, and the
+	 * bus votes need msm_bus; the probe below sets up global state and
+	 * IRQs it cannot unwind cleanly, so wait for both up front instead
+	 * of failing half way (which used to turn a missing GDSC into a
+	 * permanent -EINVAL).
+	 */
+	{
+		struct regulator *fs = regulator_get_optional(&pdev->dev, "vdd");
+
+		if (IS_ERR(fs)) {
+			if (PTR_ERR(fs) == -EPROBE_DEFER)
+				return -EPROBE_DEFER;
+		} else {
+			regulator_put(fs);
+		}
+		if (!msm_bus_scale_driver_ready())
+			return -EPROBE_DEFER;
+	}
+
 	mdata = devm_kzalloc(&pdev->dev, sizeof(*mdata), GFP_KERNEL);
 	if (mdata == NULL)
 		return -ENOMEM;

@@ -112,13 +112,13 @@ static int mdss_wb_dev_init(struct mdss_wb_ctrl *wb_ctrl)
 	}
 
 	/*
-	 * Not using the devm_ variant: mdss_wb_dev_uninit() below already
-	 * explicitly unregisters/frees this on both the probe-error and
-	 * normal-remove paths, and both of those run at the same points
-	 * devres would otherwise fire its own cleanup -- avoids a double
-	 * unregister.
+	 * extcon_dev_register() names the device after edev->dev.parent,
+	 * which only the devm_ allocator can set now that struct extcon_dev
+	 * is private; the memory is devres-managed, registration is still
+	 * undone explicitly in mdss_wb_dev_uninit().
 	 */
-	wb_ctrl->sdev = extcon_dev_allocate(mdss_wb_disp_supported_cable);
+	wb_ctrl->sdev = devm_extcon_dev_allocate(&wb_ctrl->pdev->dev,
+						 mdss_wb_disp_supported_cable);
 	if (IS_ERR(wb_ctrl->sdev)) {
 		rc = PTR_ERR(wb_ctrl->sdev);
 		pr_err("Failed to allocate switch dev for writeback panel");
@@ -141,7 +141,6 @@ static int mdss_wb_dev_uninit(struct mdss_wb_ctrl *wb_ctrl)
 	}
 
 	extcon_dev_unregister(wb_ctrl->sdev);
-	extcon_dev_free(wb_ctrl->sdev);
 	return 0;
 }
 
