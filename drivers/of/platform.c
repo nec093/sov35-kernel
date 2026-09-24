@@ -20,6 +20,7 @@
 #include <linux/of_iommu.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 
 const struct of_device_id of_default_bus_match_table[] = {
@@ -185,6 +186,13 @@ static struct platform_device *of_platform_device_create_pdata(
 	dev->dev.bus = &platform_bus_type;
 	dev->dev.platform_data = platform_data;
 	of_msi_configure(&dev->dev, dev->dev.of_node);
+	/*
+	 * CAF: hand every device its first "memory-region" at creation, as
+	 * the msm kernels do; the MSM peripheral loaders never call
+	 * of_reserved_mem_device_init() themselves and must allocate from
+	 * their removed-dma-pool carveout for TrustZone to accept the image.
+	 */
+	of_reserved_mem_device_init_by_idx(&dev->dev, dev->dev.of_node, 0);
 
 	if (of_device_add(dev) != 0) {
 		platform_device_put(dev);

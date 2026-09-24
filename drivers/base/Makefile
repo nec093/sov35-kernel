@@ -28,3 +28,5 @@ obj-y			+= test/
 
 ccflags-$(CONFIG_DEBUG_DRIVER) := -DDEBUG
 
+# CAF "removed-dma-pool" reserved memory (MSM peripheral loaders)
+obj-$(CONFIG_OF_RESERVED_MEM) += dma-removed.o

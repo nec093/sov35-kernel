@@ -1284,6 +1284,8 @@ struct device {
 	struct dma_coherent_mem	*dma_mem; /* internal for coherent mem
 					     override */
 #endif
+	struct removed_region	*removed_mem;	/* CAF "removed-dma-pool" carveout
+					   (drivers/base/dma-removed.c) */
 #ifdef CONFIG_DMA_CMA
 	struct cma *cma_area;		/* contiguous memory area for dma
 					   allocations */

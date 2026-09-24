@@ -1230,6 +1230,19 @@ int platform_dma_configure(struct device *dev)
 		ret = acpi_dma_configure(dev, attr);
 	}
 
+#ifdef CONFIG_OF_RESERVED_MEM
+	/*
+	 * A failed or deferred probe runs arch_teardown_dma_ops(), dropping
+	 * the removed-dma-pool ops the device was given at creation; put
+	 * them back so the next attempt still allocates from its carveout.
+	 */
+	if (!ret && dev->removed_mem) {
+		extern const struct dma_map_ops removed_dma_ops;
+
+		set_dma_ops(dev, &removed_dma_ops);
+	}
+#endif
+
 	return ret;
 }
 
