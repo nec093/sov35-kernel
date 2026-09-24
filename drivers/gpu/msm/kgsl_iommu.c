@@ -394,7 +394,7 @@ static int _attach_pt(struct kgsl_iommu_pt *iommu_pt,
 	if (ret == 0)
 		iommu_pt->attached = true;
 	else
-		KGSL_CORE_ERR("XZDBG iommu_attach_device(%s) failed: %d\n",
+		KGSL_CORE_ERR("iommu_attach_device(%s) failed: %d\n",
 			dev_name(ctx->dev), ret);
 
 	return ret;
@@ -1621,18 +1621,18 @@ static int _setup_user_context(struct kgsl_mmu *mmu)
 		if (IS_ERR(mmu->defaultpagetable)) {
 			ret = PTR_ERR(mmu->defaultpagetable);
 			mmu->defaultpagetable = NULL;
-			KGSL_CORE_ERR("XZDBG kgsl_mmu_getpagetable failed: %d\n",
+			KGSL_CORE_ERR("kgsl_mmu_getpagetable failed: %d\n",
 				ret);
 			return ret;
 		} else if (mmu->defaultpagetable == NULL) {
-			KGSL_CORE_ERR("XZDBG kgsl_mmu_getpagetable NULL\n");
+			KGSL_CORE_ERR("kgsl_mmu_getpagetable NULL\n");
 			return -ENOMEM;
 		}
 	}
 
 	iommu_pt = mmu->defaultpagetable->priv;
 	if (iommu_pt == NULL) {
-		KGSL_CORE_ERR("XZDBG defaultpagetable->priv NULL\n");
+		KGSL_CORE_ERR("defaultpagetable->priv NULL\n");
 		return -ENODEV;
 	}
 
