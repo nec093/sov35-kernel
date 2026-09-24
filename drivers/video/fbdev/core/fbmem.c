@@ -1093,7 +1093,7 @@ fb_blank(struct fb_info *info, int blank)
 EXPORT_SYMBOL(fb_blank);
 
 static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
-			unsigned long arg)
+			unsigned long arg, struct file *file)
 {
 	struct fb_ops *fb;
 	struct fb_var_screeninfo var;
@@ -1180,7 +1180,10 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	default:
 		lock_fb_info(info);
 		fb = info->fbops;
-		if (fb->fb_ioctl)
+		/* CAF: MSM mdss only registers the file-aware variant */
+		if (fb->fb_ioctl_v2)
+			ret = fb->fb_ioctl_v2(info, cmd, arg, file);
+		else if (fb->fb_ioctl)
 			ret = fb->fb_ioctl(info, cmd, arg);
 		else
 			ret = -ENOTTY;
@@ -1195,7 +1198,7 @@ static long fb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	if (!info)
 		return -ENODEV;
-	return do_fb_ioctl(info, cmd, arg);
+	return do_fb_ioctl(info, cmd, arg, file);
 }
 
 #ifdef CONFIG_COMPAT
@@ -1249,7 +1252,7 @@ static int fb_getput_cmap(struct fb_info *info, unsigned int cmd,
 	    put_user(compat_ptr(data), &cmap->transp))
 		return -EFAULT;
 
-	err = do_fb_ioctl(info, cmd, (unsigned long) cmap);
+	err = do_fb_ioctl(info, cmd, (unsigned long) cmap, NULL);
 
 	if (!err) {
 		if (copy_in_user(&cmap32->start,
@@ -1325,7 +1328,7 @@ static long fb_compat_ioctl(struct file *file, unsigned int cmd,
 		arg = (unsigned long) compat_ptr(arg);
 		/* fall through */
 	case FBIOBLANK:
-		ret = do_fb_ioctl(info, cmd, arg);
+		ret = do_fb_ioctl(info, cmd, arg, file);
 		break;
 
 	case FBIOGET_FSCREENINFO:
@@ -1338,7 +1341,9 @@ static long fb_compat_ioctl(struct file *file, unsigned int cmd,
 		break;
 
 	default:
-		if (fb->fb_compat_ioctl)
+		if (fb->fb_compat_ioctl_v2)
+			ret = fb->fb_compat_ioctl_v2(info, cmd, arg, file);
+		else if (fb->fb_compat_ioctl)
 			ret = fb->fb_compat_ioctl(info, cmd, arg);
 		break;
 	}
