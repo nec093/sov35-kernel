@@ -20,6 +20,9 @@
 #include <linux/reset.h>
 #include <linux/slab.h>
 
+#include <linux/msm-bus.h>
+#include <linux/msm-bus-board.h>
+
 #include <dt-bindings/phy/phy.h>
 
 #include "phy-qcom-qmp.h"
@@ -923,6 +926,9 @@ struct qmp_phy_cfg {
 	int pwrdn_delay_min;
 	int pwrdn_delay_max;
 
+	/* optional regulator load votes (uA), parallel to vreg_list */
+	const int *vreg_loads;
+
 	/* true, if PHY has a separate DP_COM control block */
 	bool has_phy_dp_com_ctrl;
 	/* true, if PHY has secondary tx/rx lanes to be configured */
@@ -992,6 +998,10 @@ struct qcom_qmp {
 	const struct qmp_phy_cfg *cfg;
 	struct qmp_phy **phys;
 
+	/* downstream (CAF) bus bandwidth vote, from qcom,msm-bus,* in DT */
+	struct msm_bus_scale_pdata *bus_scale_table;
+	u32 bus_client;
+
 	struct mutex phy_mutex;
 	int init_count;
 	bool phy_initialized;
@@ -1051,6 +1061,30 @@ static const char * const qmp_phy_vreg_l[] = {
 	"vdda-phy", "vdda-pll",
 };
 
+/*
+ * Sony/CAF MSM8996 PCIe PHY: the GDSCs and the CX corner are regulators
+ * on downstream kernels and must be up before the PHY is touched, and the
+ * RPM LN_BB reference source has to be enabled as well. Kept separate from
+ * msm8996_phy_clk_l/qmp_phy_vreg_l, which the USB3 PHY shares.
+ */
+static const char * const msm8996_pciephy_clk_l[] = {
+	"ref_src", "aux", "cfg_ahb", "ref",
+};
+
+static const char * const msm8996_pciephy_vreg_l[] = {
+	"gdsc-aggre", "gdsc-pcie", "vdda-phy", "vdda-pll", "vreg-cx",
+};
+
+/*
+ * RPM keeps an LDO in low-power mode unless its consumers vote a load.
+ * On this board the PCIe PHY is the only user of L28 once display/USB3
+ * are idle, so vote what CAF pci-msm voted for MSM8996 (0.925 V rail:
+ * 24 mA, 1.8 V rail: 1 mA).
+ */
+static const int msm8996_pciephy_vreg_loads[] = {
+	0, 0, 24000, 1000, 0,
+};
+
 static const struct qmp_phy_cfg msm8996_pciephy_cfg = {
 	.type			= PHY_TYPE_PCIE,
 	.nlanes			= 3,
@@ -1063,12 +1097,13 @@ static const struct qmp_phy_cfg msm8996_pciephy_cfg = {
 	.rx_tbl_num		= ARRAY_SIZE(msm8996_pcie_rx_tbl),
 	.pcs_tbl		= msm8996_pcie_pcs_tbl,
 	.pcs_tbl_num		= ARRAY_SIZE(msm8996_pcie_pcs_tbl),
-	.clk_list		= msm8996_phy_clk_l,
-	.num_clks		= ARRAY_SIZE(msm8996_phy_clk_l),
+	.clk_list		= msm8996_pciephy_clk_l,
+	.num_clks		= ARRAY_SIZE(msm8996_pciephy_clk_l),
 	.reset_list		= msm8996_pciephy_reset_l,
 	.num_resets		= ARRAY_SIZE(msm8996_pciephy_reset_l),
-	.vreg_list		= qmp_phy_vreg_l,
-	.num_vregs		= ARRAY_SIZE(qmp_phy_vreg_l),
+	.vreg_list		= msm8996_pciephy_vreg_l,
+	.num_vregs		= ARRAY_SIZE(msm8996_pciephy_vreg_l),
+	.vreg_loads		= msm8996_pciephy_vreg_loads,
 	.regs			= pciephy_regs_layout,
 
 	.start_ctrl		= PCS_START | PLL_READY_GATE_EN,
@@ -1312,11 +1347,31 @@ static int qcom_qmp_phy_com_init(struct qmp_phy *qphy)
 		return 0;
 	}
 
+	/* vote regulator loads so RPM puts the LDOs in high-power mode */
+	if (cfg->vreg_loads) {
+		for (i = 0; i < cfg->num_vregs; i++) {
+			if (!cfg->vreg_loads[i])
+				continue;
+			ret = regulator_set_load(qmp->vregs[i].consumer,
+						 cfg->vreg_loads[i]);
+			if (ret < 0)
+				dev_warn(qmp->dev, "%s: set_load failed %d\n",
+					 cfg->vreg_list[i], ret);
+		}
+	}
+
 	/* turn on regulator supplies */
 	ret = regulator_bulk_enable(cfg->num_vregs, qmp->vregs);
 	if (ret) {
 		dev_err(qmp->dev, "failed to enable regulators, err=%d\n", ret);
 		goto err_reg_enable;
+	}
+
+	if (qmp->bus_client) {
+		ret = msm_bus_scale_client_update_request(qmp->bus_client, 1);
+		if (ret)
+			dev_err(qmp->dev, "failed to vote bus bandwidth: %d\n",
+				ret);
 	}
 
 	for (i = 0; i < cfg->num_resets; i++) {
@@ -2041,6 +2096,17 @@ static int qcom_qmp_phy_probe(struct platform_device *pdev)
 	qmp->cfg = of_device_get_match_data(dev);
 	if (!qmp->cfg)
 		return -EINVAL;
+
+	if (of_find_property(dev->of_node, "qcom,msm-bus,name", NULL)) {
+		if (!msm_bus_scale_driver_ready())
+			return -EPROBE_DEFER;
+		qmp->bus_scale_table = msm_bus_cl_get_pdata(pdev);
+		if (qmp->bus_scale_table)
+			qmp->bus_client = msm_bus_scale_register_client(
+						qmp->bus_scale_table);
+		if (!qmp->bus_client)
+			dev_warn(dev, "no msm-bus client, running unvoted\n");
+	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	base = devm_ioremap_resource(dev, res);
