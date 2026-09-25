@@ -22,7 +22,7 @@ partition.
 | Internal storage (FUSE) and microSD (high-speed mode) | working |
 | Camera, rear (IMX400) and front (IMX258) | working |
 | USB adb | working (peripheral mode forced from the ramdisk) |
-| Video codec (vidc), rotator | not yet |
+| Video codec (Venus/vidc), SDE rotator | working (H.264 hardware encode verified); the GSI's ueventd does not search `/vendor/firmware_mnt/image`, where the Venus firmware lives, so without that search path the framework falls back to software codecs |
 | Audio, ADSP | not yet |
 | Sensor hub (SLPI), modem | not yet (also offline on the stock 4.9 kernel here) |
 | Fingerprint (FPC1145) | kernel driver probes, the HAL talks to the sensor; enrolment not reachable from the GSI settings |
@@ -85,5 +85,6 @@ GSI を stock の vendor パーティションのまま起動できます(SOV35 
 - ブートイメージ: 各自の端末の **Magisk パッチ済み** boot.img から ramdisk を取り出し、
   `scripts/xzs/add-overlay.sh` で設定を追加してから、`scripts/xzs/mkbootimg.sh` で作成します。
 - 動作状況は上の表のとおりです(カメラ・Wi-Fi・電池・CPU クロック制御・cpuidle・
-  ストレージは動作、動画コーデック・音声・センサーハブ・Bluetooth などは未対応、
-  指紋はドライバのみ動作)。
+  ストレージ・動画コーデックは動作、音声・センサーハブ・Bluetooth などは未対応、
+  指紋はドライバのみ動作)。動画コーデックは ueventd のファームウェア検索パスに
+  `/vendor/firmware_mnt/image` が必要です(vendor 側の設定)。
