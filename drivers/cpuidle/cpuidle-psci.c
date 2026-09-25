@@ -17,6 +17,7 @@
 #include <linux/of_device.h>
 #include <linux/psci.h>
 #include <linux/slab.h>
+#include <linux/tick.h>
 #include <linux/topology.h>
 
 #include <asm/cpuidle.h>
@@ -30,35 +31,43 @@ static DEFINE_PER_CPU_READ_MOSTLY(u32 *, psci_power_state);
  * mode and cannot be switched to platform coordination, so a request
  * that also powers down the cluster is DENIED unless every other online
  * core of that cluster already sits in a core power-down state. This
- * kernel has no PSCI power-domain hierarchy to do that election, so keep
- * a per-cluster count of cores in a non-WFI state and only issue the
- * cluster request from the last one; the others use the preceding
- * (core-only) state. The firmware still denies a request that lost a
- * race with a waking sibling, in which case the core-only state is used.
+ * kernel has no PSCI power-domain hierarchy to do that election, so do
+ * it here the way the CAF lpm-levels driver does, under a per-cluster
+ * lock: the cluster state is only requested by the last core entering a
+ * non-WFI state, only when no IPI is pending for its siblings and only
+ * when the earliest wake-up of all the cluster's cores is far enough
+ * away to cover the state's residency; otherwise the deepest core-only
+ * state is used. A request the firmware still denies is not retried
+ * right away, the CPU goes back through the idle loop instead.
+ *
+ * On MSM8996 both shortcuts hang the whole CPU subsystem within seconds
+ * of boot (silent watchdog reset): collapsing the L2 while a sibling is
+ * about to wake up, and re-entering the firmware straight after a denied
+ * cluster request.
  *
  * Cluster states are recognised by a non-zero affinity level in
  * StateID[25:24], which is how the Qualcomm StateIDs encode it.
  */
-#define PSCI_MAX_CLUSTERS		8
 #define PSCI_STATEID_AFF_LEVEL(s)	(((s) >> 24) & 0x3)
 
-static atomic_t psci_cluster_nr_down[PSCI_MAX_CLUSTERS];
+struct psci_cluster {
+	raw_spinlock_t		lock;
+	struct cpumask		idle;	/* cores in a non-WFI state */
+};
+
+#define PSCI_MAX_CLUSTERS	8
+
+static struct psci_cluster psci_clusters[PSCI_MAX_CLUSTERS] = {
+	[0 ... PSCI_MAX_CLUSTERS - 1] = {
+		.lock = __RAW_SPIN_LOCK_UNLOCKED(psci_clusters.lock),
+	},
+};
+static DEFINE_PER_CPU(struct psci_cluster *, psci_cpu_cluster);
+static DEFINE_PER_CPU(ktime_t, psci_next_wake);
 
 /* allows turning the cluster states off at runtime for debugging */
 static bool cluster_idle = true;
 module_param(cluster_idle, bool, 0644);
-
-static bool psci_cluster_last_man(int cpu, int nr_down)
-{
-	int cluster = topology_physical_package_id(cpu);
-	int c, online = 0;
-
-	for_each_online_cpu(c)
-		if (topology_physical_package_id(c) == cluster)
-			online++;
-
-	return nr_down >= online;
-}
 
 /* deepest core-only state below @idx, 0 if there is none */
 static int psci_core_state(const u32 *state, int idx)
@@ -69,40 +78,63 @@ static int psci_core_state(const u32 *state, int idx)
 	return 0;
 }
 
+/* called with cl->lock held */
+static bool psci_cluster_can_collapse(struct psci_cluster *cl, int cpu,
+				      ktime_t now, unsigned int residency_us)
+{
+	const struct cpumask *siblings = topology_core_cpumask(cpu);
+	ktime_t earliest = KTIME_MAX;
+	int c;
+
+	for_each_cpu_and(c, siblings, cpu_online_mask) {
+		if (!cpumask_test_cpu(c, &cl->idle))
+			return false;
+		if (c != cpu && per_cpu(pending_ipi, c))
+			return false;
+		earliest = min(earliest, per_cpu(psci_next_wake, c));
+	}
+
+	return ktime_us_delta(earliest, now) >= residency_us;
+}
+
 static int psci_enter_idle_state(struct cpuidle_device *dev,
 				struct cpuidle_driver *drv, int idx)
 {
 	u32 *state = __this_cpu_read(psci_power_state);
-	int cluster = topology_physical_package_id(dev->cpu);
-	atomic_t *nr_down;
+	struct psci_cluster *cl = __this_cpu_read(psci_cpu_cluster);
+	ktime_t now, delta_next;
 	u32 param;
-	int ret, n;
+	int ret;
 
-	if (!idx || cluster < 0 || cluster >= PSCI_MAX_CLUSTERS)
+	if (!idx || !cl)
 		return CPU_PM_CPU_IDLE_ENTER_PARAM(psci_cpu_suspend_enter,
 						   idx, state[idx - 1]);
 
-	nr_down = &psci_cluster_nr_down[cluster];
-	n = atomic_inc_return(nr_down);
+	now = ktime_get();
+	__this_cpu_write(psci_next_wake,
+			 ktime_add(now, tick_nohz_get_sleep_length(&delta_next)));
+
 	param = state[idx - 1];
+	raw_spin_lock(&cl->lock);
+	cpumask_set_cpu(dev->cpu, &cl->idle);
 	if (PSCI_STATEID_AFF_LEVEL(param) && psci_core_state(state, idx) &&
 	    (!READ_ONCE(cluster_idle) ||
-	     !psci_cluster_last_man(dev->cpu, n))) {
+	     !psci_cluster_can_collapse(cl, dev->cpu, now,
+					drv->states[idx].target_residency))) {
 		idx = psci_core_state(state, idx);
 		param = state[idx - 1];
 	}
+	raw_spin_unlock(&cl->lock);
 
 	ret = cpu_pm_enter();
 	if (!ret) {
 		ret = psci_cpu_suspend_enter(param);
-		if (ret == -EPERM && PSCI_STATEID_AFF_LEVEL(param) &&
-		    psci_core_state(state, idx)) {
-			idx = psci_core_state(state, idx);
-			ret = psci_cpu_suspend_enter(state[idx - 1]);
-		}
 		cpu_pm_exit();
 	}
-	atomic_dec(nr_down);
+
+	raw_spin_lock(&cl->lock);
+	cpumask_clear_cpu(dev->cpu, &cl->idle);
+	raw_spin_unlock(&cl->lock);
 
 	return ret ? -1 : idx;
 }
@@ -180,6 +212,19 @@ static int __init psci_dt_cpu_init_idle(struct device_node *cpu_node, int cpu)
 
 	/* Idle states parsed correctly, initialize per-cpu pointer */
 	per_cpu(psci_power_state, cpu) = psci_states;
+
+	for (i = 0; i < count; i++)
+		if (PSCI_STATEID_AFF_LEVEL(psci_states[i]))
+			break;
+	if (i < count) {
+		int id = topology_physical_package_id(cpu);
+
+		if (id >= 0 && id < PSCI_MAX_CLUSTERS)
+			per_cpu(psci_cpu_cluster, cpu) = &psci_clusters[id];
+		else
+			pr_warn("CPU%d: no cluster id, cluster states disabled\n",
+				cpu);
+	}
 	return 0;
 
 free_mem:
