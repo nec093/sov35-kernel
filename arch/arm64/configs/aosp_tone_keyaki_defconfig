@@ -502,14 +502,13 @@ CONFIG_MEDIA_CONTROLLER=y
 CONFIG_VIDEO_V4L2_SUBDEV_API=y
 CONFIG_V4L_PLATFORM_DRIVERS=y
 # CONFIG_MEDIA_SUBDRV_AUTOSELECT is not set
-# Camera (CONFIG_MSM_CAMERA and its whole camera_v2 subtree), the video
-# codec (CONFIG_MSM_VIDC_3X_*) and the display rotator
-# (CONFIG_MSM_SDE_ROTATOR) are disabled for Phase A of the 5.4 port:
-# none have been reconciled with 5.4 APIs yet (~500+ compile errors
-# combined as of 2026-09-23: struct extcon_dev-style API drift in the
-# camera stack, msm_venc.c/msm_vdec.c/msm_vidc_common.c and
-# msm_sde_rotator.h), and neither camera nor video/rotation is required
-# to reach a touch-interactive boot milestone. TODO for Phase B.
+# Video codec (Venus, vidc_3x) and the SDE rotator. The Venus firmware
+# lives in /vendor/firmware_mnt/image, which the ueventd firmware search
+# path has to include.
+CONFIG_MSM_VIDC_3X_V4L2=y
+CONFIG_MSM_VIDC_VMEM=y
+CONFIG_MSM_VIDC_3X_GOVERNORS=y
+CONFIG_MSM_SDE_ROTATOR=y
 CONFIG_MSM_CAMERA=y
 CONFIG_MSMB_CAMERA=y
 CONFIG_MSM_CAMERA_SENSOR=y
