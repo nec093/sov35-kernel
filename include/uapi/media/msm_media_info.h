@@ -1084,7 +1084,6 @@ static inline unsigned int VENUS_BUFFER_SIZE(
 {
 	const unsigned int extra_size = VENUS_EXTRADATA_SIZE(width, height);
 	unsigned int uv_alignment = 0, size = 0;
-	unsigned int w_alignment = 512;
 	unsigned int y_plane, uv_plane, y_stride,
 		uv_stride, y_sclines, uv_sclines;
 	unsigned int y_ubwc_plane = 0, uv_ubwc_plane = 0;
@@ -1113,10 +1112,11 @@ static inline unsigned int VENUS_BUFFER_SIZE(
 		uv_plane = uv_stride * uv_sclines + uv_alignment;
 		size = y_plane + uv_plane +
 				MSM_MEDIA_MAX(extra_size, 8 * y_stride);
-		size = MSM_MEDIA_ALIGN(size, 4096);
-
-		/* Additional size to cover last row of non-aligned frame */
-		size += MSM_MEDIA_ALIGN(width, w_alignment) * w_alignment;
+		/*
+		 * No extra "last row" padding here: the MSM8996 vendor
+		 * userspace (gralloc, OMX) predates it and allocates NV12
+		 * buffers without it, which vb2 then rejects as too small.
+		 */
 		size = MSM_MEDIA_ALIGN(size, 4096);
 		break;
 	case COLOR_FMT_P010:
