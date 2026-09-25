@@ -70,7 +70,7 @@ struct lmh_mon_sensor_data {
 	struct rw_semaphore		lock;
 	struct lmh_mon_threshold	trip[LMH_TRIP_MAX];
 	struct thermal_zone_device	*tzdev;
-	struct device			dev;
+	struct device			*dev;
 //	enum thermal_device_mode	mode;
 };
 
@@ -345,7 +345,8 @@ static void lmh_evaluate_and_notify(struct lmh_mon_sensor_data *lmh_sensor,
 		if (cond) {
 			lmh_sensor->trip[idx].active = false;
 			lmh_activate_trip(lmh_sensor, trip, val);
-			of_thermal_handle_trip(lmh_sensor->tzdev);
+			if (lmh_sensor->tzdev)
+				of_thermal_handle_trip(lmh_sensor->tzdev);
 //			thermal_sensor_trip(lmh_sensor->tzdev, trip, val);
 		}
 	}
@@ -429,10 +430,23 @@ static struct thermal_zone_of_device_ops lmh_sens_ops = {
 static int lmh_register_sensor(struct platform_device *pdev, int sns_id,
 				struct lmh_mon_sensor_data *lmh_sensor)
 {
+	struct thermal_zone_device *tzdev;
 	int ret = 0;
 
-	lmh_sensor->tzdev = thermal_zone_of_sensor_register(&pdev->dev,
+	lmh_sensor->dev = &pdev->dev;
+	tzdev = thermal_zone_of_sensor_register(&pdev->dev,
 			sns_id, lmh_sensor, &lmh_sens_ops);
+	/*
+	 * A sensor only gets a thermal zone when the DT has one pointing at
+	 * it; without one it is still read through the LMH monitor.
+	 */
+	if (PTR_ERR_OR_ZERO(tzdev) == -ENODEV) {
+		dev_info(&pdev->dev, "no thermal zone for LMH sensor %s\n",
+			 lmh_sensor->sensor_name);
+		lmh_sensor->tzdev = NULL;
+		return 0;
+	}
+	lmh_sensor->tzdev = tzdev;
 /*
 	lmh_sensor->tzdev = thermal_zone_device_register(
 			lmh_sensor->sensor_name, LMH_TRIP_MAX,
@@ -445,8 +459,6 @@ static int lmh_register_sensor(struct platform_device *pdev, int sns_id,
 			lmh_sensor->sensor_name, ret);
 		return ret;
 	}
-
-	lmh_sensor->dev = pdev->dev;
 
 	return ret;
 }
@@ -534,7 +546,9 @@ static void lmh_sensor_remove(struct lmh_sensor_ops *ops)
 		goto deregister_exit;
 	}
 	down_write(&lmh_sensor->lock);
-	thermal_zone_of_sensor_unregister(&lmh_sensor->dev, lmh_sensor->tzdev);
+	if (lmh_sensor->tzdev)
+		thermal_zone_of_sensor_unregister(lmh_sensor->dev,
+						  lmh_sensor->tzdev);
 	list_del(&lmh_sensor->list_ptr);
 	up_write(&lmh_sensor->lock);
 	pr_debug("Deregistered sensor:[%s]\n", lmh_sensor->sensor_name);
