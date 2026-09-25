@@ -585,7 +585,11 @@ static int sde_rotator_import_buffer(struct sde_layer_buffer *buffer,
 static int sde_rotator_secure_session_ctrl(bool enable)
 {
 	struct sde_rot_data_type *mdata = sde_rot_get_mdata();
-	uint32_t sid_info;
+	/*
+	 * Handed to the hypervisor by physical address: must not live on
+	 * the (vmalloc'ed, CONFIG_VMAP_STACK) stack.
+	 */
+	static uint32_t sid_info;
 	struct scm_desc desc = {0};
 	unsigned int resp = 0;
 	int ret = 0;

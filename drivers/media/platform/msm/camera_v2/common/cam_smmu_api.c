@@ -781,7 +781,11 @@ static int cam_smmu_send_syscall_cpp_intf(int vmid, int idx)
 	int rc = 0;
 	struct scm_desc desc = {0};
 	struct cam_context_bank_info *cb = &iommu_cb_set.cb_info[idx];
-	uint32_t sid_info;
+	/*
+	 * Handed to the hypervisor by physical address: must not live on
+	 * the (vmalloc'ed, CONFIG_VMAP_STACK) stack.
+	 */
+	static uint32_t sid_info;
 
 
 	sid_info = cb->sids[0]; /* CPP SID */

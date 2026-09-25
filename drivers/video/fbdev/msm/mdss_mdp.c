@@ -5357,7 +5357,11 @@ int mdss_mdp_secure_session_ctrl(unsigned int enable, u64 flags)
 	} __attribute__ ((__packed__)) request;
 	unsigned int resp = -1;
 	int ret = 0;
-	uint32_t sid_info;
+	/*
+	 * Handed to the hypervisor by physical address: must not live on
+	 * the (vmalloc'ed, CONFIG_VMAP_STACK) stack.
+	 */
+	static uint32_t sid_info;
 	struct scm_desc desc;
 	bool changed = false;
 
