@@ -756,6 +756,7 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 }
 
 void (*__smp_cross_call)(const struct cpumask *, unsigned int);
+DEFINE_PER_CPU(bool, pending_ipi);
 
 void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int))
 {
@@ -775,7 +776,11 @@ static const char *ipi_types[NR_IPI] __tracepoint_string = {
 
 static void smp_cross_call(const struct cpumask *target, unsigned int ipinr)
 {
+	unsigned int cpu;
+
 	trace_ipi_raise(target, ipi_types[ipinr]);
+	for_each_cpu(cpu, target)
+		per_cpu(pending_ipi, cpu) = true;
 	__smp_cross_call(target, ipinr);
 }
 
@@ -942,6 +947,7 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	if ((unsigned)ipinr < NR_IPI)
 		trace_ipi_exit_rcuidle(ipi_types[ipinr]);
+	per_cpu(pending_ipi, cpu) = false;
 	set_irq_regs(old_regs);
 }
 

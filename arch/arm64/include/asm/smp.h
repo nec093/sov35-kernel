@@ -32,6 +32,8 @@
 #include <linux/thread_info.h>
 
 DECLARE_PER_CPU_READ_MOSTLY(int, cpu_number);
+/* set while an IPI to the CPU is raised and not yet handled */
+DECLARE_PER_CPU(bool, pending_ipi);
 
 /*
  * We don't use this_cpu_read(cpu_number) as that has implicit writes to
