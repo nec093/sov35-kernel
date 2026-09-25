@@ -76,14 +76,11 @@
 		 * (0x40000004 -> NOT_SUPPORTED). The local timer stops in
 		 * all of them (CAF uses the broadcast timer).
 		 *  - C4 "fpc": core power collapse, StateID 4.
-		 *  - D3 "l2-gdhs": core plus L2 retention, affinity level 1,
-		 *    L2 mode 3 at shift 4. The firmware runs in OS-initiated
-		 *    mode only, so it is only issued by the last core of the
-		 *    cluster (see cpuidle-psci.c).
-		 * D4 "l2-fpc" (0x01000044) is accepted by the firmware and
-		 * works once Android is up, but with it enabled from boot
-		 * the board resets without a log within ~30 s, so it is
-		 * described but not referenced by the CPUs yet.
+		 *  - D3 "l2-gdhs" / D4 "l2-fpc": core plus L2 retention or
+		 *    power collapse, affinity level 1, L2 mode at shift 4.
+		 *    The firmware runs in OS-initiated mode only, so these
+		 *    are only issued by the last core of the cluster (see
+		 *    cpuidle-psci.c).
 		 */
 		idle-states {
 			entry-method = "psci";
@@ -121,7 +118,7 @@
 
 		CPU0: cpu@0 {
 			device_type = "cpu";
-			cpu-idle-states = <&CPU_PC &CLUSTER_RET>;
+			cpu-idle-states = <&CPU_PC &CLUSTER_RET &CLUSTER_PC>;
 			compatible = "arm,armv8";
 			reg = <0x0 0x0>;
 			qcom,limits-info = <&mitigation_profile0>;
@@ -146,7 +143,7 @@
 
 		CPU1: cpu@1 {
 			device_type = "cpu";
-			cpu-idle-states = <&CPU_PC &CLUSTER_RET>;
+			cpu-idle-states = <&CPU_PC &CLUSTER_RET &CLUSTER_PC>;
 			compatible = "arm,armv8";
 			reg = <0x0 0x1>;
 			qcom,limits-info = <&mitigation_profile1>;
@@ -166,7 +163,7 @@
 
 		CPU2: cpu@100 {
 			device_type = "cpu";
-			cpu-idle-states = <&CPU_PC &CLUSTER_RET>;
+			cpu-idle-states = <&CPU_PC &CLUSTER_RET &CLUSTER_PC>;
 			compatible = "arm,armv8";
 			reg = <0x0 0x100>;
 			qcom,limits-info = <&mitigation_profile2>;
@@ -191,7 +188,7 @@
 
 		CPU3: cpu@101 {
 			device_type = "cpu";
-			cpu-idle-states = <&CPU_PC &CLUSTER_RET>;
+			cpu-idle-states = <&CPU_PC &CLUSTER_RET &CLUSTER_PC>;
 			compatible = "arm,armv8";
 			reg = <0x0 0x101>;
 			enable-method = "psci";

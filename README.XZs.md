@@ -27,7 +27,7 @@ partition.
 | Sensor hub (SLPI), modem | not yet (also offline on the stock 4.9 kernel here) |
 | Fingerprint (FPC1145) | kernel driver probes, the HAL talks to the sensor; enrolment not reachable from the GSI settings |
 | Bluetooth, NFC | not yet |
-| cpuidle (PSCI: core power collapse, L2 retention) | working; L2 power collapse not enabled yet |
+| cpuidle (PSCI: core power collapse, L2 retention and L2 power collapse) | working |
 | LMH (limits management hardware) | working: sensors, profile, DPM voltage and ODCM are set up; throttling intensity readable from the `lmh-*` thermal zones |
 
 ## Build
