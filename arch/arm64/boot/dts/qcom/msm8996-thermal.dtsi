@@ -441,4 +441,65 @@
 	};
 };
 
+/*
+ * LMH (limits management hardware) sensors, read-only: their value is the
+ * throttling intensity the LMH firmware reports. The cells are the order in
+ * which the firmware lists its sensors.
+ */
+&thermal_zones {
+	lmh-dlm-apc1 {	/* DLMt_APC1 */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 0>;
+	};
 
+	lmh-cpu0 {	/* LLM_cp00 */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 1>;
+	};
+
+	lmh-cpu1 {	/* LLM_cp01 */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 2>;
+	};
+
+	lmh-cpu2 {	/* LLM_cp10 */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 3>;
+	};
+
+	lmh-cpu3 {	/* LLM_cp11 */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 4>;
+	};
+
+	lmh-m4m {	/* LLM_m4m0 */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 5>;
+	};
+
+	lmh-l2-1 {	/* LLM_l21- */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 6>;
+	};
+
+	lmh-l2-0 {	/* LLM_l20- */
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&lmh 7>;
+	};
+};
