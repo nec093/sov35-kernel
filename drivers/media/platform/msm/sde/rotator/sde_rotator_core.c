@@ -1499,6 +1499,31 @@ static void sde_rotator_release_entry(struct sde_rot_mgr *mgr,
  *
  * Note this asynchronous handler is protected by hal lock.
  */
+void sde_rotator_trace_entry_fill(struct sde_rot_trace_entry *te,
+		const struct sde_rotation_item *item, u32 ss_id, u32 sq_id)
+{
+	*te = (struct sde_rot_trace_entry) {
+		.ss_id = ss_id,
+		.sq_id = sq_id,
+		.pr_id = item->wb_idx,
+		.flags = item->flags,
+		.src_fmt = item->input.format,
+		.src_bw = item->input.width,
+		.src_bh = item->input.height,
+		.src_x = item->src_rect.x,
+		.src_y = item->src_rect.y,
+		.src_w = item->src_rect.w,
+		.src_h = item->src_rect.h,
+		.dst_fmt = item->output.format,
+		.dst_bw = item->output.width,
+		.dst_bh = item->output.height,
+		.dst_x = item->dst_rect.x,
+		.dst_y = item->dst_rect.y,
+		.dst_w = item->dst_rect.w,
+		.dst_h = item->dst_rect.h,
+	};
+}
+
 static void sde_rotator_commit_handler(struct kthread_work *work)
 {
 	struct sde_rot_entry *entry;
@@ -1554,17 +1579,13 @@ static void sde_rotator_commit_handler(struct kthread_work *work)
 	if (entry->item.ts)
 		entry->item.ts[SDE_ROTATOR_TS_COMMIT] = ktime_get();
 
-	trace_rot_entry_commit(
-		entry->item.session_id, entry->item.sequence_id,
-		entry->item.wb_idx, entry->item.flags,
-		entry->item.input.format,
-		entry->item.input.width, entry->item.input.height,
-		entry->item.src_rect.x, entry->item.src_rect.y,
-		entry->item.src_rect.w, entry->item.src_rect.h,
-		entry->item.output.format,
-		entry->item.output.width, entry->item.output.height,
-		entry->item.dst_rect.x, entry->item.dst_rect.y,
-		entry->item.dst_rect.w, entry->item.dst_rect.h);
+	if (trace_rot_entry_commit_enabled()) {
+		struct sde_rot_trace_entry te;
+
+		sde_rotator_trace_entry_fill(&te, &entry->item,
+				entry->item.session_id, entry->item.sequence_id);
+		trace_rot_entry_commit(&te);
+	}
 
 	ATRACE_INT("sde_smmu_ctrl", 0);
 	ret = sde_smmu_ctrl(1);
@@ -1684,17 +1705,13 @@ static void sde_rotator_done_handler(struct kthread_work *work)
 	if (entry->item.ts)
 		entry->item.ts[SDE_ROTATOR_TS_DONE] = ktime_get();
 
-	trace_rot_entry_done(
-		entry->item.session_id, entry->item.sequence_id,
-		entry->item.wb_idx, entry->item.flags,
-		entry->item.input.format,
-		entry->item.input.width, entry->item.input.height,
-		entry->item.src_rect.x, entry->item.src_rect.y,
-		entry->item.src_rect.w, entry->item.src_rect.h,
-		entry->item.output.format,
-		entry->item.output.width, entry->item.output.height,
-		entry->item.dst_rect.x, entry->item.dst_rect.y,
-		entry->item.dst_rect.w, entry->item.dst_rect.h);
+	if (trace_rot_entry_done_enabled()) {
+		struct sde_rot_trace_entry te;
+
+		sde_rotator_trace_entry_fill(&te, &entry->item,
+				entry->item.session_id, entry->item.sequence_id);
+		trace_rot_entry_done(&te);
+	}
 
 	sde_rot_mgr_lock(mgr);
 	sde_rotator_put_hw_resource(entry->commitq, entry, entry->commitq->hw);
@@ -2832,7 +2849,9 @@ static int sde_rotator_get_dt_vreg_data(struct device *dev,
 		}
 		snprintf(mp->vreg_config[i].vreg_name, 32, "%s", st);
 	}
-	sde_rot_config_vreg(dev, mp->vreg_config, mp->num_vreg, 1);
+	rc = sde_rot_config_vreg(dev, mp->vreg_config, mp->num_vreg, 1);
+	if (rc)
+		goto error;
 
 	for (i = 0; i < dt_vreg_total; i++) {
 		SDEROT_DBG("%s: %s min=%d, max=%d, enable=%d disable=%d\n",
@@ -2912,6 +2931,10 @@ static inline int sde_rotator_search_dt_clk(struct platform_device *pdev,
 
 	tmp = devm_clk_get(&pdev->dev, clk_name);
 	if (IS_ERR(tmp)) {
+		rc = PTR_ERR(tmp);
+		/* the multimedia clock controller may register after us */
+		if (rc == -EPROBE_DEFER)
+			return rc;
 		if (mandatory)
 			SDEROT_ERR("unable to get clk: %s\n", clk_name);
 		else
@@ -2929,7 +2952,7 @@ static inline int sde_rotator_search_dt_clk(struct platform_device *pdev,
 static int sde_rotator_parse_dt_clk(struct platform_device *pdev,
 		struct sde_rot_mgr *mgr)
 {
-	u32 rc = 0;
+	int rc = 0;
 	int num_clk;
 
 	num_clk = of_property_count_strings(pdev->dev.of_node,
@@ -2949,19 +2972,25 @@ static int sde_rotator_parse_dt_clk(struct platform_device *pdev,
 		goto clk_err;
 	}
 
-	if (sde_rotator_search_dt_clk(pdev, mgr, "mnoc_clk",
-			SDE_ROTATOR_CLK_MNOC_AHB, false) ||
-			sde_rotator_search_dt_clk(pdev, mgr, "gcc_iface",
-				SDE_ROTATOR_CLK_GCC_AHB, false) ||
-			sde_rotator_search_dt_clk(pdev, mgr, "gcc_bus",
-				SDE_ROTATOR_CLK_GCC_AXI, false) ||
-			sde_rotator_search_dt_clk(pdev, mgr, "iface_clk",
-				SDE_ROTATOR_CLK_MDSS_AHB, true) ||
-			sde_rotator_search_dt_clk(pdev, mgr, "axi_clk",
-				SDE_ROTATOR_CLK_MDSS_AXI, true) ||
-			sde_rotator_search_dt_clk(pdev, mgr, "rot_core_clk",
-				SDE_ROTATOR_CLK_MDSS_ROT, false))
-		rc = -EINVAL;
+	rc = sde_rotator_search_dt_clk(pdev, mgr, "mnoc_clk",
+			SDE_ROTATOR_CLK_MNOC_AHB, false);
+	if (!rc)
+		rc = sde_rotator_search_dt_clk(pdev, mgr, "gcc_iface",
+				SDE_ROTATOR_CLK_GCC_AHB, false);
+	if (!rc)
+		rc = sde_rotator_search_dt_clk(pdev, mgr, "gcc_bus",
+				SDE_ROTATOR_CLK_GCC_AXI, false);
+	if (!rc)
+		rc = sde_rotator_search_dt_clk(pdev, mgr, "iface_clk",
+				SDE_ROTATOR_CLK_MDSS_AHB, true);
+	if (!rc)
+		rc = sde_rotator_search_dt_clk(pdev, mgr, "axi_clk",
+				SDE_ROTATOR_CLK_MDSS_AXI, true);
+	if (!rc)
+		rc = sde_rotator_search_dt_clk(pdev, mgr, "rot_core_clk",
+				SDE_ROTATOR_CLK_MDSS_ROT, false);
+	if (rc)
+		goto clk_err;
 
 	/*
 	 * If 'MDSS_ROT' is already present, place 'rot_clk' under
@@ -2984,8 +3013,9 @@ static int sde_rotator_register_clk(struct platform_device *pdev,
 
 	ret = sde_rotator_parse_dt_clk(pdev, mgr);
 	if (ret) {
-		SDEROT_ERR("unable to parse clocks\n");
-		return -EINVAL;
+		if (ret != -EPROBE_DEFER)
+			SDEROT_ERR("unable to parse clocks\n");
+		return ret;
 	}
 
 	return 0;

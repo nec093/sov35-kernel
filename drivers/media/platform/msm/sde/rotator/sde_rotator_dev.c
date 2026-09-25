@@ -26,6 +26,7 @@
 #include <media/v4l2-event.h>
 #include <media/videobuf2-v4l2.h>
 #include <media/v4l2-mem2mem.h>
+#include <media/v4l2-crop-compat.h>
 
 #include "sde_rotator_inline.h"
 #include "sde_rotator_base.h"
@@ -1863,24 +1864,14 @@ int sde_rotator_inline_commit(void *handle, struct sde_rotator_inline_cmd *cmd,
 		req->retire_kw = ctx->work_queue.rot_kw;
 		req->retire_work = &request->retire_work;
 
-		trace_rot_entry_fence(
-			ctx->session_id, cmd->sequence_id,
-			req->entries[0].item.wb_idx,
-			req->entries[0].item.flags,
-			req->entries[0].item.input.format,
-			req->entries[0].item.input.width,
-			req->entries[0].item.input.height,
-			req->entries[0].item.src_rect.x,
-			req->entries[0].item.src_rect.y,
-			req->entries[0].item.src_rect.w,
-			req->entries[0].item.src_rect.h,
-			req->entries[0].item.output.format,
-			req->entries[0].item.output.width,
-			req->entries[0].item.output.height,
-			req->entries[0].item.dst_rect.x,
-			req->entries[0].item.dst_rect.y,
-			req->entries[0].item.dst_rect.w,
-			req->entries[0].item.dst_rect.h);
+		if (trace_rot_entry_fence_enabled()) {
+			struct sde_rot_trace_entry te;
+
+			sde_rotator_trace_entry_fill(&te,
+					&req->entries[0].item,
+					ctx->session_id, cmd->sequence_id);
+			trace_rot_entry_fence(&te);
+		}
 
 		ret = sde_rotator_handle_request_common(
 				rot_dev->mgr, ctx->private, req);
@@ -2694,6 +2685,19 @@ static int sde_rotator_s_crop(struct file *file, void *fh,
 	return 0;
 }
 
+static int sde_rotator_g_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_g_selection(file, fh, s, sde_rotator_g_crop,
+			sde_rotator_cropcap, false);
+}
+
+static int sde_rotator_s_selection(struct file *file, void *fh,
+	struct v4l2_selection *s)
+{
+	return v4l2_legacy_s_selection(file, fh, s, sde_rotator_s_crop, false);
+}
+
 /*
  * sde_rotator_g_parm - V4l2 ioctl get parm.
  * @file: Pointer to file struct.
@@ -3003,9 +3007,8 @@ static const struct v4l2_ioctl_ops sde_rotator_ioctl_ops = {
 	.vidioc_querybuf          = sde_rotator_querybuf,
 	.vidioc_streamon          = sde_rotator_streamon,
 	.vidioc_streamoff         = sde_rotator_streamoff,
-	.vidioc_cropcap           = sde_rotator_cropcap,
-	.vidioc_g_crop            = sde_rotator_g_crop,
-	.vidioc_s_crop            = sde_rotator_s_crop,
+	.vidioc_g_selection       = sde_rotator_g_selection,
+	.vidioc_s_selection       = sde_rotator_s_selection,
 	.vidioc_g_parm            = sde_rotator_g_parm,
 	.vidioc_s_parm            = sde_rotator_s_parm,
 	.vidioc_default           = sde_rotator_private_ioctl,
@@ -3143,21 +3146,31 @@ static int sde_rotator_process_buffers(struct sde_rotator_ctx *ctx,
 
 	ts[SDE_ROTATOR_TS_FENCE] = ktime_get();
 
-	trace_rot_entry_fence(
-		ctx->session_id, vbinfo_cap->fence_ts,
-		ctx->fh.prio,
-		(ctx->rotate << 0) | (ctx->hflip << 8) |
-			(ctx->hflip << 9) | (ctx->secure << 10),
-		ctx->format_out.fmt.pix.pixelformat,
-		ctx->format_out.fmt.pix.width,
-		ctx->format_out.fmt.pix.height,
-		ctx->crop_out.left, ctx->crop_out.top,
-		ctx->crop_out.width, ctx->crop_out.height,
-		ctx->format_cap.fmt.pix.pixelformat,
-		ctx->format_cap.fmt.pix.width,
-		ctx->format_cap.fmt.pix.height,
-		ctx->crop_cap.left, ctx->crop_cap.top,
-		ctx->crop_cap.width, ctx->crop_cap.height);
+	if (trace_rot_entry_fence_enabled()) {
+		struct sde_rot_trace_entry te = {
+			.ss_id = ctx->session_id,
+			.sq_id = vbinfo_cap->fence_ts,
+			.pr_id = ctx->fh.prio,
+			.flags = (ctx->rotate << 0) | (ctx->hflip << 8) |
+				(ctx->hflip << 9) | (ctx->secure << 10),
+			.src_fmt = ctx->format_out.fmt.pix.pixelformat,
+			.src_bw = ctx->format_out.fmt.pix.width,
+			.src_bh = ctx->format_out.fmt.pix.height,
+			.src_x = ctx->crop_out.left,
+			.src_y = ctx->crop_out.top,
+			.src_w = ctx->crop_out.width,
+			.src_h = ctx->crop_out.height,
+			.dst_fmt = ctx->format_cap.fmt.pix.pixelformat,
+			.dst_bw = ctx->format_cap.fmt.pix.width,
+			.dst_bh = ctx->format_cap.fmt.pix.height,
+			.dst_x = ctx->crop_cap.left,
+			.dst_y = ctx->crop_cap.top,
+			.dst_w = ctx->crop_cap.width,
+			.dst_h = ctx->crop_cap.height,
+		};
+
+		trace_rot_entry_fence(&te);
+	}
 
 	if (vbinfo_out->fence) {
 		sde_rot_mgr_unlock(rot_dev->mgr);
@@ -3633,6 +3646,8 @@ static int sde_rotator_probe(struct platform_device *pdev)
 	vdev->release = video_device_release;
 	vdev->v4l2_dev = &rot_dev->v4l2_dev;
 	vdev->vfl_dir = VFL_DIR_M2M;
+	vdev->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_M2M |
+			V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_CAPTURE;
 	vdev->vfl_type = VFL_TYPE_GRABBER;
 	strlcpy(vdev->name, SDE_ROTATOR_DRV_NAME, sizeof(vdev->name));
 

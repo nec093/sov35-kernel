@@ -22,15 +22,22 @@
 
 #include <linux/tracepoint.h>
 
+#ifndef _SDE_ROT_TRACE_ENTRY_DEFINED
+#define _SDE_ROT_TRACE_ENTRY_DEFINED
+/*
+ * The rotator entry events carry 18 values; BPF raw tracepoints accept at
+ * most 12 arguments, so they are passed in one struct.
+ */
+struct sde_rot_trace_entry {
+	u32 ss_id, sq_id, pr_id, flags;
+	u32 src_fmt, src_bw, src_bh, src_x, src_y, src_w, src_h;
+	u32 dst_fmt, dst_bw, dst_bh, dst_x, dst_y, dst_w, dst_h;
+};
+#endif
+
 DECLARE_EVENT_CLASS(rot_entry_template,
-	TP_PROTO(u32 ss_id, u32 sq_id, u32 pr_id, u32 flags,
-			u32 src_fmt, u32 src_bw, u32 src_bh,
-			u32 src_x, u32 src_y, u32 src_w, u32 src_h,
-			u32 dst_fmt, u32 dst_bw, u32 dst_bh,
-			u32 dst_x, u32 dst_y, u32 dst_w, u32 dst_h),
-	TP_ARGS(ss_id, sq_id, pr_id, flags,
-			src_fmt, src_bw, src_bh, src_x, src_y, src_w, src_h,
-			dst_fmt, dst_bw, dst_bh, dst_x, dst_y, dst_w, dst_h),
+	TP_PROTO(const struct sde_rot_trace_entry *e),
+	TP_ARGS(e),
 	TP_STRUCT__entry(
 			__field(u32, ss_id)
 			__field(u32, sq_id)
@@ -52,24 +59,24 @@ DECLARE_EVENT_CLASS(rot_entry_template,
 			__field(u16, dst_h)
 	),
 	TP_fast_assign(
-			__entry->ss_id = ss_id;
-			__entry->sq_id = sq_id;
-			__entry->pr_id = pr_id;
-			__entry->flags = flags;
-			__entry->src_fmt = src_fmt;
-			__entry->src_bw = src_bw;
-			__entry->src_bh = src_bh;
-			__entry->src_x = src_x;
-			__entry->src_y = src_y;
-			__entry->src_w = src_w;
-			__entry->src_h = src_h;
-			__entry->dst_fmt = dst_fmt;
-			__entry->dst_bw = dst_bw;
-			__entry->dst_bh = dst_bh;
-			__entry->dst_x = dst_x;
-			__entry->dst_y = dst_y;
-			__entry->dst_w = dst_w;
-			__entry->dst_h = dst_h;
+			__entry->ss_id = e->ss_id;
+			__entry->sq_id = e->sq_id;
+			__entry->pr_id = e->pr_id;
+			__entry->flags = e->flags;
+			__entry->src_fmt = e->src_fmt;
+			__entry->src_bw = e->src_bw;
+			__entry->src_bh = e->src_bh;
+			__entry->src_x = e->src_x;
+			__entry->src_y = e->src_y;
+			__entry->src_w = e->src_w;
+			__entry->src_h = e->src_h;
+			__entry->dst_fmt = e->dst_fmt;
+			__entry->dst_bw = e->dst_bw;
+			__entry->dst_bh = e->dst_bh;
+			__entry->dst_x = e->dst_x;
+			__entry->dst_y = e->dst_y;
+			__entry->dst_w = e->dst_w;
+			__entry->dst_h = e->dst_h;
 	),
 
 	TP_printk("%d.%d|%d|%x|%x|%u,%u|%u,%u,%u,%u|%x|%u,%u|%u,%u,%u,%u|",
@@ -84,36 +91,18 @@ DECLARE_EVENT_CLASS(rot_entry_template,
 );
 
 DEFINE_EVENT(rot_entry_template, rot_entry_fence,
-	TP_PROTO(u32 ss_id, u32 sq_id, u32 pr_id, u32 flags,
-			u32 src_fmt, u32 src_bw, u32 src_bh,
-			u32 src_x, u32 src_y, u32 src_w, u32 src_h,
-			u32 dst_fmt, u32 dst_bw, u32 dst_bh,
-			u32 dst_x, u32 dst_y, u32 dst_w, u32 dst_h),
-	TP_ARGS(ss_id, sq_id, pr_id, flags,
-			src_fmt, src_bw, src_bh, src_x, src_y, src_w, src_h,
-			dst_fmt, dst_bw, dst_bh, dst_x, dst_y, dst_w, dst_h)
+	TP_PROTO(const struct sde_rot_trace_entry *e),
+	TP_ARGS(e)
 );
 
 DEFINE_EVENT(rot_entry_template, rot_entry_commit,
-	TP_PROTO(u32 ss_id, u32 sq_id, u32 pr_id, u32 flags,
-			u32 src_fmt, u32 src_bw, u32 src_bh,
-			u32 src_x, u32 src_y, u32 src_w, u32 src_h,
-			u32 dst_fmt, u32 dst_bw, u32 dst_bh,
-			u32 dst_x, u32 dst_y, u32 dst_w, u32 dst_h),
-	TP_ARGS(ss_id, sq_id, pr_id, flags,
-			src_fmt, src_bw, src_bh, src_x, src_y, src_w, src_h,
-			dst_fmt, dst_bw, dst_bh, dst_x, dst_y, dst_w, dst_h)
+	TP_PROTO(const struct sde_rot_trace_entry *e),
+	TP_ARGS(e)
 );
 
 DEFINE_EVENT(rot_entry_template, rot_entry_done,
-	TP_PROTO(u32 ss_id, u32 sq_id, u32 pr_id, u32 flags,
-			u32 src_fmt, u32 src_bw, u32 src_bh,
-			u32 src_x, u32 src_y, u32 src_w, u32 src_h,
-			u32 dst_fmt, u32 dst_bw, u32 dst_bh,
-			u32 dst_x, u32 dst_y, u32 dst_w, u32 dst_h),
-	TP_ARGS(ss_id, sq_id, pr_id, flags,
-			src_fmt, src_bw, src_bh, src_x, src_y, src_w, src_h,
-			dst_fmt, dst_bw, dst_bh, dst_x, dst_y, dst_w, dst_h)
+	TP_PROTO(const struct sde_rot_trace_entry *e),
+	TP_ARGS(e)
 );
 
 TRACE_EVENT(rot_perf_set_qos_luts,

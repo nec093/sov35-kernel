@@ -212,6 +212,10 @@ struct sde_rotation_item {
 	struct completion inline_start;
 };
 
+struct sde_rot_trace_entry;
+void sde_rotator_trace_entry_fill(struct sde_rot_trace_entry *te,
+		const struct sde_rotation_item *item, u32 ss_id, u32 sq_id);
+
 /*
  * Defining characteristics about rotation work, that has corresponding
  * fmt and roi checks in open session

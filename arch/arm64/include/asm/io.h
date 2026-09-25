@@ -135,6 +135,7 @@ static inline u64 __raw_readq(const volatile void __iomem *addr)
 #define __raw_writel_no_log(v, c)	__raw_writel((v), (c))
 #define __raw_readl_no_log(c)		__raw_readl(c)
 #define readl_relaxed_no_log(c)	readl_relaxed(c)
+#define writel_relaxed_no_log(v, c)	writel_relaxed((v), (c))
 
 #define writeb_relaxed(v,c)	((void)__raw_writeb((v),(c)))
 #define writew_relaxed(v,c)	((void)__raw_writew((__force u16)cpu_to_le16(v),(c)))
