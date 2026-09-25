@@ -13,6 +13,10 @@
 
 #ifndef _MSM_VIDC_COMMON_H_
 #define _MSM_VIDC_COMMON_H_
+
+#ifndef V4L2_CTRL_ID2CLASS
+#define V4L2_CTRL_ID2CLASS(id)	((id) & 0x0fff0000UL)
+#endif
 #include "msm_vidc_internal.h"
 struct vb2_buf_entry {
 	struct list_head list;

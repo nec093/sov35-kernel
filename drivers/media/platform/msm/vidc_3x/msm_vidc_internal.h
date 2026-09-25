@@ -15,6 +15,7 @@
 #define _MSM_VIDC_INTERNAL_H_
 
 #include <linux/atomic.h>
+#include <linux/version.h>
 #include <linux/list.h>
 #include <linux/time.h>
 #include <linux/types.h>

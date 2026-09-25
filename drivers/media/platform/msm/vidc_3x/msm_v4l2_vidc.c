@@ -241,8 +241,8 @@ static int msm_v4l2_query_ext_ctrl(struct file *file, void *fh,
 
 static const struct v4l2_ioctl_ops msm_v4l2_ioctl_ops = {
 	.vidioc_querycap = msm_v4l2_querycap,
-	.vidioc_enum_fmt_vid_cap_mplane = msm_v4l2_enum_fmt,
-	.vidioc_enum_fmt_vid_out_mplane = msm_v4l2_enum_fmt,
+	.vidioc_enum_fmt_vid_cap = msm_v4l2_enum_fmt,
+	.vidioc_enum_fmt_vid_out = msm_v4l2_enum_fmt,
 	.vidioc_s_fmt_vid_cap_mplane = msm_v4l2_s_fmt,
 	.vidioc_s_fmt_vid_out_mplane = msm_v4l2_s_fmt,
 	.vidioc_g_fmt_vid_cap_mplane = msm_v4l2_g_fmt,
@@ -493,6 +493,9 @@ static int msm_vidc_probe_vidc_device(struct platform_device *pdev)
 	core->vdev[MSM_VIDC_DECODER].vdev.fops = &msm_v4l2_vidc_fops;
 	core->vdev[MSM_VIDC_DECODER].vdev.ioctl_ops = &msm_v4l2_ioctl_ops;
 	core->vdev[MSM_VIDC_DECODER].vdev.vfl_dir = VFL_DIR_M2M;
+	core->vdev[MSM_VIDC_DECODER].vdev.device_caps =
+		V4L2_CAP_VIDEO_CAPTURE_MPLANE |
+		V4L2_CAP_VIDEO_OUTPUT_MPLANE | V4L2_CAP_STREAMING;
 	core->vdev[MSM_VIDC_DECODER].type = MSM_VIDC_DECODER;
 	core->vdev[MSM_VIDC_DECODER].vdev.v4l2_dev = &core->v4l2_dev;
 	rc = video_register_device(&core->vdev[MSM_VIDC_DECODER].vdev,
@@ -517,6 +520,9 @@ static int msm_vidc_probe_vidc_device(struct platform_device *pdev)
 	core->vdev[MSM_VIDC_ENCODER].vdev.fops = &msm_v4l2_vidc_fops;
 	core->vdev[MSM_VIDC_ENCODER].vdev.ioctl_ops = &msm_v4l2_ioctl_ops;
 	core->vdev[MSM_VIDC_ENCODER].vdev.vfl_dir = VFL_DIR_M2M;
+	core->vdev[MSM_VIDC_ENCODER].vdev.device_caps =
+		V4L2_CAP_VIDEO_CAPTURE_MPLANE |
+		V4L2_CAP_VIDEO_OUTPUT_MPLANE | V4L2_CAP_STREAMING;
 	core->vdev[MSM_VIDC_ENCODER].type = MSM_VIDC_ENCODER;
 	core->vdev[MSM_VIDC_ENCODER].vdev.v4l2_dev = &core->v4l2_dev;
 	rc = video_register_device(&core->vdev[MSM_VIDC_ENCODER].vdev,

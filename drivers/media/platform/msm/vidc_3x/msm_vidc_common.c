@@ -511,7 +511,7 @@ static int msm_comm_vote_bus(struct msm_vidc_core *core)
 		++vote_data_count;
 
 	vote_data = kzalloc(sizeof(*vote_data) * vote_data_count,
-			GFP_TEMPORARY);
+			GFP_KERNEL);
 	if (!vote_data) {
 		dprintk(VIDC_ERR, "%s: failed to allocate memory\n", __func__);
 		rc = -ENOMEM;

@@ -3599,7 +3599,7 @@ static void __flush_debug_queue(struct venus_hfi_device *device, u8 *packet)
 	}
 
 	if (!packet) {
-		packet = kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE, GFP_TEMPORARY);
+		packet = kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE, GFP_KERNEL);
 		if (!packet) {
 			dprintk(VIDC_ERR, "In %s() Fail to allocate mem\n",
 				__func__);
@@ -4365,7 +4365,7 @@ static int __init_resources(struct venus_hfi_device *device,
 
 	device->sys_init_capabilities =
 		kzalloc(sizeof(struct msm_vidc_capability)
-		* VIDC_MAX_SESSIONS, GFP_TEMPORARY);
+		* VIDC_MAX_SESSIONS, GFP_KERNEL);
 
 	return rc;
 
@@ -4976,7 +4976,7 @@ static struct venus_hfi_device *__add_device(u32 device_id,
 	}
 
 	hdevice->raw_packet =
-		kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE, GFP_TEMPORARY);
+		kzalloc(VIDC_IFACEQ_VAR_HUGE_PKT_SIZE, GFP_KERNEL);
 	if (!hdevice->raw_packet) {
 		dprintk(VIDC_ERR, "failed to allocate raw packet\n");
 		goto err_cleanup;
