@@ -415,6 +415,15 @@ static int msm_mpm_gic_chip_alloc(struct irq_domain *domain,
 
 	parent_fwspec = *fwspec;
 	parent_fwspec.fwnode = domain->parent->fwnode;
+	/*
+	 * The MSM8996 DT routes most SPIs through the MPM with a trigger
+	 * type of 0, which the GICv3 driver now rejects loudly (a WARN with
+	 * a stack dump per interrupt, ~80 at boot). GIC SPIs are level
+	 * triggered unless configured otherwise, so say so explicitly.
+	 */
+	if (parent_fwspec.param_count >= 3 &&
+	    !(parent_fwspec.param[2] & IRQ_TYPE_SENSE_MASK))
+		parent_fwspec.param[2] |= IRQ_TYPE_LEVEL_HIGH;
 	return irq_domain_alloc_irqs_parent(domain, virq, nr_irqs,
 					    &parent_fwspec);
 }
