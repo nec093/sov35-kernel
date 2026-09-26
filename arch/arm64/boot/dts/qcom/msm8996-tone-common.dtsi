@@ -121,8 +121,8 @@
 		interrupts = <0 1>;
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
-		interrupt-map = <0 &intc 0 0 108 0
-				1 &intc 0 0 238 0>;
+		interrupt-map = <0 &intc 0 0 108 IRQ_TYPE_LEVEL_HIGH
+				1 &intc 0 0 238 IRQ_TYPE_LEVEL_HIGH>;
 		/delete-property/ qcom,inject-rx-on-wakeup;
 		/delete-property/ qcom,rx-char-to-inject;
 		qcom,bam-tx-ep-pipe-index = <2>;

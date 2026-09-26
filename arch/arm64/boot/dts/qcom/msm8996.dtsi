@@ -603,8 +603,8 @@
 		interrupts = <0 1 2>;
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
-		interrupt-map = <0 &intc 0 0 108 0
-			    1 &intc 0 0 238 0
+		interrupt-map = <0 &intc 0 0 108 IRQ_TYPE_LEVEL_HIGH
+			    1 &intc 0 0 238 IRQ_TYPE_LEVEL_HIGH
 			    2 &tlmm 42 0>;
 
 		qcom,inject-rx-on-wakeup;
@@ -1564,10 +1564,10 @@
 		interrupt-names = "msi";
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0 0 0 0x7>;
-		interrupt-map = <0 0 0 1 &intc 0 244 IRQ_TYPE_LEVEL_HIGH>, /* int_a */
-				<0 0 0 2 &intc 0 245 IRQ_TYPE_LEVEL_HIGH>, /* int_b */
-				<0 0 0 3 &intc 0 247 IRQ_TYPE_LEVEL_HIGH>, /* int_c */
-				<0 0 0 4 &intc 0 248 IRQ_TYPE_LEVEL_HIGH>; /* int_d */
+		interrupt-map = <0 0 0 1 &intc 0 0 244 IRQ_TYPE_LEVEL_HIGH>, /* int_a */
+				<0 0 0 2 &intc 0 0 245 IRQ_TYPE_LEVEL_HIGH>, /* int_b */
+				<0 0 0 3 &intc 0 0 247 IRQ_TYPE_LEVEL_HIGH>, /* int_c */
+				<0 0 0 4 &intc 0 0 248 IRQ_TYPE_LEVEL_HIGH>; /* int_d */
 
 		pinctrl-names = "default", "sleep";
 		pinctrl-0 = <&pcie0_clkreq_default &pcie0_perst_default &pcie0_wake_default>;
@@ -1836,7 +1836,7 @@
 			compatible = "snps,dwc3";
 			reg = <0x06a00000 0xc8d0>;
 			interrupt-parent = <&intc>;
-			interrupts = <0 131 0>;
+			interrupts = <0 131 IRQ_TYPE_LEVEL_HIGH>;
 			usb-phy = <&qusb_phy0>, <&ssphy>;
 			tx-fifo-resize;
 			snps,usb3-u1u2-disable;
@@ -1849,7 +1849,7 @@
 			compatible = "qcom,usb-bam-msm";
 			reg = <0x06b04000 0x1a934>;
 			interrupt-parent = <&intc>;
-			interrupts = <0 132 0>;
+			interrupts = <0 132 IRQ_TYPE_LEVEL_HIGH>;
 
 			qcom,bam-type = <0>;
 			qcom,usb-bam-fifo-baseaddr = <0x066bb000>;
@@ -1945,7 +1945,7 @@
 			compatible = "snps,dwc3";
 			reg = <0x07600000 0xc8d0>;
 			interrupt-parent = <&intc>;
-			interrupts = <0 138 0>;
+			interrupts = <0 138 IRQ_TYPE_LEVEL_HIGH>;
 			usb-phy = <&qusb_phy1>, <&usb_nop_phy>;
 			maximum-speed = "high-speed";
 			snps,nominal-elastic-buffer;
