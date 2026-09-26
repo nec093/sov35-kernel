@@ -17,7 +17,12 @@
 #ifndef __ASM_BITSPERLONG_H
 #define __ASM_BITSPERLONG_H
 
+/* 32-bit ARM userspace built against the arm64 UAPI headers */
+#if defined(__KERNEL__) || defined(__aarch64__)
 #define __BITS_PER_LONG 64
+#else
+#define __BITS_PER_LONG 32
+#endif
 
 #include <asm-generic/bitsperlong.h>
 
