@@ -102,7 +102,7 @@ static int psci_enter_idle_state(struct cpuidle_device *dev,
 {
 	u32 *state = __this_cpu_read(psci_power_state);
 	struct psci_cluster *cl = __this_cpu_read(psci_cpu_cluster);
-	ktime_t now, delta_next;
+	ktime_t now;
 	u32 param;
 	int ret;
 
@@ -110,9 +110,14 @@ static int psci_enter_idle_state(struct cpuidle_device *dev,
 		return CPU_PM_CPU_IDLE_ENTER_PARAM(psci_cpu_suspend_enter,
 						   idx, state[idx - 1]);
 
+	/*
+	 * The clock event programmed for this CPU is when it will wake up
+	 * next: the retained scheduler tick if the governor kept it, the
+	 * next timer otherwise. tick_nohz_get_sleep_length() would ignore
+	 * a retained tick (and must only be called by the governor).
+	 */
 	now = ktime_get();
-	__this_cpu_write(psci_next_wake,
-			 ktime_add(now, tick_nohz_get_sleep_length(&delta_next)));
+	__this_cpu_write(psci_next_wake, tick_nohz_get_next_hrtimer());
 
 	param = state[idx - 1];
 	raw_spin_lock(&cl->lock);
