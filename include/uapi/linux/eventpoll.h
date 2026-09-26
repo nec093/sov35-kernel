@@ -74,6 +74,12 @@
 #define EPOLL_PACKED
 #endif
 
+/*
+ * As in the Android 4.9 kernels: libc (bionic) defines struct epoll_event
+ * itself, and a vendor build that puts these headers in front of it would
+ * otherwise see it twice.
+ */
+#ifdef __KERNEL__
 struct epoll_event {
 	__poll_t events;
 	__u64 data;
@@ -91,4 +97,5 @@ static inline void ep_take_care_of_epollwakeup(struct epoll_event *epev)
 	epev->events &= ~EPOLLWAKEUP;
 }
 #endif
+#endif /* __KERNEL__ */
 #endif /* _UAPI_LINUX_EVENTPOLL_H */
