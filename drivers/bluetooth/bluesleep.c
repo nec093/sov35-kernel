@@ -637,6 +637,16 @@ static int bluesleep_probe(struct platform_device *pdev)
 {
 	int ret;
 
+	/*
+	 * The HS-UART port is needed at the end of probe; ask for it first so
+	 * that a deferred probe does not leave anything behind. Deferring
+	 * after wakeup_source_init()/request_irq() used to kfree() bsi with
+	 * its wakeup source still on the global list and the IRQ handler
+	 * still installed, corrupting the wakeup source list.
+	 */
+	if (IS_ERR_OR_NULL(msm_hs_get_uart_port(BT_PORT_ID)))
+		return -EPROBE_DEFER;
+
 	bsi = kzalloc(sizeof(struct bluesleep_info), GFP_KERNEL);
 	if (!bsi)
 		return -ENOMEM;
@@ -645,13 +655,13 @@ static int bluesleep_probe(struct platform_device *pdev)
 		ret = bluesleep_populate_dt_pinfo(pdev);
 		if (ret < 0) {
 			pr_err("couldn't populate info from dt");
-			return ret;
+			goto free_bsi;
 		}
 	} else {
 		ret = bluesleep_populate_pinfo(pdev);
 		if (ret < 0) {
 			pr_err("couldn't populate info");
-			return ret;
+			goto free_bsi;
 		}
 	}
 
@@ -704,26 +714,25 @@ static int bluesleep_probe(struct platform_device *pdev)
 			bsi->host_wake_irq,
 			bsi->irq_polarity);
 
+	bsi->uport = msm_hs_get_uart_port(BT_PORT_ID);
+
 	ret = request_irq(bsi->host_wake_irq, bluesleep_hostwake_isr,
 			IRQF_TRIGGER_RISING,
 			"bluetooth hostwake", NULL);
 	if (ret  < 0) {
 		pr_err("Couldn't acquire BT_HOST_WAKE IRQ");
-		goto free_bt_ext_wake;
-	}
-
-	bsi->uport = msm_hs_get_uart_port(BT_PORT_ID);
-	if (IS_ERR_OR_NULL(bsi->uport)) {
-		ret = -EPROBE_DEFER;
-		goto free_bt_ext_wake;
+		goto free_wake_lock;
 	}
 
 	enable_wakeup_irq(0);
 
 	return 0;
 
+free_wake_lock:
+	wakeup_source_trash(&bsi->wake_lock);
 free_bt_ext_wake:
-	gpio_free(bsi->ext_wake);
+	if (bsi->has_ext_wake)
+		gpio_free(bsi->ext_wake);
 free_bt_host_wake:
 	gpio_free(bsi->host_wake);
 free_bsi:
