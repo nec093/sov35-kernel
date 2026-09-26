@@ -27,7 +27,7 @@ partition.
 | Sensor hub (SLPI), modem | not yet (also offline on the stock 4.9 kernel here) |
 | Fingerprint (FPC1145) | kernel driver probes, the HAL talks to the sensor; enrolment not reachable from the GSI settings |
 | Bluetooth, NFC | not yet |
-| cpuidle (PSCI: core power collapse, L2 retention and L2 power collapse) | working |
+| cpuidle (PSCI: core power collapse, L2 retention and L2 power collapse) | working; the Kryo clusters run in BHS mode only (LDO mode disabled, see Notes) |
 | LMH (limits management hardware) | working: sensors, profile, DPM voltage and ODCM are set up; throttling intensity readable from the `lmh-*` thermal zones |
 
 ## Build
@@ -68,6 +68,10 @@ this kernel does not reach fastboot yet; reboot to the installed kernel first.
   (`/vendor/firmware_mnt/image`). Do not add
   `firmware_class.path=/vendor/firmware_mnt/image`: the modem MBA then fails
   authentication and the device resets.
+- Kryo LDO mode is disabled in the DT (`qcom,ldo-disable`). With it enabled,
+  cluster (L2) power collapse makes a later CPU voltage transition take a
+  whole cluster down (in the TZ recalibration / APM clock-source calls),
+  followed by SErrors and a watchdog reset in most boots.
 - The commits on `port-5.4` explain each fix (probe-ordering changes for
   late msm_bus/clock providers, CAF API compatibility shims, etc.).
 
