@@ -3409,7 +3409,7 @@ static int msm_hs_runtime_resume(struct device *dev) {}
 #endif
 
 
-static int msm_hs_probe(struct platform_device *pdev)
+static int __msm_hs_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct uart_port *uport;
@@ -3707,6 +3707,24 @@ unmap_memory:
 	iounmap(uport->membase);
 	iounmap(msm_uport->bam_base);
 
+	return ret;
+}
+
+/*
+ * The line number is taken at the start of probe; give it back when probe
+ * fails, otherwise every deferred attempt (clocks, bus) burns one and the
+ * BT UART ends up as ttyHS2 instead of ttyHS0.
+ */
+static int msm_hs_probe(struct platform_device *pdev)
+{
+	int ret = __msm_hs_probe(pdev);
+
+	if (ret && pdev->dev.of_node && pdev->id >= 0 && pdev->id < UARTDM_NR) {
+		mutex_lock(&mutex_next_device_id);
+		deviceid[pdev->id] = false;
+		mutex_unlock(&mutex_next_device_id);
+		pdev->id = PLATFORM_DEVID_NONE;
+	}
 	return ret;
 }
 
