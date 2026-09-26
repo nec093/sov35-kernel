@@ -436,4 +436,19 @@ config BT_HCIRSI
 	  Say Y here to compile support for HCI over Redpine into the
 	  kernel or say M to compile as a module.
 
+config BT_MSM_SLEEP
+	tristate "MSM Bluesleep driver"
+	depends on BT && SERIAL_MSM_HS
+	help
+	  Bluetooth MSM bluesleep driver.
+	  This driver provides support for BTS sleep.
+
+config BT_BCM43XX
+	tristate "Broadcom BCM43xx control driver"
+	depends on SERIAL_MSM_HS && RFKILL
+	help
+	  This enables the Bluetooth driver for Broadcom BCM43xx.
+	  This driver controls BT power/HOST_WAKE and BT_WAKE via GPIO.
+
+
 endmenu
