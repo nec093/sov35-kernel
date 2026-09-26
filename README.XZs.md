@@ -92,3 +92,6 @@ GSI を stock の vendor パーティションのまま起動できます(SOV35 
   ストレージ・動画コーデックは動作、音声・センサーハブ・Bluetooth などは未対応、
   指紋はドライバのみ動作)。動画コーデックは ueventd のファームウェア検索パスに
   `/vendor/firmware_mnt/image` が必要です(vendor 側の設定)。
+- Kryo の LDO モードは DT で無効にしています(`qcom,ldo-disable`)。有効のままだと、
+  L2 の電源断を使ったあとの CPU 電圧遷移でクラスタごと停止し、多くの起動で
+  SError と watchdog リセットに至ります。
