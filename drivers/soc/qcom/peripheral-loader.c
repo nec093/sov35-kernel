@@ -824,6 +824,16 @@ static void *map_fw_mem(phys_addr_t paddr, size_t size, void *data)
 
 static void unmap_fw_mem(void *vaddr, size_t size, void *data)
 {
+	/*
+	 * The mapping above is write-back cacheable, unlike the non-cached
+	 * one dma_remap() gave on 4.9, and the secure world / the modem's
+	 * MBA read the images and metadata from DDR without snooping the
+	 * CPU caches. Clean them out before letting go, otherwise they
+	 * authenticate stale memory: "Initializing image failed(rc:-5)" on
+	 * a first load, or MBA "Blob3 failed verification" and a board
+	 * reset for the modem.
+	 */
+	dmac_flush_range(vaddr, vaddr + size);
 	memunmap(vaddr);
 }
 
