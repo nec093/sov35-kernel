@@ -626,6 +626,13 @@ static int pil_init_image_trusted(struct pil_desc *pil,
 	}
 
 	memcpy(mdata_buf, metadata, size);
+	/*
+	 * Unmap (which cleans the cacheable mapping to DDR) before the secure
+	 * world reads the metadata, not after: TZ does not snoop the CPU
+	 * caches, and authenticating stale memory failed the init at random
+	 * ("Initializing image failed(rc:-5/-22)" for slpi and a530_zap).
+	 */
+	pil->unmap_fw_mem(mdata_buf, size, map_data);
 
 	request.proc = d->pas_id;
 	request.image_addr = mdata_phys;
@@ -642,7 +649,6 @@ static int pil_init_image_trusted(struct pil_desc *pil,
 		scm_ret = desc.ret[0];
 	}
 
-	pil->unmap_fw_mem(mdata_buf, size, map_data);
 	scm_pas_disable_bw();
 	if (ret)
 		return ret;
