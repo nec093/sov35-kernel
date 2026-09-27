@@ -3519,6 +3519,16 @@ static bool q6asm_legacy_v3_soc(void)
 	return of_machine_is_compatible("qcom,msm8996");
 }
 
+/*
+ * msm8996: stay on ASM_DATA_CMD_EOS, the command the legacy (4.9) driver
+ * used with this ADSP firmware. It is answered with
+ * ASM_DATA_EVENT_RENDERED_EOS; ASM_DATA_CMD_EOS_V2 belongs to newer AVS.
+ */
+static u32 q6asm_eos_opcode(void)
+{
+	return q6asm_legacy_v3_soc() ? ASM_DATA_CMD_EOS : ASM_DATA_CMD_EOS_V2;
+}
+
 int q6asm_open_read_v4(struct audio_client *ac, uint32_t format,
 			uint16_t bits_per_sample, bool ts_mode,
 			uint32_t enc_cfg_id)
@@ -10761,7 +10771,7 @@ static int __q6asm_cmd(struct audio_client *ac, int cmd, uint32_t stream_id)
 		break;
 	case CMD_EOS:
 		pr_debug("%s: CMD_EOS\n", __func__);
-		hdr.opcode = ASM_DATA_CMD_EOS_V2;
+		hdr.opcode = q6asm_eos_opcode();
 		atomic_set(&ac->cmd_state, 0);
 		state = &ac->cmd_state;
 		break;
@@ -10911,7 +10921,7 @@ static int __q6asm_cmd_nowait(struct audio_client *ac, int cmd,
 		break;
 	case CMD_EOS:
 		pr_debug("%s: CMD_EOS\n", __func__);
-		hdr.opcode = ASM_DATA_CMD_EOS_V2;
+		hdr.opcode = q6asm_eos_opcode();
 		break;
 	case CMD_CLOSE:
 		pr_debug("%s: CMD_CLOSE\n", __func__);
