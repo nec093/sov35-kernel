@@ -192,7 +192,12 @@ static struct perf_event_attr *alloc_attr(void)
 	attr->type = PERF_TYPE_RAW;
 	attr->size = sizeof(struct perf_event_attr);
 	attr->pinned = 1;
-	attr->exclude_idle = 1;
+	/*
+	 * No exclude_idle: CAF taught its arm64 PMU driver to stop the
+	 * counters in idle, upstream armv8pmu_set_event_filter() rejects the
+	 * attribute (-EPERM, reported as -EOPNOTSUPP) and no counter gets
+	 * created. The counters barely move in WFI anyway.
+	 */
 
 	return attr;
 }
