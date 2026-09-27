@@ -3055,6 +3055,15 @@ static int tasha_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 		dev_dbg(component->dev, "%s: Disconnect RX port, ret = %d\n",
 			__func__, ret);
 
+		/*
+		 * The RX interpolators power down before this AIF (and power up
+		 * after it), so the port overflows around every start/stop and
+		 * tasha_slimbus_irq() masks its interrupt - which also hides the
+		 * PORT_CLOSED event the ch_mask wait needs. The port is
+		 * disconnected now; unmask it so the latched close is delivered.
+		 */
+		tasha_codec_enable_int_port(dai, component);
+
 		if (!dai->bus_down_in_recovery)
 			ret = tasha_codec_enable_slim_chmask(dai, false);
 		else
@@ -3172,6 +3181,14 @@ static int tasha_codec_enable_slimvi_feedback(struct snd_soc_dapm_widget *w,
 		if (ret)
 			dev_err(component->dev, "%s error in close_slim_sch_tx %d\n",
 				__func__, ret);
+		/*
+		 * The RX interpolators power down before this AIF (and power up
+		 * after it), so the port overflows around every start/stop and
+		 * tasha_slimbus_irq() masks its interrupt - which also hides the
+		 * PORT_CLOSED event the ch_mask wait needs. The port is
+		 * disconnected now; unmask it so the latched close is delivered.
+		 */
+		tasha_codec_enable_int_port(dai, component);
 		if (!dai->bus_down_in_recovery)
 			ret = tasha_codec_enable_slim_chmask(dai, false);
 		if (ret < 0) {
@@ -3253,6 +3270,14 @@ static int __tasha_codec_enable_slimtx(struct snd_soc_component *component,
 	case SND_SOC_DAPM_POST_PMD:
 		ret = wcd9xxx_close_slim_sch_tx(core, &dai->wcd9xxx_ch_list,
 						dai->grph);
+		/*
+		 * The RX interpolators power down before this AIF (and power up
+		 * after it), so the port overflows around every start/stop and
+		 * tasha_slimbus_irq() masks its interrupt - which also hides the
+		 * PORT_CLOSED event the ch_mask wait needs. The port is
+		 * disconnected now; unmask it so the latched close is delivered.
+		 */
+		tasha_codec_enable_int_port(dai, component);
 		if (!dai->bus_down_in_recovery)
 			ret = tasha_codec_enable_slim_chmask(dai, false);
 		if (ret < 0) {
