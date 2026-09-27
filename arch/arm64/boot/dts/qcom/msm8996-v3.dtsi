@@ -116,6 +116,13 @@
 	 * No 315/214 MHz levels: gfx3d_clk_src has no MMPLL8 rows in this
 	 * port, so both rounded up to 401.8 MHz and the TZ DCVS judged the
 	 * load against clocks the GPU was not running at.
+	 *
+	 * No 133 MHz level either: at its LOW_SVS corner (~525-550 mV after the
+	 * fuse and closed-loop adjustments) the GPU hangs repeatedly, and a
+	 * hang can stall the bus and reset the whole SoC (RESIN_N); pinned at
+	 * 401.8 MHz it does not. And no 652.8 MHz: the MSM8996 v3 (non-Pro)
+	 * gfx3d vdd table stops at TURBO_L1 = 624 MHz, so 652.8 MHz kept the
+	 * previous corner and ran undervolted.
 	 */
 	qcom,gpu-pwrlevel-bins {
 		#address-cells = <1>;
@@ -129,58 +136,42 @@
 
 			qcom,speed-bin = <0>;
 
-			qcom,initial-pwrlevel = <4>;
+			qcom,initial-pwrlevel = <3>;
 
 			qcom,gpu-pwrlevel@0 {
 				reg = <0>;
-				qcom,gpu-freq = <652800000>;
-				qcom,bus-freq = <12>;
-				qcom,bus-min = <12>;
-				qcom,bus-max = <12>;
-			};
-
-			qcom,gpu-pwrlevel@1 {
-				reg = <1>;
 				qcom,gpu-freq = <624000000>;
 				qcom,bus-freq = <12>;
 				qcom,bus-min = <11>;
 				qcom,bus-max = <12>;
 			};
 
-			qcom,gpu-pwrlevel@2 {
-				reg = <2>;
+			qcom,gpu-pwrlevel@1 {
+				reg = <1>;
 				qcom,gpu-freq = <560000000>;
 				qcom,bus-freq = <11>;
 				qcom,bus-min = <9>;
 				qcom,bus-max = <12>;
 			};
 
-			qcom,gpu-pwrlevel@3 {
-				reg = <3>;
+			qcom,gpu-pwrlevel@2 {
+				reg = <2>;
 				qcom,gpu-freq = <510000000>;
 				qcom,bus-freq = <9>;
 				qcom,bus-min = <8>;
 				qcom,bus-max = <11>;
 			};
 
-			qcom,gpu-pwrlevel@4 {
-				reg = <4>;
+			qcom,gpu-pwrlevel@3 {
+				reg = <3>;
 				qcom,gpu-freq = <401800000>;
 				qcom,bus-freq = <8>;
 				qcom,bus-min = <7>;
 				qcom,bus-max = <9>;
 			};
 
-			qcom,gpu-pwrlevel@5 {
-				reg = <5>;
-				qcom,gpu-freq = <133000000>;
-				qcom,bus-freq = <3>;
-				qcom,bus-min = <2>;
-				qcom,bus-max = <4>;
-			};
-
-			qcom,gpu-pwrlevel@6 {
-				reg = <6>;
+			qcom,gpu-pwrlevel@4 {
+				reg = <4>;
 				qcom,gpu-freq = <27000000>;
 				qcom,bus-freq = <0>;
 				qcom,bus-min = <0>;
@@ -230,14 +221,6 @@
 
 			qcom,gpu-pwrlevel@4 {
 				reg = <4>;
-				qcom,gpu-freq = <133000000>;
-				qcom,bus-freq = <3>;
-				qcom,bus-min = <2>;
-				qcom,bus-max = <4>;
-			};
-
-			qcom,gpu-pwrlevel@5 {
-				reg = <5>;
 				qcom,gpu-freq = <27000000>;
 				qcom,bus-freq = <0>;
 				qcom,bus-min = <0>;
@@ -271,14 +254,6 @@
 
 			qcom,gpu-pwrlevel@2 {
 				reg = <2>;
-				qcom,gpu-freq = <133000000>;
-				qcom,bus-freq = <3>;
-				qcom,bus-min = <2>;
-				qcom,bus-max = <4>;
-			};
-
-			qcom,gpu-pwrlevel@3 {
-				reg = <3>;
 				qcom,gpu-freq = <27000000>;
 				qcom,bus-freq = <0>;
 				qcom,bus-min = <0>;
