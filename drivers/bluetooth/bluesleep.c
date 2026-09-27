@@ -156,7 +156,8 @@ static atomic_t open_count = ATOMIC_INIT(0);
 static unsigned long flags;
 
 /** Tasklet to respond to change in hostwake line */
-static struct tasklet_struct hostwake_task;
+static void bluesleep_hostwake_task(unsigned long data);
+static DECLARE_TASKLET_OLD(hostwake_task, bluesleep_hostwake_task);
 
 #ifdef CONFIG_LINE_DISCIPLINE_DRIVER
 /** Transmission timer */
@@ -165,7 +166,7 @@ static DEFINE_TIMER(tx_timer, bluesleep_tx_timer_expire, 0, 0);
 #endif
 
 /** Lock for state transitions */
-static spinlock_t rw_lock;
+static DEFINE_SPINLOCK(rw_lock);
 
 /** State variable: whether uart clock is turned on by bluesleep. */
 static atomic_t uart_is_on = ATOMIC_INIT(0);
@@ -341,6 +342,9 @@ void bluesleep_outgoing_data(void)
 	unsigned long irq_flags;
 	int power_on_uart = 0;
 
+	if (!bsi)
+		return;
+
 	spin_lock_irqsave(&rw_lock, irq_flags);
 
 #ifdef CONFIG_LINE_DISCIPLINE_DRIVER
@@ -384,6 +388,9 @@ EXPORT_SYMBOL(bluesleep_outgoing_data);
 void bluesleep_tx_allow_sleep(void)
 {
 	unsigned long irq_flags;
+
+	if (!bsi)
+		return;
 
 	if (debug_mask & DEBUG_VERBOSE)
 		pr_err("%s\n", __FUNCTION__);
@@ -465,6 +472,9 @@ int bluesleep_start(bool is_clock_enabled)
 {
 	unsigned long irq_flags;
 
+	if (!bsi)
+		return -ENODEV;
+
 	if (atomic_read(&open_count) != 0) {
 		return -EBUSY;
 	}
@@ -511,6 +521,9 @@ EXPORT_SYMBOL(bluesleep_start);
 void bluesleep_stop(void)
 {
 	unsigned long irq_flags;
+
+	if (!bsi)
+		return;
 
 	spin_lock_irqsave(&rw_lock, irq_flags);
 
@@ -890,11 +903,6 @@ static int __init bluesleep_init(void)
 		return retval;
 	}
 
-	if (bsi == NULL) {
-		pr_err("bsi is NULL.");
-		return 0;
-	}
-
 	bluetooth_dir = proc_mkdir("bluetooth", NULL);
 	if (bluetooth_dir == NULL) {
 		pr_err("Unable to create /proc/bluetooth directory");
@@ -927,11 +935,6 @@ static int __init bluesleep_init(void)
 		goto fail;
 	}
 
-	flags = 0; /* clear all status bits */
-
-	/* Initialize spinlock. */
-	spin_lock_init(&rw_lock);
-
 #ifdef CONFIG_LINE_DISCIPLINE_DRIVER
 	/* Initialize timer */
 	init_timer(&tx_timer);
@@ -939,9 +942,6 @@ static int __init bluesleep_init(void)
 	tx_timer.data = 0;
 	clear_bit(BT_TXDATA, &flags);
 #endif
-
-	/* initialize host wake tasklet */
-	tasklet_init(&hostwake_task, bluesleep_hostwake_task, 0);
 
 	return 0;
 
