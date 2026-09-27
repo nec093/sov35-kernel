@@ -2152,6 +2152,27 @@ static int32_t msm_csiphy_cmd(struct csiphy_device *csiphy_dev, void *arg)
 		rc = msm_csiphy_init(csiphy_dev);
 		break;
 	case CSIPHY_CFG:
+#ifdef CONFIG_COMPAT
+		if (in_compat_syscall()) {
+			struct msm_camera_csiphy_params32 p32;
+
+			if (copy_from_user(&p32,
+				(void __user *)cdata->cfg.csiphy_params,
+				sizeof(p32))) {
+				pr_err("%s: %d failed\n", __func__, __LINE__);
+				rc = -EFAULT;
+				break;
+			}
+			memset(&csiphy_params, 0, sizeof(csiphy_params));
+			csiphy_params.lane_cnt = p32.lane_cnt;
+			csiphy_params.settle_cnt = p32.settle_cnt;
+			csiphy_params.lane_mask = p32.lane_mask;
+			csiphy_params.combo_mode = p32.combo_mode;
+			csiphy_params.csid_core = p32.csid_core;
+			csiphy_params.csiphy_clk = p32.csiphy_clk;
+			csiphy_params.csi_3phase = p32.csi_3phase;
+		} else
+#endif
 		if (copy_from_user(&csiphy_params,
 			(void __user *)cdata->cfg.csiphy_params,
 			sizeof(struct msm_camera_csiphy_params))) {

@@ -150,7 +150,8 @@ static long msm_sensor_init_subdev_do_ioctl(
 				__func__, __LINE__);
 			return rc;
 		}
-		u32->probed_info = sensor_init_data.probed_info;
+		msm_sensor_info_to_32(&u32->probed_info,
+				      &sensor_init_data.probed_info);
 		strlcpy(u32->entity_name, sensor_init_data.entity_name,
 			sizeof(sensor_init_data.entity_name));
 		return 0;
