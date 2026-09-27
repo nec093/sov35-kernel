@@ -3224,30 +3224,34 @@
 		qcom,msm-cpudai-afe-clk-ver = <2>;
 	};
 
+	/*
+	 * audio-kernel for 5.4: one DAI per MI2S direction (dev-id =
+	 * MSM_<intf>_MI2S_RX/TX, direction taken from "rx" in the node name)
+	 * and a single qcom,msm-mi2s-lines mask. Only the directions that had
+	 * data lines in the old rx/tx-lines binding are kept; the labels stay
+	 * on the nodes the sound card references.
+	 */
 	qcom,msm-dai-mi2s {
 		compatible = "qcom,msm-dai-mi2s";
-		dai_mi2s_sec: qcom,msm-dai-q6-mi2s-sec {
+		dai_mi2s_sec: qcom,msm-dai-q6-mi2s-sec-rx {
 			compatible = "qcom,msm-dai-q6-mi2s";
-			qcom,msm-dai-q6-mi2s-dev-id = <1>;
-			qcom,msm-mi2s-rx-lines = <1>;
-			qcom,msm-mi2s-tx-lines = <0>;
+			qcom,msm-dai-q6-mi2s-dev-id = <2>;	/* SEC_MI2S_RX */
+			qcom,msm-mi2s-lines = <1>;		/* SD0 */
 		};
 
-		dai_mi2s: qcom,msm-dai-q6-mi2s-tert {
+		dai_mi2s: qcom,msm-dai-q6-mi2s-tert-tx {
 			compatible = "qcom,msm-dai-q6-mi2s";
-			qcom,msm-dai-q6-mi2s-dev-id = <2>;
-			qcom,msm-mi2s-rx-lines = <2>;
-			qcom,msm-mi2s-tx-lines = <1>;
+			qcom,msm-dai-q6-mi2s-dev-id = <5>;	/* TERT_MI2S_TX */
+			qcom,msm-mi2s-lines = <1>;		/* SD0 */
 			pinctrl-names = "default", "sleep";
 			pinctrl-0 = <&tert_mi2s_active &tert_mi2s_sd0_active>;
 			pinctrl-1 = <&tert_mi2s_sleep &tert_mi2s_sd0_sleep>;
 		};
 
-		dai_mi2s_quat: qcom,msm-dai-q6-mi2s-quat {
+		dai_mi2s_quat: qcom,msm-dai-q6-mi2s-quat-rx {
 			compatible = "qcom,msm-dai-q6-mi2s";
-			qcom,msm-dai-q6-mi2s-dev-id = <3>;
-			qcom,msm-mi2s-rx-lines = <1>;
-			qcom,msm-mi2s-tx-lines = <0>;
+			qcom,msm-dai-q6-mi2s-dev-id = <6>;	/* QUAT_MI2S_RX */
+			qcom,msm-mi2s-lines = <1>;		/* SD0 */
 		};
 	};
 

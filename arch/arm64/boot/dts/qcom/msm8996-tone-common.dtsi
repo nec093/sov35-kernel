@@ -436,7 +436,7 @@
 	};
 
 	qcom,msm-dai-mi2s {
-		dai_mi2s: qcom,msm-dai-q6-mi2s-tert {
+		dai_mi2s: qcom,msm-dai-q6-mi2s-tert-tx {
 			/delete-property/ pinctrl-names;
 			/delete-property/ pinctrl-0;
 			/delete-property/ pinctrl-1;
