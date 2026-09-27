@@ -180,7 +180,14 @@ static bool drawobj_sync_expire(struct kgsl_device *device,
 	 * for dispatch
 	 */
 	if (!kgsl_drawobj_events_pending(event->syncobj)) {
-		del_timer_sync(&syncobj->timer);
+		/*
+		 * Fence callbacks can run in hard IRQ context on 5.4
+		 * (dma_fence_array signals from irq_work), where
+		 * del_timer_sync() must not be used. The canary timer only
+		 * reports a stuck syncpoint, and drawobj_destroy_sync() does
+		 * the del_timer_sync() before the object is freed.
+		 */
+		del_timer(&syncobj->timer);
 
 		if (device->ftbl->drawctxt_sched)
 			device->ftbl->drawctxt_sched(device,
