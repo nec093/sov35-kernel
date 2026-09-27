@@ -6,6 +6,7 @@
 
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
@@ -3066,11 +3067,33 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 	},
 };
 
+/*
+ * On MSM8996 MultiMedia10 is used by msm_compress for offload playback
+ * only: drop its capture stream and make it a compress DAI (SoMC's
+ * MM10 fixup for legacy SoCs in the 4.9 techpack).
+ */
+static void msm_fe_dais_fixup_legacy(void)
+{
+	int i;
+
+	if (!of_machine_is_compatible("qcom,msm8996"))
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(msm_fe_dais); i++) {
+		if (strncmp("MultiMedia10", msm_fe_dais[i].name, 12) != 0)
+			continue;
+		memset(&msm_fe_dais[i].capture, 0,
+			sizeof(struct snd_soc_pcm_stream));
+		msm_fe_dais[i].compress_new = snd_soc_new_compress;
+	}
+}
+
 static int msm_fe_dai_dev_probe(struct platform_device *pdev)
 {
 
 	dev_dbg(&pdev->dev, "%s: dev name %s\n", __func__,
 		dev_name(&pdev->dev));
+	msm_fe_dais_fixup_legacy();
 	return snd_soc_register_component(&pdev->dev, &msm_fe_dai_component,
 		msm_fe_dais, ARRAY_SIZE(msm_fe_dais));
 }

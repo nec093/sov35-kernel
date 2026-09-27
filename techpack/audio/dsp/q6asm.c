@@ -24,6 +24,7 @@
 #include <linux/miscdevice.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
+#include <linux/of.h>
 #include <linux/debugfs.h>
 #include <linux/time.h>
 #include <linux/atomic.h>
@@ -3507,10 +3508,24 @@ EXPORT_SYMBOL(q6asm_open_read_v3);
  * @bits_per_sample: bit width of capture session
  * @ts_mode: timestamp mode
  */
+/*
+ * MSM8996's ADSP firmware (never updated past AVS 2.7) only understands
+ * the V3 PCM media format / encoder / open structures; the V4 ones fail
+ * with ADSP_EFAILED (from SoMC's "Fix Q6 DSP comm and params for legacy
+ * SoC" for the 4.9 techpack).
+ */
+static bool q6asm_legacy_v3_soc(void)
+{
+	return of_machine_is_compatible("qcom,msm8996");
+}
+
 int q6asm_open_read_v4(struct audio_client *ac, uint32_t format,
 			uint16_t bits_per_sample, bool ts_mode,
 			uint32_t enc_cfg_id)
 {
+	if (q6asm_legacy_v3_soc())
+		return q6asm_open_read_v3(ac, format, bits_per_sample);
+
 	return __q6asm_open_read(ac, format, bits_per_sample,
 				 PCM_MEDIA_FORMAT_V4 /*media fmt block ver*/,
 				 ts_mode, enc_cfg_id);
@@ -3910,6 +3925,9 @@ EXPORT_SYMBOL(q6asm_open_write_v3);
 int q6asm_open_write_v4(struct audio_client *ac, uint32_t format,
 			uint16_t bits_per_sample)
 {
+	if (q6asm_legacy_v3_soc())
+		return q6asm_open_write_v3(ac, format, bits_per_sample);
+
 	return __q6asm_open_write(ac, format, bits_per_sample,
 				  ac->stream_id, false /*gapless*/,
 				  PCM_MEDIA_FORMAT_V4 /*pcm_format_block_ver*/);
@@ -4019,6 +4037,10 @@ int q6asm_stream_open_write_v4(struct audio_client *ac, uint32_t format,
 			       uint16_t bits_per_sample, int32_t stream_id,
 			       bool is_gapless_mode)
 {
+	if (q6asm_legacy_v3_soc())
+		return q6asm_stream_open_write_v3(ac, format, bits_per_sample,
+						  stream_id, is_gapless_mode);
+
 	return __q6asm_open_write(ac, format, bits_per_sample,
 				  stream_id, is_gapless_mode,
 				  PCM_MEDIA_FORMAT_V4 /*pcm_format_block_ver*/);
@@ -5474,6 +5496,13 @@ int q6asm_enc_cfg_blk_pcm_v4(struct audio_client *ac,
 	u32 frames_per_buf = 0;
 	int rc;
 
+	if (q6asm_legacy_v3_soc())
+		return q6asm_enc_cfg_blk_pcm_v3(ac, rate, channels,
+						bits_per_sample,
+						use_default_chmap,
+						use_back_flavor, channel_map,
+						sample_word_size);
+
 	if (!use_default_chmap && (channel_map == NULL)) {
 		pr_err("%s: No valid chan map and can't use default\n",
 				__func__);
@@ -5867,6 +5896,11 @@ int q6asm_enc_cfg_blk_pcm_format_support_v4(struct audio_client *ac,
 					    uint16_t endianness,
 					    uint16_t mode)
 {
+	if (q6asm_legacy_v3_soc())
+		return __q6asm_enc_cfg_blk_pcm_v3(ac, rate, channels,
+						  bits_per_sample,
+						  sample_word_size);
+
 	return __q6asm_enc_cfg_blk_pcm_v4(ac, rate, channels,
 					   bits_per_sample, sample_word_size,
 					   endianness, mode);
@@ -6782,6 +6816,12 @@ static int __q6asm_media_format_block_pcm_v4(struct audio_client *ac,
 	u8 *channel_mapping;
 	int rc;
 
+	if (q6asm_legacy_v3_soc())
+		return __q6asm_media_format_block_pcm_v3(ac, rate, channels,
+					bits_per_sample, stream_id,
+					use_default_chmap, channel_map,
+					sample_word_size);
+
 	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
 		pr_err("%s: Invalid channel count %d\n", __func__, channels);
 		return -EINVAL;
@@ -7280,6 +7320,12 @@ static int __q6asm_media_format_block_multi_ch_pcm_v4(struct audio_client *ac,
 	struct asm_multi_channel_pcm_fmt_blk_param_v4 fmt;
 	u8 *channel_mapping;
 	int rc;
+
+	if (q6asm_legacy_v3_soc())
+		return __q6asm_media_format_block_multi_ch_pcm_v3(ac, rate,
+					channels, use_default_chmap,
+					channel_map, bits_per_sample,
+					sample_word_size);
 
 	if (channels > PCM_FORMAT_MAX_NUM_CHANNEL) {
 		pr_err("%s: Invalid channel count %d\n", __func__, channels);
