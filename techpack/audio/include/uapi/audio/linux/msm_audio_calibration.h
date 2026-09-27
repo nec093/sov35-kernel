@@ -126,7 +126,11 @@ enum {
 #define TOPOLOGY_SPECIFIC_CHANNEL_INFO
 #define MSM_SPKR_PROT_SPV3
 #define MSM_SPKR_PROT_SPV4
-#define MSM_CMA_MEM_ALLOC
+/*
+ * MSM_CMA_MEM_ALLOC (cma_mem in struct audio_cal_data) is left out: the
+ * msm8996 ACDB loader is built against the legacy layout, and the extra
+ * field makes every calibration ioctl it issues fail the size check.
+ */
 
 enum {
 	VERSION_0_0,
@@ -457,7 +461,8 @@ struct audio_cal_info_lsm {
 	__s32		app_type;
 };
 
-#define VSS_NUM_CHANNELS_MAX	32
+/* msm8996: the legacy ACDB loader and CVP use 8 channel slots */
+#define VSS_NUM_CHANNELS_MAX	8
 
 struct audio_cal_info_voc_top {
 	__s32		topology;
