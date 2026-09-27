@@ -298,16 +298,48 @@
 		};
 	};
 
+	/*
+	 * The GPU sensors are on the second TSENS controller (tsens1 hw 6 and 7,
+	 * client ids 14/15 in msm8996-v3.dtsi); tsens0 only has 13 sensors, so
+	 * <&tsens0 15> never read valid (-EINVAL) and the GPU had no thermal
+	 * protection. Throttle through the kgsl devfreq cooling device.
+	 */
 	gpu0-usr {
-		polling-delay-passive = <0>;
-		polling-delay = <0>;
-		thermal-sensors = <&tsens0 15>;
-		thermal-governor = "user_space";
+		polling-delay-passive = <250>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 6>;
+		thermal-governor = "step_wise";
 		trips {
-			active-config0 {
-				temperature = <115000>;
-				hysteresis = <10000>;
+			gpu0_trip: gpu0-trip {
+				temperature = <90000>;
+				hysteresis = <5000>;
 				type = "passive";
+			};
+		};
+		cooling-maps {
+			gpu0_cdev {
+				trip = <&gpu0_trip>;
+				cooling-device = <&msm_gpu THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+			};
+		};
+	};
+
+	gpu1-usr {
+		polling-delay-passive = <250>;
+		polling-delay = <1000>;
+		thermal-sensors = <&tsens1 7>;
+		thermal-governor = "step_wise";
+		trips {
+			gpu1_trip: gpu1-trip {
+				temperature = <90000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+		cooling-maps {
+			gpu1_cdev {
+				trip = <&gpu1_trip>;
+				cooling-device = <&msm_gpu THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
 			};
 		};
 	};
