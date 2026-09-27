@@ -1426,20 +1426,29 @@ static struct mdss_fence *__create_fence(struct msm_fb_data_type *mfd,
 			return ERR_PTR(-EPERM);
 		}
 	} else if (fence_type == MDSS_MDP_CWB_RETIRE_FENCE) {
-//		sync_fence = mdss_fb_sync_get_fence(sync_pt_data->timeline,
-//				fence_name, sync_pt_data->timeline_value + 1);
-		sync_fence = mdss_fb_sync_get_fence(
-						sync_pt_data->timeline,
-						fence_name, value + 1);
+		sync_fence = mdss_fb_sync_get_fence(sync_pt_data->timeline,
+			fence_name,
+			mdss_get_timeline_retire_ts(sync_pt_data->timeline) + 1);
 	} else {
+		/*
+		 * The k4.9 "MDSS sync" port passes a relative point
+		 * (threshold + commit_cnt) but the mdss timeline takes the fence
+		 * value as an absolute seqno, so these fences were signaled on
+		 * creation and buffers went back to the clients while the MDP
+		 * was still sending them (tearing on cmd-mode panels). Anchor on
+		 * the timeline's own value; sync_pt_data->timeline_value drifts
+		 * from it (mdss_fb_release_fences() adds more than the resync).
+		 */
 		if (fence_type == MDSS_MDP_RETIRE_FENCE)
 			sync_fence = mdss_fb_sync_get_fence(
-						sync_pt_data->timeline_retire,
-						fence_name, value);
+				sync_pt_data->timeline_retire, fence_name,
+				mdss_get_timeline_retire_ts(
+					sync_pt_data->timeline_retire) + value);
 		else
 			sync_fence = mdss_fb_sync_get_fence(
-						sync_pt_data->timeline,
-						fence_name, value);
+				sync_pt_data->timeline, fence_name,
+				mdss_get_timeline_retire_ts(
+					sync_pt_data->timeline) + value);
 	}
 
 	if (IS_ERR_OR_NULL(sync_fence)) {

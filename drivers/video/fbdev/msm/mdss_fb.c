@@ -4676,8 +4676,10 @@ static int mdss_fb_handle_buf_sync_ioctl(struct msm_sync_pt_data *sync_pt_data,
 	if (ret)
 		goto buf_sync_err_1;
 
-	val = sync_pt_data->threshold +
- 			atomic_read(&sync_pt_data->commit_cnt);
+	/* absolute point on the timeline, see __create_fence() */
+	val = mdss_get_timeline_retire_ts(sync_pt_data->timeline) +
+		sync_pt_data->threshold +
+		atomic_read(&sync_pt_data->commit_cnt);
 
 	/* Set release fence */
 	rel_fence = mdss_fb_sync_get_fence(sync_pt_data->timeline,
