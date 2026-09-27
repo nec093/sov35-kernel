@@ -17,3 +17,4 @@ obj-$(CONFIG_OF_NUMA) += of_numa.o
 
 obj-$(CONFIG_OF_UNITTEST) += unittest-data/
 obj-$(CONFIG_OF_BATTERYDATA) += of_batterydata.o
+obj-$(CONFIG_OF_SLIMBUS)        += of_slimbus.o

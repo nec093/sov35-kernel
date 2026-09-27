@@ -103,6 +103,12 @@ config OF_OVERLAY
 config OF_NUMA
 	bool
 
+config OF_SLIMBUS
+	def_tristate SLIMBUS
+	depends on SLIMBUS
+	help
+	  OpenFirmware SLIMBUS accessors
+
 config OF_BATTERYDATA
 	def_bool y
 	help
