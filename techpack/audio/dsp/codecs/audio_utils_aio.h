@@ -1,16 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2009-2017, The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) 2009-2018, 2020-2021 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/fs.h>
@@ -20,7 +11,7 @@
 #include <linux/sched.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
-#include <linux/msm_audio.h>
+#include <audio/linux/msm_audio.h>
 #include <linux/debugfs.h>
 #include <linux/list.h>
 #include <linux/slab.h>
@@ -119,7 +110,7 @@ struct ws_mgr {
 
 struct audio_aio_ion_region {
 	struct list_head list;
-	struct ion_handle *handle;
+	struct dma_buf *dma_buf;
 	int fd;
 	void *vaddr;
 	phys_addr_t paddr;
@@ -182,7 +173,6 @@ struct q6audio_aio {
 	struct list_head free_event_queue;
 	struct list_head event_queue;
 	struct list_head ion_region_queue;     /* protected by lock */
-	struct ion_client *client;
 	struct audio_aio_drv_operations drv_ops;
 	union msm_audio_event_payload eos_write_payload;
 	uint32_t device_events;
@@ -198,6 +188,7 @@ struct q6audio_aio {
 	int rflush;             /* Read  flush */
 	int wflush;             /* Write flush */
 	bool reset_event;
+	bool wake_event_initialized;
 	long (*codec_ioctl)(struct file *, unsigned int, unsigned long);
 	long (*codec_compat_ioctl)(struct file *, unsigned int, unsigned long);
 };
@@ -211,7 +202,7 @@ void audio_aio_async_read_ack(struct q6audio_aio *audio, uint32_t token,
 int insert_eos_buf(struct q6audio_aio *audio,
 		struct audio_aio_buffer_node *buf_node);
 
-void extract_meta_out_info(struct q6audio_aio *audio,
+int extract_meta_out_info(struct q6audio_aio *audio,
 		struct audio_aio_buffer_node *buf_node, int dir);
 
 int audio_aio_open(struct q6audio_aio *audio, struct file *file);
@@ -228,4 +219,14 @@ int enable_volume_ramp(struct q6audio_aio *audio);
 int audio_aio_debug_open(struct inode *inode, struct file *file);
 ssize_t audio_aio_debug_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos);
+#else
+static inline int audio_aio_debug_open(struct inode *inode, struct file *file)
+{
+       return 0;
+}
+static inline ssize_t audio_aio_debug_read(struct file *file, char __user *buf,
+                       size_t count, loff_t *ppos)
+{
+       return 0;
+}
 #endif

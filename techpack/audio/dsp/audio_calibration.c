@@ -1,14 +1,6 @@
-/* Copyright (c) 2014, 2016-2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2014, 2016-2017, 2020-2021, The Linux Foundation. All rights reserved.
  */
 #include <linux/slab.h>
 #include <linux/fs.h>
@@ -156,7 +148,7 @@ int audio_cal_register(int num_cal_types,
 			GFP_KERNEL);
 		if (callback_node == NULL) {
 			ret = -ENOMEM;
-			goto err;
+			goto err_callback_node;
 		}
 
 		memcpy(callback_node, &reg_data[i].callbacks,
@@ -168,10 +160,13 @@ int audio_cal_register(int num_cal_types,
 			&audio_cal.client_info[reg_data[i].cal_type]);
 		mutex_unlock(&audio_cal.cal_mutex[reg_data[i].cal_type]);
 	}
-done:
-	return ret;
+	goto done;
+
+err_callback_node:
+	kfree(client_info_node);
 err:
 	audio_cal_deregister(num_cal_types, reg_data);
+done:
 	return ret;
 }
 
@@ -417,7 +412,7 @@ static long audio_cal_shared_ioctl(struct file *file, unsigned int cmd,
 		goto done;
 	}
 
-	if (copy_from_user(&size, (void *)arg, sizeof(size))) {
+	if (copy_from_user(&size, arg, sizeof(size))) {
 		pr_err("%s: Could not copy size value from user\n", __func__);
 		ret = -EFAULT;
 		goto done;
@@ -434,7 +429,7 @@ static long audio_cal_shared_ioctl(struct file *file, unsigned int cmd,
 	if (data == NULL) {
 		ret = -ENOMEM;
 		goto done;
-	} else if (copy_from_user(data, (void *)arg, size)) {
+	} else if (copy_from_user(data, arg, size)) {
 		pr_err("%s: Could not copy data from user\n",
 			__func__);
 		ret = -EFAULT;
@@ -587,18 +582,19 @@ static const struct file_operations audio_cal_fops = {
 #endif
 };
 
-struct miscdevice audio_cal_misc = {
+static struct miscdevice audio_cal_misc = {
 	.minor	= MISC_DYNAMIC_MINOR,
 	.name	= "msm_audio_cal",
 	.fops	= &audio_cal_fops,
 };
 
-static int __init audio_cal_init(void)
+int __init audio_cal_init(void)
 {
 	int i = 0;
 
 	pr_debug("%s\n", __func__);
 
+	cal_utils_init();
 	memset(&audio_cal, 0, sizeof(audio_cal));
 	mutex_init(&audio_cal.common_lock);
 	for (; i < MAX_CAL_TYPES; i++) {
@@ -609,7 +605,7 @@ static int __init audio_cal_init(void)
 	return misc_register(&audio_cal_misc);
 }
 
-static void __exit audio_cal_exit(void)
+void audio_cal_exit(void)
 {
 	int i = 0;
 	struct list_head *ptr, *next;
@@ -626,11 +622,12 @@ static void __exit audio_cal_exit(void)
 			kfree(client_info_node);
 			client_info_node = NULL;
 		}
+		mutex_destroy(&audio_cal.cal_mutex[i]);
 	}
+	mutex_destroy(&audio_cal.common_lock);
+	misc_deregister(&audio_cal_misc);
 }
 
-subsys_initcall(audio_cal_init);
-module_exit(audio_cal_exit);
 
 MODULE_DESCRIPTION("SoC QDSP6v2 Audio Calibration driver");
 MODULE_LICENSE("GPL v2");

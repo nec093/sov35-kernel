@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* evrc audio output device
  *
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2017, 2019, 2021 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -103,7 +104,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	}
 	rc = audio_aio_open(audio, file);
 	if (rc < 0) {
-		pr_err("%s: audio_aio_open rc=%d\n",
+		pr_err_ratelimited("%s: audio_aio_open rc=%d\n",
 			__func__, rc);
 		goto fail;
 	}
@@ -169,7 +170,7 @@ static struct miscdevice audio_evrc_misc = {
 	.fops = &audio_evrc_fops,
 };
 
-static int __init audio_evrc_init(void)
+int __init audio_evrc_init(void)
 {
 	int ret = misc_register(&audio_evrc_misc);
 
@@ -181,4 +182,8 @@ static int __init audio_evrc_init(void)
 	return ret;
 }
 
-device_initcall(audio_evrc_init);
+void audio_evrc_exit(void)
+{
+	mutex_destroy(&audio_evrc_ws_mgr.ws_lock);
+	misc_deregister(&audio_evrc_misc);
+}

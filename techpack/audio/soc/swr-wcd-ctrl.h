@@ -1,13 +1,6 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _SWR_WCD_CTRL_H
@@ -22,6 +15,8 @@
 #define SWR_WCD_NAME	"swr-wcd"
 
 #define SWR_MSTR_PORT_LEN	8 /* Number of master ports */
+
+#define SWR_MAX_SLAVE_DEVICES 11
 
 #define SWRM_VERSION_1_0 0x01010000
 #define SWRM_VERSION_1_2 0x01030000
@@ -95,6 +90,7 @@ struct swr_mstr_ctrl {
 			void *data), void *swr_handle, int type);
 	int irq;
 	int version;
+	u32 num_dev;
 	int num_enum_slaves;
 	int slave_status;
 	struct swr_mstr_port *mstr_port;
@@ -105,6 +101,9 @@ struct swr_mstr_ctrl {
 	u8 num_cfg_devs;
 	struct mutex force_down_lock;
 	int force_down_state;
+
+	struct notifier_block event_notifier;
+	struct work_struct dc_presence_work;
 };
 
 #endif /* _SWR_WCD_CTRL_H */

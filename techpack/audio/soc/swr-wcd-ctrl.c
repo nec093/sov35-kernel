@@ -1,13 +1,5 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/irq.h>
@@ -26,6 +18,7 @@
 #include <linux/uaccess.h>
 #include <soc/soundwire.h>
 #include <soc/swr-wcd.h>
+#include <dsp/msm-audio-event-notify.h>
 #include "swrm_registers.h"
 #include "swr-wcd-ctrl.h"
 
@@ -272,6 +265,12 @@ static ssize_t swrm_reg_show(char __user *ubuf, size_t count,
 		i <= SWR_MSTR_MAX_REG_ADDR; i += 4) {
 		reg_val = dbgswrm->read(dbgswrm->handle, i);
 		len = snprintf(tmp_buf, 25, "0x%.3x: 0x%.2x\n", i, reg_val);
+		if (len < 0) {
+			pr_err("%s: fail to fill the buffer\n", __func__);
+			total = -EFAULT;
+			goto copy_err;
+		}
+
 		if ((total + len) >= count - 1)
 			break;
 		if (copy_to_user((ubuf + total), tmp_buf, len)) {
@@ -654,6 +653,10 @@ static u8 get_inactive_bank_num(struct swr_mstr_ctrl *swrm)
 static void enable_bank_switch(struct swr_mstr_ctrl *swrm, u8 bank,
 				u8 row, u8 col)
 {
+	/* apply div2 setting for inactive bank before bank switch */
+	swrm_cmd_fifo_wr_cmd(swrm, 0x01, 0xF, 0x00,
+			SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(bank));
+
 	swrm_cmd_fifo_wr_cmd(swrm, ((row << 3) | col), 0xF, 0xF,
 			SWRS_SCP_FRAME_CTRL_BANK(bank));
 }
@@ -666,7 +669,7 @@ static struct swr_port_info *swrm_get_port(struct swr_master *master,
 
 	for (i = 0; i < SWR_MSTR_PORT_LEN; i++) {
 		port = &master->port[i];
-		if (port->port_id == port_id) {
+		if (port->slave_port_id == port_id) {
 			dev_dbg(&master->dev, "%s: port_id: %d, index: %d\n",
 				__func__, port_id, i);
 			return port;
@@ -687,7 +690,7 @@ static struct swr_port_info *swrm_get_avail_port(struct swr_master *master)
 			continue;
 
 		dev_dbg(&master->dev, "%s: port_id: %d, index: %d\n",
-			__func__, port->port_id, i);
+			__func__, port->slave_port_id, i);
 		return port;
 	}
 
@@ -702,7 +705,7 @@ static struct swr_port_info *swrm_get_enabled_port(struct swr_master *master,
 
 	for (i = 0; i < SWR_MSTR_PORT_LEN; i++) {
 		port = &master->port[i];
-		if ((port->port_id == port_id) && (port->port_en == true))
+		if ((port->slave_port_id == port_id) && (port->port_en == true))
 			break;
 	}
 	if (i == SWR_MSTR_PORT_LEN)
@@ -780,7 +783,7 @@ static void swrm_cleanup_disabled_data_ports(struct swr_master *master,
 		swrm->write(swrm->handle,
 			    SWRM_DP_PORT_CTRL_BANK((mport->id+1), bank),
 			    value);
-		swrm_cmd_fifo_wr_cmd(swrm, 0x00, port->dev_id, 0x00,
+		swrm_cmd_fifo_wr_cmd(swrm, 0x00, port->dev_num, 0x00,
 				SWRS_DP_CHANNEL_ENABLE_BANK(port_type, bank));
 
 		dev_dbg(swrm->dev, "%s: mport :%d, reg: 0x%x, val: 0x%x\n",
@@ -805,7 +808,7 @@ inc_loop:
 		__func__, port_disable_cnt,  master->num_port);
 }
 
-static void swrm_slvdev_datapath_control(struct swr_master *master,
+static int swrm_slvdev_datapath_control(struct swr_master *master,
 					 bool enable)
 {
 	u8 bank;
@@ -818,7 +821,7 @@ static void swrm_slvdev_datapath_control(struct swr_master *master,
 
 	if (!swrm) {
 		pr_err("%s: swrm is null\n", __func__);
-		return;
+		return 0;
 	}
 
 	bank = get_inactive_bank_num(swrm);
@@ -847,7 +850,7 @@ static void swrm_slvdev_datapath_control(struct swr_master *master,
 		 * BROADCAST and disabled in GROUP_NONE
 		 */
 		if (master->num_port == 0)
-			return;
+			return 0;
 	}
 
 	value = swrm->read(swrm->handle, SWRM_MCP_FRAME_CTRL_BANK_ADDR(bank));
@@ -874,6 +877,7 @@ static void swrm_slvdev_datapath_control(struct swr_master *master,
 		pm_runtime_mark_last_busy(&swrm->pdev->dev);
 		pm_runtime_put_autosuspend(&swrm->pdev->dev);
 	}
+	return 0;
 }
 
 static void swrm_apply_port_config(struct swr_master *master)
@@ -890,10 +894,6 @@ static void swrm_apply_port_config(struct swr_master *master)
 	bank = get_inactive_bank_num(swrm);
 	dev_dbg(swrm->dev, "%s: enter bank: %d master_ports: %d\n",
 		__func__, bank, master->num_port);
-
-
-	swrm_cmd_fifo_wr_cmd(swrm, 0x01, 0xF, 0x00,
-			SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(bank));
 
 	swrm_copy_data_port_config(master, bank);
 }
@@ -931,9 +931,9 @@ static void swrm_copy_data_port_config(struct swr_master *master, u8 bank)
 		if (!port)
 			continue;
 		port_type = mstr_port_type[mport->id];
-		if (!port->dev_id || (port->dev_id > master->num_dev)) {
+		if (!port->dev_num || (port->dev_num > master->num_dev)) {
 			dev_dbg(swrm->dev, "%s: invalid device id = %d\n",
-				__func__, port->dev_id);
+				__func__, port->dev_num);
 			continue;
 		}
 		value = ((port->ch_en)
@@ -952,23 +952,23 @@ static void swrm_copy_data_port_config(struct swr_master *master, u8 bank)
 			(SWRM_DP_PORT_CTRL_BANK((mport->id+1), bank)), value);
 
 		reg[len] = SWRM_CMD_FIFO_WR_CMD;
-		val[len++] = SWR_REG_VAL_PACK(port->ch_en, port->dev_id, 0x00,
+		val[len++] = SWR_REG_VAL_PACK(port->ch_en, port->dev_num, 0x00,
 				SWRS_DP_CHANNEL_ENABLE_BANK(port_type, bank));
 
 		reg[len] = SWRM_CMD_FIFO_WR_CMD;
 		val[len++] = SWR_REG_VAL_PACK(port->sinterval,
-				port->dev_id, 0x00,
+				port->dev_num, 0x00,
 				SWRS_DP_SAMPLE_CONTROL_1_BANK(port_type, bank));
 
 		reg[len] = SWRM_CMD_FIFO_WR_CMD;
 		val[len++] = SWR_REG_VAL_PACK(port->offset1,
-				port->dev_id, 0x00,
+				port->dev_num, 0x00,
 				SWRS_DP_OFFSET_CONTROL_1_BANK(port_type, bank));
 
 		if (port_type != 0) {
 			reg[len] = SWRM_CMD_FIFO_WR_CMD;
 			val[len++] = SWR_REG_VAL_PACK(port->offset2,
-					port->dev_id, 0x00,
+					port->dev_num, 0x00,
 					SWRS_DP_OFFSET_CONTROL_2_BANK(port_type,
 									bank));
 		}
@@ -1027,15 +1027,15 @@ static int swrm_connect_port(struct swr_master *master,
 			goto port_fail;
 		}
 		list_add(&mport->list, &swrm->mport_list);
-		port->dev_id = portinfo->dev_id;
-		port->port_id = portinfo->port_id[i];
+		port->dev_num = portinfo->dev_num;
+		port->slave_port_id = portinfo->port_id[i];
 		port->num_ch = portinfo->num_ch[i];
 		port->ch_rate = portinfo->ch_rate[i];
 		port->ch_en = portinfo->ch_en[i];
 		port->port_en = true;
 		dev_dbg(&master->dev,
 			"%s: mstr port %d, slv port %d ch_rate %d num_ch %d\n",
-			__func__, mport->id, port->port_id, port->ch_rate,
+			__func__, mport->id, port->slave_port_id, port->ch_rate,
 			port->num_ch);
 	}
 	master->num_port += portinfo->num_port;
@@ -1119,7 +1119,7 @@ static int swrm_disconnect_port(struct swr_master *master,
 			continue;
 		}
 		port_type = mstr_port_type[mport_id];
-		port->dev_id = portinfo->dev_id;
+		port->dev_num = portinfo->dev_num;
 		port->port_en = false;
 		port->ch_en = 0;
 		value = port->ch_en << SWRM_DP_PORT_CTRL_EN_CHAN_SHFT;
@@ -1131,7 +1131,7 @@ static int swrm_disconnect_port(struct swr_master *master,
 		swrm->write(swrm->handle,
 			    SWRM_DP_PORT_CTRL_BANK((mport_id+1), bank),
 			    value);
-		swrm_cmd_fifo_wr_cmd(swrm, 0x00, port->dev_id, 0x00,
+		swrm_cmd_fifo_wr_cmd(swrm, 0x00, port->dev_num, 0x00,
 				SWRS_DP_CHANNEL_ENABLE_BANK(port_type, bank));
 	}
 
@@ -1292,15 +1292,20 @@ static int swrm_get_logical_dev_num(struct swr_master *mstr, u64 dev_id,
 	int ret = -EINVAL;
 	struct swr_mstr_ctrl *swrm = swr_get_ctrl_data(mstr);
 	struct swr_device *swr_dev;
+	u32 num_dev = 0;
 
 	if (!swrm) {
 		pr_err("%s: Invalid handle to swr controller\n",
 			__func__);
 		return ret;
 	}
+	if (swrm->num_dev)
+		num_dev = swrm->num_dev;
+	else
+		num_dev = mstr->num_dev;
 
 	pm_runtime_get_sync(&swrm->pdev->dev);
-	for (i = 1; i < (mstr->num_dev + 1); i++) {
+	for (i = 1; i < (num_dev + 1); i++) {
 		id = ((u64)(swrm->read(swrm->handle,
 			    SWRM_ENUMERATOR_SLAVE_DEV_ID_2(i))) << 32);
 		id |= swrm->read(swrm->handle,
@@ -1386,6 +1391,32 @@ static int swrm_master_init(struct swr_mstr_ctrl *swrm)
 	swrm->bulk_write(swrm->handle, reg, value, len);
 
 	return ret;
+}
+
+static int swrm_event_notify(struct notifier_block *self,
+				unsigned long action, void *data)
+{
+	struct swr_mstr_ctrl *swrm = container_of(self, struct swr_mstr_ctrl,
+							event_notifier);
+	if (!swrm || !swrm->pdev) {
+		pr_err("%s: swrm or pdev is NULL\n", __func__);
+		return -EINVAL;
+	}
+	if (action != MSM_AUD_DC_EVENT) {
+		dev_err(&swrm->pdev->dev, "%s: invalid event type: %lu\n", __func__, action);
+		return -EINVAL;
+	}
+
+	schedule_work(&(swrm->dc_presence_work));
+
+	return 0;
+}
+
+static void swrm_notify_work_fn(struct work_struct *work)
+{
+	struct swr_mstr_ctrl *swrm = container_of(work, struct swr_mstr_ctrl,
+							dc_presence_work);
+	swrm_wcd_notify(swrm->pdev, SWR_DEVICE_DOWN, NULL);
 }
 
 static int swrm_probe(struct platform_device *pdev)
@@ -1478,6 +1509,19 @@ static int swrm_probe(struct platform_device *pdev)
 	mutex_init(&swrm->reslock);
 	mutex_init(&swrm->force_down_lock);
 
+	ret = of_property_read_u32(swrm->dev->of_node, "qcom,swr-num-dev",
+				   &swrm->num_dev);
+	if (ret)
+		dev_dbg(&pdev->dev, "%s: Looking up %s property failed\n",
+			__func__, "qcom,swr-num-dev");
+	else {
+		if (swrm->num_dev > SWR_MAX_SLAVE_DEVICES) {
+			dev_err(&pdev->dev, "%s: num_dev %d > max limit %d\n",
+				__func__, swrm->num_dev, SWR_MAX_SLAVE_DEVICES);
+			ret = -EINVAL;
+			goto err_pdata_fail;
+		}
+	}
 	ret = swrm->reg_irq(swrm->handle, swr_mstr_interrupt, swrm,
 			    SWR_IRQ_REGISTER);
 	if (ret) {
@@ -1535,6 +1579,10 @@ static int swrm_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 	pm_runtime_mark_last_busy(&pdev->dev);
 
+	INIT_WORK(&swrm->dc_presence_work, swrm_notify_work_fn);
+	swrm->event_notifier.notifier_call  = swrm_event_notify;
+	msm_aud_evt_register_client(&swrm->event_notifier);
+
 	return 0;
 err_mstr_fail:
 	swrm->reg_irq(swrm->handle, swr_mstr_interrupt,
@@ -1553,8 +1601,9 @@ static int swrm_remove(struct platform_device *pdev)
 {
 	struct swr_mstr_ctrl *swrm = platform_get_drvdata(pdev);
 
-	swrm->reg_irq(swrm->handle, swr_mstr_interrupt,
-			swrm, SWR_IRQ_FREE);
+	if (swrm->reg_irq)
+		swrm->reg_irq(swrm->handle, swr_mstr_interrupt,
+				swrm, SWR_IRQ_FREE);
 	if (swrm->mstr_port) {
 		kfree(swrm->mstr_port->port);
 		swrm->mstr_port->port = NULL;
@@ -1564,6 +1613,7 @@ static int swrm_remove(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_set_suspended(&pdev->dev);
 	swr_unregister_master(&swrm->master);
+	msm_aud_evt_unregister_client(&swrm->event_notifier);
 	mutex_destroy(&swrm->mlock);
 	mutex_destroy(&swrm->reslock);
 	mutex_destroy(&swrm->force_down_lock);
@@ -1885,6 +1935,7 @@ static struct platform_driver swr_mstr_driver = {
 		.owner = THIS_MODULE,
 		.pm = &swrm_dev_pm_ops,
 		.of_match_table = swrm_dt_match,
+		.suppress_bind_attrs = true,
 	},
 };
 
@@ -1892,14 +1943,13 @@ static int __init swrm_init(void)
 {
 	return platform_driver_register(&swr_mstr_driver);
 }
-subsys_initcall(swrm_init);
+module_init(swrm_init);
 
 static void __exit swrm_exit(void)
 {
 	platform_driver_unregister(&swr_mstr_driver);
 }
 module_exit(swrm_exit);
-
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("WCD SoundWire Controller");

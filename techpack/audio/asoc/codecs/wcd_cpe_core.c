@@ -1,13 +1,5 @@
-/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -22,17 +14,17 @@
 #include <linux/dma-mapping.h>
 #include <sound/soc.h>
 #include <sound/info.h>
-#include <sound/lsm_params.h>
+#include <audio/sound/lsm_params.h>
 #include <soc/qcom/pm.h>
 #include <dsp/audio_cal_utils.h>
-#include "core.h"
+#include <asoc/core.h>
 #include "cpe_core.h"
 #include "cpe_err.h"
 #include "cpe_cmi.h"
 #include "wcd_cpe_core.h"
 #include "wcd_cpe_services.h"
 #include "wcd_cmi_api.h"
-#include "wcd9xxx-irq.h"
+#include <asoc/wcd9xxx-irq.h>
 
 #define CMI_CMD_TIMEOUT (10 * HZ)
 #define WCD_CPE_LSM_MAX_SESSIONS 2
@@ -60,7 +52,7 @@
 	mutex_unlock(lock);			\
 }
 
-#define WCD_CPE_STATE_MAX_LEN 11
+#define WCD_CPE_STATE_MAX_LEN 32
 #define CPE_OFFLINE_WAIT_TIMEOUT (2 * HZ)
 #define CPE_READY_WAIT_TIMEOUT (3 * HZ)
 #define WCD_CPE_SYSFS_DIR_MAX_LENGTH 32
@@ -100,7 +92,7 @@ struct cpe_lsm_ids {
 static struct wcd_cpe_core *core_d;
 static struct cpe_lsm_session
 		*lsm_sessions[WCD_CPE_LSM_MAX_SESSIONS + 1];
-struct wcd_cpe_core * (*wcd_get_cpe_core)(struct snd_soc_codec *);
+struct wcd_cpe_core * (*wcd_get_cpe_core)(struct snd_soc_component *component);
 static struct wcd_cmi_afe_port_data afe_ports[WCD_CPE_AFE_MAX_PORTS + 1];
 static void wcd_cpe_svc_event_cb(const struct cpe_svc_notification *param);
 static int wcd_cpe_setup_irqs(struct wcd_cpe_core *core);
@@ -378,7 +370,7 @@ static int wcd_cpe_enable_cpe_clks(struct wcd_cpe_core *core, bool enable)
 		return -EINVAL;
 	}
 
-	ret = core->cpe_cdc_cb->cdc_clk_en(core->codec, enable);
+	ret = core->cpe_cdc_cb->cdc_clk_en(core->component, enable);
 	if (ret) {
 		dev_err(core->dev, "%s: Failed to enable RCO\n",
 			__func__);
@@ -393,7 +385,7 @@ static int wcd_cpe_enable_cpe_clks(struct wcd_cpe_core *core, bool enable)
 	 * and be disabled at the last time.
 	 */
 	if (core->cpe_clk_ref == 0) {
-		ret = core->cpe_cdc_cb->cpe_clk_en(core->codec, enable);
+		ret = core->cpe_cdc_cb->cpe_clk_en(core->component, enable);
 		if (ret) {
 			dev_err(core->dev,
 				"%s: cpe_clk_en() failed, err = %d\n",
@@ -410,7 +402,7 @@ static int wcd_cpe_enable_cpe_clks(struct wcd_cpe_core *core, bool enable)
 cpe_clk_fail:
 	/* Release the codec clk if CPE clk enable failed */
 	if (enable) {
-		ret1 = core->cpe_cdc_cb->cdc_clk_en(core->codec, !enable);
+		ret1 = core->cpe_cdc_cb->cdc_clk_en(core->component, !enable);
 		if (ret1)
 			dev_err(core->dev,
 				"%s: Fail to release codec clk, err = %d\n",
@@ -442,7 +434,7 @@ static int wcd_cpe_bus_vote_max_bw(struct wcd_cpe_core *core,
 	if (core->cpe_cdc_cb->bus_vote_bw) {
 		dev_dbg(core->dev, "%s: %s cdc bus max bandwidth\n",
 			 __func__, vote ? "Vote" : "Unvote");
-		core->cpe_cdc_cb->bus_vote_bw(core->codec, vote);
+		core->cpe_cdc_cb->bus_vote_bw(core->component, vote);
 	}
 
 	return 0;
@@ -462,7 +454,7 @@ static int wcd_cpe_load_fw(struct wcd_cpe_core *core,
 {
 
 	int ret, phdr_idx;
-	struct snd_soc_codec *codec = NULL;
+	struct snd_soc_component *component = NULL;
 	struct wcd9xxx *wcd9xxx = NULL;
 	const struct elf32_hdr *ehdr;
 	const struct elf32_phdr *phdr;
@@ -477,8 +469,8 @@ static int wcd_cpe_load_fw(struct wcd_cpe_core *core,
 		       core);
 		return -EINVAL;
 	}
-	codec = core->codec;
-	wcd9xxx = dev_get_drvdata(codec->dev->parent);
+	component = core->component;
+	wcd9xxx = dev_get_drvdata(component->dev->parent);
 	snprintf(mdt_name, sizeof(mdt_name), "%s.mdt", core->fname);
 	ret = request_firmware(&fw, mdt_name, core->dev);
 	if (ret < 0) {
@@ -625,32 +617,32 @@ static void wcd_cpe_load_fw_image(struct work_struct *work)
 
 /*
  * wcd_cpe_get_core_handle: get the handle to wcd_cpe_core
- * @codec: codec from which this handle is to be obtained
+ * @component: codec from which this handle is to be obtained
  * Codec driver should provide a callback function to obtain
  * handle to wcd_cpe_core during initialization of wcd_cpe_core
  */
 void *wcd_cpe_get_core_handle(
-	struct snd_soc_codec *codec)
+	struct snd_soc_component *component)
 {
 	struct wcd_cpe_core *core = NULL;
 
-	if (!codec) {
+	if (!component) {
 		pr_err("%s: Invalid codec handle\n",
 			__func__);
 		goto done;
 	}
 
 	if (!wcd_get_cpe_core) {
-		dev_err(codec->dev,
+		dev_err(component->dev,
 			"%s: codec callback not available\n",
 			__func__);
 		goto done;
 	}
 
-	core = wcd_get_cpe_core(codec);
+	core = wcd_get_cpe_core(component);
 
 	if (!core)
-		dev_err(codec->dev,
+		dev_err(component->dev,
 			"%s: handle to core not available\n",
 			__func__);
 done:
@@ -764,7 +756,7 @@ static unsigned int wcd_cpe_state_poll(struct snd_info_entry *entry,
  */
 static bool wcd_cpe_is_online_state(void *core_handle)
 {
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 
 	if (core_handle) {
 		return !core->ssr_entry.offline;
@@ -827,10 +819,6 @@ static int wcd_cpe_enable(struct wcd_cpe_core *core,
 		bool enable)
 {
 	int ret = 0;
-#ifdef CONFIG_ARCH_SONY_TAMA
-	int timeout = 0;
-	int err_cnt = 0;
-#endif
 
 	if (enable) {
 		/* Reset CPE first */
@@ -854,23 +842,7 @@ static int wcd_cpe_enable(struct wcd_cpe_core *core,
 			goto fail_boot;
 
 		/* Dload data section */
-#ifdef CONFIG_ARCH_SONY_TAMA
-		for (err_cnt = 0; err_cnt < 10; err_cnt++) {
-			/* Dload data section */
-			ret = wcd_cpe_load_fw(core, ELF_FLAG_RW);
-			if (ret) {
-				pr_err("%s: wcd_cpe_load_fw error ret=%d. retry.\n", __func__, ret);
-				msleep(5);
-			} else {
-				if (err_cnt > 0) {
-					pr_err("%s: wcd_cpe_load_fw error count=%d.\n", __func__, err_cnt);
-				}
-				break;
-			}
-		}
-#else
 		ret = wcd_cpe_load_fw(core, ELF_FLAG_RW);
-#endif
 		if (ret) {
 			dev_err(core->dev,
 				"%s: Failed to dload data section, err = %d\n",
@@ -900,18 +872,7 @@ static int wcd_cpe_enable(struct wcd_cpe_core *core,
 			"%s: waiting for CPE bootup\n",
 			__func__);
 
-#ifdef CONFIG_ARCH_SONY_TAMA
-		timeout = wait_for_completion_timeout(&core->online_compl,
-						msecs_to_jiffies(1000));
-		if (!timeout) {
-			dev_err(core->dev,
-				"%s: Timeout boot CPE.\n", __func__);
-			ret = -ETIMEDOUT;
-			goto fail_boot;
-		}
-#else
 		wait_for_completion(&core->online_compl);
-#endif
 
 		dev_dbg(core->dev,
 			"%s: CPE bootup done\n",
@@ -1057,7 +1018,7 @@ static void wcd_cpe_ssr_work(struct work_struct *work)
 	if (core->ssr_type == WCD_CPE_SSR_EVENT) {
 		if (CPE_ERR_IRQ_CB(core))
 			core->cpe_cdc_cb->cpe_err_irq_control(
-					core->codec,
+					core->component,
 					CPE_ERR_IRQ_STATUS,
 					&status);
 		if (status & core->irq_info.cpe_fatal_irqs)
@@ -1119,7 +1080,7 @@ static void wcd_cpe_ssr_work(struct work_struct *work)
 	 * error interrupts are cleared
 	 */
 	if (CPE_ERR_IRQ_CB(core))
-		core->cpe_cdc_cb->cpe_err_irq_control(core->codec,
+		core->cpe_cdc_cb->cpe_err_irq_control(core->component,
 					CPE_ERR_IRQ_CLEAR, NULL);
 
 err_ret:
@@ -1137,7 +1098,7 @@ err_ret:
 int wcd_cpe_ssr_event(void *core_handle,
 		      enum wcd_cpe_ssr_state_event event)
 {
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 
 	if (!core) {
 		pr_err("%s: Invalid handle to core\n",
@@ -1217,7 +1178,7 @@ static irqreturn_t svass_exception_irq(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
-	core->cpe_cdc_cb->cpe_err_irq_control(core->codec,
+	core->cpe_cdc_cb->cpe_err_irq_control(core->component,
 			CPE_ERR_IRQ_STATUS, &status);
 
 	while (status != 0) {
@@ -1225,11 +1186,6 @@ static irqreturn_t svass_exception_irq(int irq, void *data)
 			dev_err(core->dev,
 				"%s: CPE SSR event,err_status = 0x%02x\n",
 				__func__, status);
-#ifdef CONFIG_SND_SOC_WCD_CPE_SOMC_EXT
-			core->ssr_entry.err_status = status;
-			core->ssr_entry.err_data_ready = 1;
-			wake_up(&core->ssr_entry.err_status_debug_q);
-#endif /* CONFIG_SND_SOC_WCD_CPE_SOMC_EXT */
 			wcd_cpe_ssr_event(core, WCD_CPE_SSR_EVENT);
 			/*
 			 * If fatal interrupt is received,
@@ -1242,18 +1198,18 @@ static irqreturn_t svass_exception_irq(int irq, void *data)
 		 * Mask the interrupt that was raised to
 		 * avoid spurious interrupts
 		 */
-		core->cpe_cdc_cb->cpe_err_irq_control(core->codec,
+		core->cpe_cdc_cb->cpe_err_irq_control(core->component,
 					CPE_ERR_IRQ_MASK, &status);
 
 		/* Clear only the interrupt that was raised */
-		core->cpe_cdc_cb->cpe_err_irq_control(core->codec,
+		core->cpe_cdc_cb->cpe_err_irq_control(core->component,
 					CPE_ERR_IRQ_CLEAR, &status);
 		dev_err(core->dev,
 			"%s: err_interrupt status = 0x%x\n",
 			__func__, status);
 
 		/* Read status for pending interrupts */
-		core->cpe_cdc_cb->cpe_err_irq_control(core->codec,
+		core->cpe_cdc_cb->cpe_err_irq_control(core->component,
 					CPE_ERR_IRQ_STATUS, &status);
 	}
 
@@ -1373,7 +1329,7 @@ static void wcd_cpe_deinitialize_afe_port_data(void)
  */
 static void wcd_cpe_svc_event_cb(const struct cpe_svc_notification *param)
 {
-	struct snd_soc_codec *codec;
+	struct snd_soc_component *component;
 	struct wcd_cpe_core *core;
 	struct cpe_svc_boot_event *boot_data;
 	bool active_sessions;
@@ -1383,14 +1339,14 @@ static void wcd_cpe_svc_event_cb(const struct cpe_svc_notification *param)
 		return;
 	}
 
-	codec = param->private_data;
-	if (!codec) {
+	component = param->private_data;
+	if (!component) {
 		pr_err("%s: Invalid handle to codec\n",
 			__func__);
 		return;
 	}
 
-	core = wcd_cpe_get_core_handle(codec);
+	core = wcd_cpe_get_core_handle(component);
 	if (!core) {
 		pr_err("%s: Invalid handle to core\n",
 			__func__);
@@ -1466,8 +1422,8 @@ static void wcd_cpe_svc_event_cb(const struct cpe_svc_notification *param)
 static void wcd_cpe_cleanup_irqs(struct wcd_cpe_core *core)
 {
 
-	struct snd_soc_codec *codec = core->codec;
-	struct wcd9xxx *wcd9xxx = dev_get_drvdata(codec->dev->parent);
+	struct snd_soc_component *component = core->component;
+	struct wcd9xxx *wcd9xxx = dev_get_drvdata(component->dev->parent);
 	struct wcd9xxx_core_resource *core_res = &wcd9xxx->core_res;
 
 	wcd9xxx_free_irq(core_res,
@@ -1488,8 +1444,8 @@ static void wcd_cpe_cleanup_irqs(struct wcd_cpe_core *core)
 static int wcd_cpe_setup_irqs(struct wcd_cpe_core *core)
 {
 	int ret;
-	struct snd_soc_codec *codec = core->codec;
-	struct wcd9xxx *wcd9xxx = dev_get_drvdata(codec->dev->parent);
+	struct snd_soc_component *component = core->component;
+	struct wcd9xxx *wcd9xxx = dev_get_drvdata(component->dev->parent);
 	struct wcd9xxx_core_resource *core_res = &wcd9xxx->core_res;
 
 	ret = wcd9xxx_request_irq(core_res,
@@ -1505,14 +1461,14 @@ static int wcd_cpe_setup_irqs(struct wcd_cpe_core *core)
 	/* Make sure all error interrupts are cleared */
 	if (CPE_ERR_IRQ_CB(core))
 		core->cpe_cdc_cb->cpe_err_irq_control(
-					core->codec,
+					core->component,
 					CPE_ERR_IRQ_CLEAR,
 					NULL);
 
 	/* Enable required error interrupts */
 	if (CPE_ERR_IRQ_CB(core))
 		core->cpe_cdc_cb->cpe_err_irq_control(
-					core->codec,
+					core->component,
 					CPE_ERR_IRQ_UNMASK,
 					NULL);
 
@@ -1711,46 +1667,6 @@ done:
 	return ret;
 }
 
-#ifdef CONFIG_SND_SOC_WCD_CPE_SOMC_EXT
-static ssize_t cpe_err_status_read(struct file *filp, char __user *ubuf,
-		size_t cnt, loff_t *ppos)
-{
-	int r;
-	char buf[32];
-	size_t size;
-	struct wcd_cpe_core *core = filp->private_data;
-	struct wcd_cpe_ssr_entry *ssr_entry = &core->ssr_entry;
-
-	r = snprintf(buf, sizeof(buf),
-			"err_status = 0x%02x", ssr_entry->err_status);
-	size = simple_read_from_buffer(ubuf, cnt, ppos, buf, r);
-	if (*ppos == r)
-		ssr_entry->err_data_ready = 0;
-
-	return size;
-}
-
-static unsigned int cpe_err_status_poll(struct file *filp,
-					struct poll_table_struct *wait)
-{
-	struct wcd_cpe_core *core = filp->private_data;
-	struct wcd_cpe_ssr_entry *ssr_entry = &core->ssr_entry;
-	unsigned int mask = 0;
-
-	if (ssr_entry->err_data_ready)
-		mask |= (POLLIN | POLLRDNORM);
-
-	poll_wait(filp, &ssr_entry->err_status_debug_q, wait);
-	return mask;
-}
-
-static const struct file_operations cpe_err_status_fops = {
-	.open = simple_open,
-	.read = cpe_err_status_read,
-	.poll = cpe_err_status_poll,
-};
-#endif /* CONFIG_SND_SOC_WCD_CPE_SOMC_EXT */
-
 static int wcd_cpe_debugfs_init(struct wcd_cpe_core *core)
 {
 	int rc = 0;
@@ -1786,20 +1702,6 @@ static int wcd_cpe_debugfs_init(struct wcd_cpe_core *core)
 		rc = -ENODEV;
 		goto err_create_entry;
 	}
-
-#ifdef CONFIG_SND_SOC_WCD_CPE_SOMC_EXT
-	if (!debugfs_create_file("err_status", S_IRUGO,
-				dir, core, &cpe_err_status_fops)) {
-		dev_err(core->dev, "%s: Failed to create debugfs node %s\n",
-			__func__, "err_status");
-		rc = -ENODEV;
-		goto err_create_entry;
-	}
-
-	init_waitqueue_head(&core->ssr_entry.err_status_debug_q);
-
-	return 0;
-#endif /* CONFIG_SND_SOC_WCD_CPE_SOMC_EXT */
 
 err_create_entry:
 	debugfs_remove(dir);
@@ -1952,27 +1854,27 @@ done:
 }
 
 static int wcd_cpe_validate_params(
-	struct snd_soc_codec *codec,
+	struct snd_soc_component *component,
 	struct wcd_cpe_params *params)
 {
 
-	if (!codec) {
+	if (!component) {
 		pr_err("%s: Invalid codec\n", __func__);
 		return -EINVAL;
 	}
 
 	if (!params) {
-		dev_err(codec->dev,
+		dev_err(component->dev,
 			"%s: No params supplied for codec %s\n",
-			__func__, codec->component.name);
+			__func__, component->name);
 		return -EINVAL;
 	}
 
-	if (!params->codec || !params->get_cpe_core ||
+	if (!params->component || !params->get_cpe_core ||
 	    !params->cdc_cb) {
-		dev_err(codec->dev,
+		dev_err(component->dev,
 			"%s: Invalid params for codec %s\n",
-			__func__, codec->component.name);
+			__func__, component->name);
 		return -EINVAL;
 	}
 
@@ -1982,14 +1884,14 @@ static int wcd_cpe_validate_params(
 /*
  * wcd_cpe_init: Initialize CPE related structures
  * @img_fname: filename for firmware image
- * @codec: handle to codec requesting for image download
+ * @component: handle to codec requesting for image download
  * @params: parameter structure passed from caller
  *
  * This API will initialize the cpe core but will not
  * download the image or boot the cpe core.
  */
 struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
-	struct snd_soc_codec *codec,
+	struct snd_soc_component *component,
 	struct wcd_cpe_params *params)
 {
 	struct wcd_cpe_core *core;
@@ -2002,7 +1904,7 @@ struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
 	const struct cpe_svc_hw_cfg *hw_info;
 	int id = 0;
 
-	if (wcd_cpe_validate_params(codec, params))
+	if (wcd_cpe_validate_params(component, params))
 		return NULL;
 
 	core = kzalloc(sizeof(struct wcd_cpe_core), GFP_KERNEL);
@@ -2014,8 +1916,8 @@ struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
 
 	wcd_get_cpe_core = params->get_cpe_core;
 
-	core->codec = params->codec;
-	core->dev = params->codec->dev;
+	core->component = params->component;
+	core->dev = params->component->dev;
 	core->cpe_debug_mode = params->dbg_mode;
 
 	core->cdc_info.major_version = params->cdc_major_ver;
@@ -2067,7 +1969,7 @@ struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
 		goto fail_cpe_register;
 	}
 
-	card = codec->component.card->snd_card;
+	card = component->card->snd_card;
 	snprintf(proc_name, (sizeof("cpe") + sizeof("_state") +
 		 sizeof(id) - 2), "%s%d%s", cpe_name, id, state_name);
 	entry = snd_info_create_card_entry(card, proc_name,
@@ -2267,7 +2169,7 @@ static int wcd_cpe_cmi_send_lsm_msg(
 			void *message)
 {
 	int ret = 0;
-	struct cmi_hdr *hdr = message;
+	struct cmi_hdr *hdr = (struct cmi_hdr *)message;
 
 	pr_debug("%s: sending message with opcode 0x%x\n",
 		 __func__, hdr->opcode);
@@ -2340,8 +2242,7 @@ static int fill_cmi_header(struct cmi_hdr *hdr,
 			   u16 opcode, bool obm_flag)
 {
 	/* sanitize the data */
-	if (hdr == NULL ||
-	    !IS_VALID_SESSION_ID(session_id) ||
+	if (!IS_VALID_SESSION_ID(session_id) ||
 	    !IS_VALID_SERVICE_ID(service_id) ||
 	    !IS_VALID_PLD_SIZE(payload_size)) {
 		pr_err("Invalid header creation request\n");
@@ -2512,7 +2413,7 @@ static int wcd_cpe_cmd_lsm_open_tx(void *core_handle,
 		u16 app_id, u16 sample_rate)
 {
 	struct cpe_lsm_cmd_open_tx cmd_open_tx;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
@@ -2561,7 +2462,7 @@ static int wcd_cpe_cmd_lsm_close_tx(void *core_handle,
 			struct cpe_lsm_session *session)
 {
 	struct cmi_hdr cmd_close_tx;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
@@ -2602,7 +2503,7 @@ static int wcd_cpe_cmd_lsm_shmem_alloc(void *core_handle,
 			u32 size)
 {
 	struct cpe_cmd_shmem_alloc cmd_shmem_alloc;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
@@ -2641,7 +2542,7 @@ static int wcd_cpe_cmd_lsm_shmem_dealloc(void *core_handle,
 		struct cpe_lsm_session *session)
 {
 	struct cpe_cmd_shmem_dealloc cmd_dealloc;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
@@ -2995,6 +2896,7 @@ static int wcd_cpe_send_param_snd_model(struct wcd_cpe_core *core,
 	struct cmi_obm_msg obm_msg;
 	struct cpe_param_data *param_d;
 
+	memset(&obm_msg, 0, sizeof(obm_msg));
 
 	ret = fill_cmi_header(&obm_msg.hdr, session->id,
 			CMI_CPE_LSM_SERVICE_ID, 0, 20,
@@ -3119,7 +3021,7 @@ static int wcd_cpe_set_one_param(void *core_handle,
 	struct cpe_lsm_session *session, struct lsm_params_info *p_info,
 	void *data, uint32_t param_type)
 {
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int rc = 0;
 	struct cpe_lsm_ids ids;
 
@@ -3209,7 +3111,7 @@ static int wcd_cpe_lsm_set_data(void *core_handle,
 				enum lsm_detection_mode detect_mode,
 				bool detect_failure)
 {
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct cpe_lsm_ids ids;
 	int ret = 0;
 
@@ -3258,7 +3160,7 @@ static int wcd_cpe_lsm_reg_snd_model(void *core_handle,
 {
 	int ret = 0;
 	struct cmi_obm_msg obm_msg;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
 					   __func__);
@@ -3311,7 +3213,7 @@ static int wcd_cpe_lsm_dereg_snd_model(void *core_handle,
 				struct cpe_lsm_session *session)
 {
 	struct cmi_hdr cmd_dereg_snd_model;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
@@ -3346,11 +3248,11 @@ end_ret:
 static int wcd_cpe_lsm_get_afe_out_port_id(void *core_handle,
 					   struct cpe_lsm_session *session)
 {
-	struct wcd_cpe_core *core = core_handle;
-	struct snd_soc_codec *codec;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
+	struct snd_soc_component *component;
 	int rc = 0;
 
-	if (!core || !core->codec) {
+	if (!core || !core->component) {
 		pr_err("%s: Invalid handle to %s\n",
 			__func__,
 			(!core) ? "core" : "codec");
@@ -3374,8 +3276,8 @@ static int wcd_cpe_lsm_get_afe_out_port_id(void *core_handle,
 		goto done;
 	}
 
-	codec = core->codec;
-	rc = core->cpe_cdc_cb->get_afe_out_port_id(codec,
+	component = core->component;
+	rc = core->cpe_cdc_cb->get_afe_out_port_id(component,
 						   &session->afe_out_port_id);
 	if (rc) {
 		dev_err(core->dev,
@@ -3400,7 +3302,7 @@ static int wcd_cpe_cmd_lsm_start(void *core_handle,
 			struct cpe_lsm_session *session)
 {
 	struct cmi_hdr cmd_lsm_start;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
@@ -3435,7 +3337,7 @@ static int wcd_cpe_cmd_lsm_stop(void *core_handle,
 		struct cpe_lsm_session *session)
 {
 	struct cmi_hdr cmd_lsm_stop;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session,
@@ -3474,7 +3376,7 @@ static struct cpe_lsm_session *wcd_cpe_alloc_lsm_session(
 {
 	struct cpe_lsm_session *session;
 	int i, session_id = -1;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	bool afe_register_service = false;
 	int ret = 0;
 
@@ -3635,9 +3537,9 @@ static int wcd_cpe_lsm_lab_control(
 		struct cpe_lsm_session *session,
 		bool enable)
 {
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0, pld_size = CPE_PARAM_SIZE_LSM_LAB_CONTROL;
-	struct cpe_lsm_control_lab cpe_lab_enable= {{0}};
+	struct cpe_lsm_control_lab cpe_lab_enable;
 	struct cpe_lsm_lab_enable *lab_enable = &cpe_lab_enable.lab_enable;
 	struct cpe_param_data *param_d = &lab_enable->param;
 	struct cpe_lsm_ids ids;
@@ -3718,7 +3620,7 @@ static int wcd_cpe_lsm_eob(
 static int wcd_cpe_dealloc_lsm_session(void *core_handle,
 			struct cpe_lsm_session *session)
 {
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	int ret = 0;
 
 	WCD_CPE_GRAB_LOCK(&core->session_lock, "session_lock");
@@ -3765,12 +3667,12 @@ static int wcd_cpe_lab_ch_setup(void *core_handle,
 		struct cpe_lsm_session *session,
 		enum wcd_cpe_event event)
 {
-	struct wcd_cpe_core *core = core_handle;
-	struct snd_soc_codec *codec;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
+	struct snd_soc_component *component;
 	int rc = 0;
 	u8 cpe_intr_bits;
 
-	if (!core || !core->codec) {
+	if (!core || !core->component) {
 		pr_err("%s: Invalid handle to %s\n",
 			__func__,
 			(!core) ? "core" : "codec");
@@ -3788,14 +3690,14 @@ static int wcd_cpe_lab_ch_setup(void *core_handle,
 		goto done;
 	}
 
-	codec = core->codec;
+	component = core->component;
 	dev_dbg(core->dev,
 		"%s: event = 0x%x\n",
 		__func__, event);
 
 	switch (event) {
 	case WCD_CPE_PRE_ENABLE:
-		rc = core->cpe_cdc_cb->cdc_ext_clk(codec, true, false);
+		rc = core->cpe_cdc_cb->cdc_ext_clk(component, true, false);
 		if (rc) {
 			dev_err(core->dev,
 				"%s: failed to enable cdc clk, err = %d\n",
@@ -3803,13 +3705,14 @@ static int wcd_cpe_lab_ch_setup(void *core_handle,
 			goto done;
 		}
 
-		rc = core->cpe_cdc_cb->lab_cdc_ch_ctl(codec,
+		rc = core->cpe_cdc_cb->lab_cdc_ch_ctl(component,
 						      true);
 		if (rc) {
 			dev_err(core->dev,
 				"%s: failed to enable cdc port, err = %d\n",
 				__func__, rc);
-			rc = core->cpe_cdc_cb->cdc_ext_clk(codec, false, false);
+			rc = core->cpe_cdc_cb->cdc_ext_clk(
+					component, false, false);
 			goto done;
 		}
 
@@ -3830,11 +3733,11 @@ static int wcd_cpe_lab_ch_setup(void *core_handle,
 		cpe_intr_bits = ~(core->irq_info.cpe_fatal_irqs & 0xFF);
 		if (CPE_ERR_IRQ_CB(core))
 			core->cpe_cdc_cb->cpe_err_irq_control(
-						core->codec,
+						core->component,
 						CPE_ERR_IRQ_MASK,
 						&cpe_intr_bits);
 
-		rc = core->cpe_cdc_cb->lab_cdc_ch_ctl(codec,
+		rc = core->cpe_cdc_cb->lab_cdc_ch_ctl(component,
 						      false);
 		if (rc)
 			dev_err(core->dev,
@@ -3856,7 +3759,7 @@ static int wcd_cpe_lab_ch_setup(void *core_handle,
 			"%s: Failed to disable lab\n", __func__);
 
 		/* Continue with disabling even if toggle lab fails */
-		rc = core->cpe_cdc_cb->cdc_ext_clk(codec, false, false);
+		rc = core->cpe_cdc_cb->cdc_ext_clk(component, false, false);
 		if (rc)
 			dev_err(core->dev,
 				"%s: failed to disable cdc clk, err = %d\n",
@@ -3866,7 +3769,7 @@ static int wcd_cpe_lab_ch_setup(void *core_handle,
 		cpe_intr_bits = ~(core->irq_info.cpe_fatal_irqs & 0xFF);
 		if (CPE_ERR_IRQ_CB(core))
 			core->cpe_cdc_cb->cpe_err_irq_control(
-						core->codec,
+						core->component,
 						CPE_ERR_IRQ_UNMASK,
 						&cpe_intr_bits);
 		break;
@@ -3888,7 +3791,7 @@ static int wcd_cpe_lsm_set_fmt_cfg(void *core_handle,
 {
 	int ret;
 	struct cpe_lsm_output_format_cfg out_fmt_cfg;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session, __func__);
 	if (ret)
@@ -3932,7 +3835,7 @@ static int wcd_cpe_lsm_set_media_fmt_params(void *core_handle,
 {
 	struct cpe_lsm_media_fmt_param media_fmt;
 	struct cmi_hdr *msg_hdr = &media_fmt.hdr;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct cpe_param_data *param_d = &media_fmt.param;
 	struct cpe_lsm_ids ids;
 	int ret;
@@ -3975,7 +3878,7 @@ static int wcd_cpe_lsm_set_port(void *core_handle,
 	u32 port_id;
 	int ret;
 	struct cpe_lsm_ids ids;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 
 	ret = wcd_cpe_is_valid_lsm_session(core, session, __func__);
 	if (ret)
@@ -4006,7 +3909,7 @@ done:
 /*
  * wcd_cpe_get_lsm_ops: register lsm driver to codec
  * @lsm_ops: structure with lsm callbacks
- * @codec: codec to which this lsm driver is registered to
+ * @component: codec to which this lsm driver is registered to
  */
 int wcd_cpe_get_lsm_ops(struct wcd_cpe_lsm_ops *lsm_ops)
 {
@@ -4069,7 +3972,7 @@ static int wcd_cpe_cmi_send_afe_msg(
 	void *message)
 {
 	int ret = 0;
-	struct cmi_hdr *hdr = message;
+	struct cmi_hdr *hdr = (struct cmi_hdr *)message;
 
 	pr_debug("%s: sending message with opcode 0x%x\n",
 		__func__, hdr->opcode);
@@ -4213,7 +4116,7 @@ static int wcd_cpe_send_afe_cal(void *core_handle,
 {
 
 	struct cal_block_data *afe_cal = NULL;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct cmi_obm_msg obm_msg;
 	void *inb_msg = NULL;
 	void *msg;
@@ -4367,7 +4270,7 @@ static int wcd_cpe_afe_svc_cmd_mode(void *core_handle,
 				    u8 mode)
 {
 	struct cpe_afe_svc_cmd_mode afe_mode;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct wcd_cmi_afe_port_data *afe_port_d;
 	int ret;
 
@@ -4406,7 +4309,7 @@ static int wcd_cpe_afe_cmd_port_cfg(void *core_handle,
 		struct wcd_cpe_afe_port_cfg *afe_cfg)
 {
 	struct cpe_afe_cmd_port_cfg port_cfg_cmd;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct wcd_cmi_afe_port_data *afe_port_d;
 	int ret;
 
@@ -4461,7 +4364,7 @@ static int wcd_cpe_afe_set_params(void *core_handle,
 	struct cpe_afe_params afe_params;
 	struct cpe_afe_hw_mad_ctrl *hw_mad_ctrl = &afe_params.hw_mad_ctrl;
 	struct cpe_afe_port_cfg *port_cfg = &afe_params.port_cfg;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct wcd_cmi_afe_port_data *afe_port_d;
 	int ret = 0, pld_size = 0;
 
@@ -4531,7 +4434,7 @@ static int wcd_cpe_afe_port_start(void *core_handle,
 {
 
 	struct cmi_hdr hdr;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct wcd_cmi_afe_port_data *afe_port_d;
 	int ret = 0;
 
@@ -4567,7 +4470,7 @@ static int wcd_cpe_afe_port_stop(void *core_handle,
 	struct wcd_cpe_afe_port_cfg *port_cfg)
 {
 	struct cmi_hdr hdr;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct wcd_cmi_afe_port_data *afe_port_d;
 	int ret = 0;
 
@@ -4604,7 +4507,7 @@ static int wcd_cpe_afe_port_suspend(void *core_handle,
 		struct wcd_cpe_afe_port_cfg *port_cfg)
 {
 	struct cmi_hdr hdr;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct wcd_cmi_afe_port_data *afe_port_d;
 	int ret = 0;
 
@@ -4640,7 +4543,7 @@ static int wcd_cpe_afe_port_resume(void *core_handle,
 		struct wcd_cpe_afe_port_cfg *port_cfg)
 {
 	struct cmi_hdr hdr;
-	struct wcd_cpe_core *core = core_handle;
+	struct wcd_cpe_core *core = (struct wcd_cpe_core *)core_handle;
 	struct wcd_cmi_afe_port_data *afe_port_d;
 	int ret = 0;
 

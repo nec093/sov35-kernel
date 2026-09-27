@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -16,8 +8,9 @@
 #include <linux/of_irq.h>
 #include <linux/of_device.h>
 #include <linux/slab.h>
-#include "msm-cdc-supply.h"
 #include <linux/regulator/consumer.h>
+#include <asoc/msm-cdc-supply.h>
+#include <sound/soc.h>
 
 #define CODEC_DT_MAX_PROP_SIZE 40
 
@@ -67,9 +60,22 @@ static int msm_cdc_dt_parse_vreg_info(struct device *dev,
 	}
 	cdc_vreg->optimum_uA = prop_val;
 
-	dev_info(dev, "%s: %s: vol=[%d %d]uV, curr=[%d]uA, ond %d\n",
+	/* Parse supply - LPM or NOM mode(default NOM) */
+	snprintf(prop_name, CODEC_DT_MAX_PROP_SIZE, "qcom,%s-lpm-supported", name);
+	rc = of_property_read_u32(dev->of_node, prop_name, &prop_val);
+	if (rc) {
+		dev_dbg(dev, "%s: Looking up %s property in node %s failed",
+			__func__, prop_name, dev->of_node->full_name);
+		cdc_vreg->lpm_supported = 0;
+		rc = 0;
+	} else {
+		cdc_vreg->lpm_supported = prop_val;
+	}
+
+	dev_info(dev, "%s: %s: vol=[%d %d]uV, curr=[%d]uA, ond %d lpm %d\n",
 		 __func__, cdc_vreg->name, cdc_vreg->min_uV, cdc_vreg->max_uV,
-		 cdc_vreg->optimum_uA, cdc_vreg->ondemand);
+		 cdc_vreg->optimum_uA, cdc_vreg->ondemand,
+		 cdc_vreg->lpm_supported);
 
 done:
 	return rc;
@@ -125,6 +131,246 @@ static int msm_cdc_check_supply_param(struct device *dev,
 
 	return 0;
 }
+
+/*
+ * msm_cdc_is_ondemand_supply:
+ *	return if ondemand supply true or not
+ *
+ * @dev: pointer to codec device
+ * @supplies: pointer to regulator bulk data
+ * @cdc_vreg: pointer to platform regulator data
+ * @num_supplies: number of supplies
+ * @supply_name: supply name to be checked
+ *
+ * Return true/false
+ */
+bool msm_cdc_is_ondemand_supply(struct device *dev,
+				struct regulator_bulk_data *supplies,
+				struct cdc_regulator *cdc_vreg,
+				int num_supplies,
+				char *supply_name)
+{
+	bool rc = false;
+	int ret, i;
+
+	if ((!supply_name) || (!supplies)) {
+		pr_err("%s: either dev or supplies or cdc_vreg is NULL\n",
+				__func__);
+		return rc;
+	}
+	/* input parameter validation */
+	ret = msm_cdc_check_supply_param(dev, cdc_vreg, num_supplies);
+	if (ret)
+		return rc;
+
+	for (i = 0; i < num_supplies; i++) {
+		if (cdc_vreg[i].ondemand &&
+			!strcmp(cdc_vreg[i].name, supply_name))
+			return true;
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(msm_cdc_is_ondemand_supply);
+
+/*
+ * msm_cdc_set_supply_min_voltage:
+ *	Set min supply voltage for particular supply
+ *
+ * @dev: pointer to codec device
+ * @supplies: pointer to regulator bulk data
+ * @cdc_vreg: pointer to platform regulator data
+ * @num_supplies: number of supplies
+ * @supply_name: Supply name to change voltage for
+ * @vval_min: Min voltage to be set in uV
+ * @override_min_vol: True if override min voltage from default
+ * Return error code if unable to set voltage
+ */
+int msm_cdc_set_supply_min_voltage(struct device *dev,
+				    struct regulator_bulk_data *supplies,
+				    struct cdc_regulator *cdc_vreg,
+				    int num_supplies, char *supply_name,
+				    int vval_min, bool override_min_vol)
+{
+	int rc = 0, i;
+
+	if ((!supply_name) || (!supplies)) {
+		pr_err("%s: either dev or supplies or cdc_vreg is NULL\n",
+				__func__);
+		return -EINVAL;
+	}
+	/* input parameter validation */
+	rc = msm_cdc_check_supply_param(dev, cdc_vreg, num_supplies);
+	if (rc)
+		return rc;
+	for (i = 0; i < num_supplies; i++) {
+		if (!strcmp(cdc_vreg[i].name, supply_name)) {
+			if (override_min_vol)
+				regulator_set_voltage(supplies[i].consumer,
+					vval_min, cdc_vreg[i].max_uV);
+			else
+				regulator_set_voltage(supplies[i].consumer,
+				    cdc_vreg[i].min_uV, cdc_vreg[i].max_uV);
+			break;
+		}
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(msm_cdc_set_supply_min_voltage);
+
+/*
+ * msm_cdc_disable_ondemand_supply:
+ *	Disable codec ondemand supply
+ *
+ * @dev: pointer to codec device
+ * @supplies: pointer to regulator bulk data
+ * @cdc_vreg: pointer to platform regulator data
+ * @num_supplies: number of supplies
+ * @supply_name: Ondemand supply name to be enabled
+ *
+ * Return error code if supply disable is failed
+ */
+int msm_cdc_disable_ondemand_supply(struct device *dev,
+				    struct regulator_bulk_data *supplies,
+				    struct cdc_regulator *cdc_vreg,
+				    int num_supplies,
+				    char *supply_name)
+{
+	int rc, i;
+
+	if ((!supply_name) || (!supplies)) {
+		pr_err("%s: either dev or supplies or cdc_vreg is NULL\n",
+				__func__);
+		return -EINVAL;
+	}
+	/* input parameter validation */
+	rc = msm_cdc_check_supply_param(dev, cdc_vreg, num_supplies);
+	if (rc)
+		return rc;
+
+	for (i = 0; i < num_supplies; i++) {
+		if (cdc_vreg[i].ondemand &&
+			!strcmp(cdc_vreg[i].name, supply_name)) {
+			rc = regulator_disable(supplies[i].consumer);
+			if (rc)
+				dev_err(dev, "%s: failed to disable supply %s, err:%d\n",
+					__func__, supplies[i].supply, rc);
+			break;
+		}
+	}
+	if (i == num_supplies) {
+		dev_err(dev, "%s: not able to find supply %s\n",
+			__func__, supply_name);
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(msm_cdc_disable_ondemand_supply);
+
+/*
+ * msm_cdc_enable_ondemand_supply:
+ *	Enable codec ondemand supply
+ *
+ * @dev: pointer to codec device
+ * @supplies: pointer to regulator bulk data
+ * @cdc_vreg: pointer to platform regulator data
+ * @num_supplies: number of supplies
+ * @supply_name: Ondemand supply name to be enabled
+ *
+ * Return error code if supply enable is failed
+ */
+int msm_cdc_enable_ondemand_supply(struct device *dev,
+				   struct regulator_bulk_data *supplies,
+				   struct cdc_regulator *cdc_vreg,
+				   int num_supplies,
+				   char *supply_name)
+{
+	int rc, i;
+
+	if ((!supply_name) || (!supplies)) {
+		pr_err("%s: either dev or supplies or cdc_vreg is NULL\n",
+				__func__);
+		return -EINVAL;
+	}
+	/* input parameter validation */
+	rc = msm_cdc_check_supply_param(dev, cdc_vreg, num_supplies);
+	if (rc)
+		return rc;
+
+	for (i = 0; i < num_supplies; i++) {
+		if (cdc_vreg[i].ondemand &&
+			!strcmp(cdc_vreg[i].name, supply_name)) {
+			rc = regulator_enable(supplies[i].consumer);
+			if (rc)
+				dev_err(dev, "%s: failed to enable supply %s, rc: %d\n",
+					__func__, supplies[i].supply, rc);
+			break;
+		}
+	}
+	if (i == num_supplies) {
+		dev_err(dev, "%s: not able to find supply %s\n",
+			__func__, supply_name);
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(msm_cdc_enable_ondemand_supply);
+
+/*
+ * msm_cdc_set_supplies_lpm_mode:
+ *	Update load for given supply string
+ *
+ * @dev: pointer to codec device
+ * @supplies: pointer to regulator bulk data
+ * @cdc_vreg: pointer to platform regulator data
+ * @num_supplies: number of supplies
+ * @supply_name: supply name to be checked
+ * @min_max: Apply optimum or 0 current
+ *
+ * Return error code if set current fail
+ */
+int msm_cdc_set_supplies_lpm_mode(struct device *dev,
+				struct regulator_bulk_data *supplies,
+				struct cdc_regulator *cdc_vreg,
+				int num_supplies,
+				bool flag)
+{
+	int rc = 0, i;
+
+	if (!supplies) {
+		pr_err("%s: supplies is NULL\n",
+				__func__);
+		return -EINVAL;
+	}
+	/* input parameter validation */
+	rc = msm_cdc_check_supply_param(dev, cdc_vreg, num_supplies);
+	if (rc)
+		return rc;
+
+	for (i = 0; i < num_supplies; i++) {
+		if (cdc_vreg[i].lpm_supported) {
+			rc = regulator_set_load(
+				supplies[i].consumer,
+				flag ? 0 : cdc_vreg[i].optimum_uA);
+			if (rc)
+				dev_err(dev,
+					"%s: failed to set supply %s to %s, err:%d\n",
+					__func__, supplies[i].supply,
+					flag ? "LPM" : "NOM",
+					rc);
+			else
+				dev_dbg(dev, "%s: regulator %s load set to %s\n",
+					__func__, supplies[i].supply,
+					flag ? "LPM" : "NOM");
+		}
+	}
+
+	return rc;
+}
+EXPORT_SYMBOL(msm_cdc_set_supplies_lpm_mode);
 
 /*
  * msm_cdc_disable_static_supplies:
@@ -209,10 +455,7 @@ int msm_cdc_release_supplies(struct device *dev,
 		regulator_set_voltage(supplies[i].consumer, 0,
 				      cdc_vreg[i].max_uV);
 		regulator_set_load(supplies[i].consumer, 0);
-		devm_regulator_put(supplies[i].consumer);
-		supplies[i].consumer = NULL;
 	}
-	devm_kfree(dev, supplies);
 
 	return rc;
 }
@@ -268,7 +511,7 @@ EXPORT_SYMBOL(msm_cdc_enable_static_supplies);
 
 /*
  * msm_cdc_init_supplies:
- *	Initialize codec static supplies with regulator get
+ *	Initialize codec static supplies
  *
  * @dev: pointer to codec device
  * @supplies: pointer to regulator bulk data
@@ -281,6 +524,29 @@ int msm_cdc_init_supplies(struct device *dev,
 			  struct regulator_bulk_data **supplies,
 			  struct cdc_regulator *cdc_vreg,
 			  int num_supplies)
+{
+	return msm_cdc_init_supplies_v2(dev, supplies, cdc_vreg,
+					num_supplies, false);
+}
+EXPORT_SYMBOL(msm_cdc_init_supplies);
+
+/*
+ * msm_cdc_init_supplies_v2:
+ *	Initialize codec static supplies.
+ *	Initialize codec dynamic supplies based on vote_regulator_on_demand
+ *
+ * @dev: pointer to codec device
+ * @supplies: pointer to regulator bulk data
+ * @cdc_vreg: pointer to platform regulator data
+ * @num_supplies: number of supplies
+ * @vote_regulator_on_demand: initialize codec dynamic supplies at runtime
+ *
+ * Return error code if supply init is failed
+ */
+int msm_cdc_init_supplies_v2(struct device *dev,
+			  struct regulator_bulk_data **supplies,
+			  struct cdc_regulator *cdc_vreg,
+			  int num_supplies, u32 vote_regulator_on_demand)
 {
 	struct regulator_bulk_data *vsup;
 	int rc;
@@ -324,20 +590,23 @@ int msm_cdc_init_supplies(struct device *dev,
 		if (regulator_count_voltages(vsup[i].consumer) < 0)
 			continue;
 
+		if (cdc_vreg[i].ondemand && vote_regulator_on_demand)
+			continue;
+
 		rc = regulator_set_voltage(vsup[i].consumer,
 					   cdc_vreg[i].min_uV,
 					   cdc_vreg[i].max_uV);
 		if (rc) {
 			dev_err(dev, "%s: set regulator voltage failed for %s, err:%d\n",
 				__func__, vsup[i].supply, rc);
-			goto err_set_supply;
+			goto err_supply;
 		}
 		rc = regulator_set_load(vsup[i].consumer,
 					cdc_vreg[i].optimum_uA);
 		if (rc < 0) {
 			dev_err(dev, "%s: set regulator optimum mode failed for %s, err:%d\n",
 				__func__, vsup[i].supply, rc);
-			goto err_set_supply;
+			goto err_supply;
 		}
 	}
 
@@ -345,14 +614,10 @@ int msm_cdc_init_supplies(struct device *dev,
 
 	return 0;
 
-err_set_supply:
-	for (i = 0; i < num_supplies; i++)
-		devm_regulator_put(vsup[i].consumer);
 err_supply:
-	devm_kfree(dev, vsup);
 	return rc;
 }
-EXPORT_SYMBOL(msm_cdc_init_supplies);
+EXPORT_SYMBOL(msm_cdc_init_supplies_v2);
 
 /*
  * msm_cdc_get_power_supplies:
@@ -448,9 +713,76 @@ int msm_cdc_get_power_supplies(struct device *dev,
 	return 0;
 
 err_sup:
-	devm_kfree(dev, cdc_reg);
 err_supply_cnt:
 err_mem_alloc:
 	return rc;
 }
 EXPORT_SYMBOL(msm_cdc_get_power_supplies);
+
+/*
+ * msm_cdc_init_wcd_supply:
+ *	Initialize wcd supply parameters.
+ *
+ * @np: device node pointer to codec device
+ * @name: power supply name
+ * @cdc_supply: codec supply struct to hold wcd params
+ *
+ * Return error code if init failed
+ */
+int msm_cdc_init_wcd_supply(struct device_node *np, const char *name,
+			    struct cdc_wcd_supply *cdc_supply)
+{
+	struct platform_device *pdev = NULL;
+
+	if (!np || !cdc_supply)
+		return -EINVAL;
+
+	pdev = of_find_device_by_node(np);
+	if (!pdev)
+		return -EINVAL;
+
+	cdc_supply->dev = &pdev->dev;
+	cdc_supply->name = name;
+	cdc_supply->component = snd_soc_lookup_component(&pdev->dev, NULL);
+
+	return 0;
+}
+EXPORT_SYMBOL(msm_cdc_init_wcd_supply);
+
+/*
+ * msm_cdc_enable_wcd_supply:
+ *	Enable/Disable wcd supply.
+ *
+ * @cdc_supply: codec supply struct to hold wcd params
+ * @enable: bool to inform whether to enable or disable
+ *
+ * Return error code if enable/disable failed
+ */
+int msm_cdc_enable_wcd_supply(struct cdc_wcd_supply *cdc_supply, bool enable)
+{
+	struct snd_soc_component *component = cdc_supply->component;
+	int rc;
+
+	if (!component) {
+		pr_err("%s: Component memory is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	if (enable)
+		rc = snd_soc_dapm_force_enable_pin(
+					snd_soc_component_get_dapm(component),
+					cdc_supply->name);
+	else
+		rc = snd_soc_dapm_disable_pin(
+					snd_soc_component_get_dapm(component),
+					cdc_supply->name);
+
+	if (!rc)
+		snd_soc_dapm_sync(snd_soc_component_get_dapm(component));
+	else
+		dev_err(component->dev, "%s: micbias %s force %s pin failed\n",
+			__func__, cdc_supply->name, (enable ? "enable" : "disable"));
+
+	return rc;
+}
+EXPORT_SYMBOL(msm_cdc_enable_wcd_supply);

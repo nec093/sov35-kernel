@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015, 2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2015, 2018-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/regmap.h>
@@ -322,7 +314,7 @@ struct reg_default wsa881x_ana_reg_defaults_1[] = {
 	{WSA881X_SPKR_STATUS3 - WSA881X_ANALOG_BASE, 0x00},
 };
 
-struct reg_default wsa881x_rev_2_0_dig[] = {
+static const struct reg_sequence wsa881x_rev_2_0_dig[] = {
 	{WSA881X_RESET_CTL, 0x00},
 	{WSA881X_TADC_VALUE_CTL, 0x01},
 	{WSA881X_INTR_MASK, 0x1B},
@@ -333,7 +325,7 @@ struct reg_default wsa881x_rev_2_0_dig[] = {
 	{WSA881X_OTP_REG_31, 0x01},
 };
 
-struct reg_default wsa881x_rev_2_0_ana[] = {
+static const struct reg_sequence wsa881x_rev_2_0_ana[] = {
 	{WSA881X_TEMP_ADC_CTRL, 0x03},
 	{WSA881X_ADC_SEL_IBIAS, 0x45},
 	{WSA881X_SPKR_DRV_GAIN, 0xC1},
@@ -372,7 +364,7 @@ struct reg_default wsa881x_rev_2_0_regmap_ana[] = {
 /**
  * wsa881x_update_reg_defaults_2_0 - update default values of regs for v2.0
  *
- * WSA881x v2.0 has different default values for certain analog and digital
+ * wsa881x v2.0 has different default values for certain analog and digital
  * registers compared to v1.x. Therefore, update the values of these registers
  * with the values from tables defined above for v2.0.
  */
@@ -399,10 +391,10 @@ EXPORT_SYMBOL(wsa881x_update_reg_defaults_2_0);
 
 /**
  * wsa881x_update_regmap_2_0 - update regmap framework with new tables
- * @regmap: pointer to WSA881x regmap structure
- * @flag: indicates digital or analog WSA881x slave
+ * @regmap: pointer to wsa881x regmap structure
+ * @flag: indicates digital or analog wsa881x slave
  *
- * WSA881x v2.0 has some new registers for both analog and digital slaves.
+ * wsa881x v2.0 has some new registers for both analog and digital slaves.
  * Update the regmap framework with all the new registers.
  */
 void wsa881x_update_regmap_2_0(struct regmap *regmap, int flag)

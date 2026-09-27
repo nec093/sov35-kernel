@@ -1,13 +1,5 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -20,11 +12,11 @@
 #include <linux/delay.h>
 #include <linux/sched.h>
 #include <linux/mfd/core.h>
-#include "core.h"
-#include "msm-cdc-supply.h"
-#include "msm-cdc-pinctrl.h"
-#include "pdata.h"
-#include "wcd9xxx-irq.h"
+#include <asoc/core.h>
+#include <asoc/msm-cdc-supply.h>
+#include <asoc/msm-cdc-pinctrl.h>
+#include <asoc/pdata.h>
+#include <asoc/wcd9xxx-irq.h>
 #include "wcd9xxx-utils.h"
 
 #define REG_BYTES 2
@@ -355,6 +347,19 @@ struct wcd9xxx_pdata *wcd9xxx_populate_dt_data(struct device *dev)
 		}
 	}
 
+	pdata->has_micb_supply_en_gpio = of_property_read_bool(dev->of_node,
+					   "qcom,has-micbias-supply-en-gpio");
+	if (pdata->has_micb_supply_en_gpio) {
+		pdata->micb_en_ctl = of_parse_phandle(dev->of_node,
+				"qcom,micbias-supply-en-gpio-node", 0);
+		if (!pdata->micb_en_ctl) {
+			dev_err(dev, "%s No entry for %s property in node %s\n",
+				__func__, "qcom,micbias-supply-en-gpio-node",
+				dev->of_node->full_name);
+			goto err_parse_dt_prop;
+		}
+	}
+
 	if (!(wcd9xxx_read_of_property_u32(dev, "qcom,cdc-mclk-clk-rate",
 					   &prop_val)))
 		pdata->mclk_rate = prop_val;
@@ -408,6 +413,14 @@ struct wcd9xxx_pdata *wcd9xxx_populate_dt_data(struct device *dev)
 	}
 
 	pdata->dmic_clk_drv = dmic_clk_drive;
+
+	rc = of_property_read_u32(dev->of_node,
+					"qcom,vote-dynamic-supply-on-demand",
+					&pdata->vote_regulator_on_demand);
+	if (rc)
+		dev_dbg(dev, "%s No entry for %s property in node %s\n",
+				__func__, "qcom,vote-dynamic-supply-on-demand",
+				dev->of_node->full_name);
 
 	return pdata;
 
@@ -967,7 +980,7 @@ int wcd9xxx_core_res_init(
 	wcd9xxx_core_res->num_irq_regs = num_irq_regs;
 	wcd9xxx_core_res->wcd_core_regmap = wcd_regmap;
 
-	pr_info("%s: num_irqs = %d, num_irq_regs = %d\n",
+	pr_debug("%s: num_irqs = %d, num_irq_regs = %d\n",
 			__func__, wcd9xxx_core_res->num_irqs,
 			wcd9xxx_core_res->num_irq_regs);
 

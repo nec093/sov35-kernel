@@ -1,13 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2013-2014, 2017 The Linux Foundation. All rights reserved.
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2013-2014, 2017, 2019 The Linux Foundation. All rights reserved.
  */
 
 #ifndef _MSM_DS2_DAP_CONFIG_H_
@@ -16,7 +9,7 @@
 #include <sound/soc.h>
 #include "msm-dolby-common.h"
 #include <sound/hwdep.h>
-#include <uapi/sound/devdep_params.h>
+#include <uapi/audio/sound/devdep_params.h>
 
 #ifdef CONFIG_COMPAT
 struct dolby_param_data32 {
@@ -32,7 +25,6 @@ struct dolby_param_license32 {
 	compat_uptr_t dmid;
 	compat_uptr_t license_key;
 };
-
 
 #define SNDRV_DEVDEP_DAP_IOCTL_SET_PARAM32\
 		_IOWR('U', 0x10, struct dolby_param_data32)
@@ -61,6 +53,34 @@ enum {
 	DAP_CMD_SET_BYPASS         = 3,
 	DAP_CMD_SET_ACTIVE_DEVICE  = 4,
 	DAP_CMD_SET_BYPASS_TYPE    = 5,
+};
+
+struct custom_stereo_param {
+	/* Index is 32-bit param in little endian */
+	u16 index;
+	u16 reserved;
+
+	/* For stereo mixing, the number of out channels */
+	u16 num_out_ch;
+	/* For stereo mixing, the number of in channels */
+	u16 num_in_ch;
+
+	/* Out channel map FL/FR*/
+	u16 out_fl;
+	u16 out_fr;
+
+	/* In channel map FL/FR*/
+	u16 in_fl;
+	u16 in_fr;
+
+	/*
+	 * Weighting coefficients. Mixing will be done according to
+	 * these coefficients.
+	 */
+	u16 op_FL_ip_FL_weight;
+	u16 op_FL_ip_FR_weight;
+	u16 op_FR_ip_FL_weight;
+	u16 op_FR_ip_FR_weight;
 };
 
 #define DOLBY_PARAM_INT_ENDP_LENGTH             1

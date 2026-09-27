@@ -1,13 +1,6 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -30,6 +23,8 @@
 
 #include "msm-pcm-q6-v2.h"
 #include "msm-pcm-routing-v2.h"
+
+#define DRV_NAME "msm-pcm-voip-v2"
 
 #define SHARED_MEM_BUF 2
 #define VOIP_MAX_Q_LEN 10
@@ -308,9 +303,9 @@ static struct snd_kcontrol_new msm_voip_controls[] = {
 		       msm_voip_dtx_mode_get, msm_voip_dtx_mode_put),
 };
 
-static int msm_pcm_voip_probe(struct snd_soc_platform *platform)
+static int msm_pcm_voip_probe(struct snd_soc_component *component)
 {
-	snd_soc_add_platform_controls(platform, msm_voip_controls,
+	snd_soc_add_component_controls(component, msm_voip_controls,
 					ARRAY_SIZE(msm_voip_controls));
 
 	return 0;
@@ -371,6 +366,13 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 		switch (prtd->mode) {
 		case MODE_AMR_WB:
 		case MODE_AMR: {
+			if (pkt_len <= DSP_FRAME_HDR_LEN) {
+				pr_err("%s: pkt_len %d is < required len\n",
+						__func__, pkt_len);
+				spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+							dsp_flags);
+				return;
+			}
 			/* Remove the DSP frame info header. Header format:
 			 * Bits 0-3: Frame rate
 			 * Bits 4-7: Frame type
@@ -391,6 +393,13 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 		case MODE_4GV_NB:
 		case MODE_4GV_WB:
 		case MODE_4GV_NW: {
+			if (pkt_len <= DSP_FRAME_HDR_LEN) {
+				pr_err("%s: pkt_len %d is < required len\n",
+						__func__, pkt_len);
+				spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+							dsp_flags);
+				return;
+			}
 			/* Remove the DSP frame info header.
 			 * Header format:
 			 * Bits 0-3: frame rate
@@ -428,6 +437,13 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 			buf_node->frame.frm_hdr.timestamp = timestamp;
 			voc_pkt = voc_pkt + DSP_FRAME_HDR_LEN;
 
+			if (pkt_len <= 2 * DSP_FRAME_HDR_LEN) {
+				pr_err("%s: pkt_len %d is < required len\n",
+						__func__, pkt_len);
+				spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+							dsp_flags);
+				return;
+			}
 			/* There are two frames in the buffer. Length of the
 			 * first frame:
 			 */
@@ -462,6 +478,14 @@ static void voip_process_ul_pkt(uint8_t *voc_pkt,
 							(*voc_pkt) & 0x03;
 				buf_node->frame.frm_hdr.timestamp = timestamp;
 				voc_pkt = voc_pkt + DSP_FRAME_HDR_LEN;
+
+				if (pkt_len <= 2 * DSP_FRAME_HDR_LEN) {
+					pr_err("%s: pkt_len %d is < required len\n",
+							__func__, pkt_len);
+					spin_unlock_irqrestore(&prtd->dsp_ul_lock,
+								dsp_flags);
+					return;
+				}
 
 				/* There are two frames in the buffer. Length
 				 * of the second frame:
@@ -514,7 +538,7 @@ static void voip_process_dl_pkt(uint8_t *voc_pkt, void *private_data)
 {
 	struct voip_buf_node *buf_node = NULL;
 	struct voip_drv_info *prtd = private_data;
-	unsigned long dsp_flags;
+	unsigned long dsp_flags = 0;
 	uint32_t rate_type;
 	uint32_t frame_rate;
 	u32 pkt_len;
@@ -778,17 +802,15 @@ err:
 }
 
 static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
-	snd_pcm_uframes_t hwoff, void __user *buf, snd_pcm_uframes_t frames)
+	unsigned long hwoff, void __user *buf, unsigned long fbytes)
 {
 	int ret = 0;
 	struct voip_buf_node *buf_node = NULL;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct voip_drv_info *prtd = runtime->private_data;
-	unsigned long dsp_flags;
+	unsigned long dsp_flags = 0;
 
-	int count = frames_to_bytes(runtime, frames);
-
-	pr_debug("%s: count = %d, frames=%d\n", __func__, count, (int)frames);
+	pr_debug("%s: fbytes=%lu\n", __func__, fbytes);
 
 	if (prtd->voip_reset) {
 		pr_debug("%s: RESET event happened during VoIP\n", __func__);
@@ -805,7 +827,7 @@ static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
 	}
 
 	if (ret > 0) {
-		if (count <= VOIP_MAX_VOC_PKT_SIZE) {
+		if (fbytes <= VOIP_MAX_VOC_PKT_SIZE) {
 			spin_lock_irqsave(&prtd->dsp_lock, dsp_flags);
 			buf_node =
 				list_first_entry(&prtd->free_in_queue,
@@ -814,23 +836,23 @@ static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
 			spin_unlock_irqrestore(&prtd->dsp_lock, dsp_flags);
 			if (prtd->mode == MODE_PCM) {
 				ret = copy_from_user(&buf_node->frame.voc_pkt,
-							buf, count);
+							buf, fbytes);
 				if (ret) {
 					pr_err("%s: copy from user failed %d\n",
 					       __func__, ret);
 					return -EFAULT;
 				}
-				buf_node->frame.pktlen = count;
+				buf_node->frame.pktlen = fbytes;
 			} else {
 				ret = copy_from_user(&buf_node->frame,
-							buf, count);
+							buf, fbytes);
 				if (ret) {
 					pr_err("%s: copy from user failed %d\n",
 					       __func__, ret);
 					return -EFAULT;
 				}
-				if (buf_node->frame.pktlen >= count)
-					buf_node->frame.pktlen = count -
+				if (buf_node->frame.pktlen >= fbytes)
+					buf_node->frame.pktlen = fbytes -
 					(sizeof(buf_node->frame.frm_hdr) +
 					 sizeof(buf_node->frame.pktlen));
 			}
@@ -838,8 +860,8 @@ static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
 			list_add_tail(&buf_node->list, &prtd->in_queue);
 			spin_unlock_irqrestore(&prtd->dsp_lock, dsp_flags);
 		} else {
-			pr_err("%s: Write cnt %d is > VOIP_MAX_VOC_PKT_SIZE\n",
-				__func__, count);
+			pr_err("%s: Write cnt %lu is > VOIP_MAX_VOC_PKT_SIZE\n",
+				__func__, fbytes);
 			ret = -ENOMEM;
 		}
 
@@ -853,20 +875,17 @@ static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
 	return  ret;
 }
 static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
-		int channel, snd_pcm_uframes_t hwoff, void __user *buf,
-						snd_pcm_uframes_t frames)
+		int channel, unsigned long hwoff, void __user *buf,
+						unsigned long fbytes)
 {
 	int ret = 0;
-	int count = 0;
 	struct voip_buf_node *buf_node = NULL;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct voip_drv_info *prtd = runtime->private_data;
-	unsigned long dsp_flags;
+	unsigned long dsp_flags = 0;
 	int size;
 
-	count = frames_to_bytes(runtime, frames);
-
-	pr_debug("%s: count = %d\n", __func__, count);
+	pr_debug("%s: fbytes = %lu\n", __func__, fbytes);
 
 	if (prtd->voip_reset) {
 		pr_debug("%s: RESET event happened during VoIP\n", __func__);
@@ -885,7 +904,7 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 
 	if (ret > 0) {
 
-		if (count <= VOIP_MAX_VOC_PKT_SIZE) {
+		if (fbytes <= VOIP_MAX_VOC_PKT_SIZE) {
 			spin_lock_irqsave(&prtd->dsp_ul_lock, dsp_flags);
 			buf_node = list_first_entry(&prtd->out_queue,
 					struct voip_buf_node, list);
@@ -914,8 +933,8 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 						&prtd->free_out_queue);
 			spin_unlock_irqrestore(&prtd->dsp_ul_lock, dsp_flags);
 		} else {
-			pr_err("%s: Read count %d > VOIP_MAX_VOC_PKT_SIZE\n",
-				__func__, count);
+			pr_err("%s: Read fbytes %lu > VOIP_MAX_VOC_PKT_SIZE\n",
+				__func__, fbytes);
 			ret = -ENOMEM;
 		}
 
@@ -930,14 +949,14 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 	return ret;
 }
 static int msm_pcm_copy(struct snd_pcm_substream *substream, int a,
-	 snd_pcm_uframes_t hwoff, void __user *buf, snd_pcm_uframes_t frames)
+	 unsigned long hwoff, void __user *buf, unsigned long fbytes)
 {
 	int ret = 0;
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-		ret = msm_pcm_playback_copy(substream, a, hwoff, buf, frames);
+		ret = msm_pcm_playback_copy(substream, a, hwoff, buf, fbytes);
 	else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
-		ret = msm_pcm_capture_copy(substream, a, hwoff, buf, frames);
+		ret = msm_pcm_capture_copy(substream, a, hwoff, buf, fbytes);
 
 	return ret;
 }
@@ -952,7 +971,7 @@ static int msm_pcm_close(struct snd_pcm_substream *substream)
 	struct snd_pcm_substream *p_substream, *c_substream;
 	struct snd_pcm_runtime *runtime;
 	struct voip_drv_info *prtd;
-	unsigned long dsp_flags;
+	unsigned long dsp_flags = 0;
 
 	if (substream == NULL) {
 		pr_err("substream is NULL\n");
@@ -1596,18 +1615,9 @@ static int voip_get_media_type(uint32_t mode, uint32_t rate_type,
 }
 
 
-static int msm_pcm_copy_user(struct snd_pcm_substream *substream, int channel,
-			unsigned long pos, void __user *buf, unsigned long bytes)
-{
-	struct snd_pcm_runtime *runtime = substream->runtime;
-
-	return msm_pcm_copy(substream, channel, bytes_to_frames(runtime, pos), buf,
-		  bytes_to_frames(runtime, bytes));
-}
-
 static const struct snd_pcm_ops msm_pcm_ops = {
 	.open           = msm_pcm_open,
-	.copy_user		= msm_pcm_copy_user,
+	.copy_user	= msm_pcm_copy,
 	.hw_params	= msm_pcm_hw_params,
 	.close          = msm_pcm_close,
 	.prepare        = msm_pcm_prepare,
@@ -1627,7 +1637,8 @@ static int msm_asoc_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	return ret;
 }
 
-static struct snd_soc_platform_driver msm_soc_platform = {
+static struct snd_soc_component_driver msm_soc_component = {
+	.name		= DRV_NAME,
 	.ops		= &msm_pcm_ops,
 	.pcm_new	= msm_asoc_pcm_new,
 	.probe		= msm_pcm_voip_probe,
@@ -1664,8 +1675,9 @@ static int msm_pcm_probe(struct platform_device *pdev)
 
 
 	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
-	rc = snd_soc_register_platform(&pdev->dev,
-				       &msm_soc_platform);
+	rc = snd_soc_register_component(&pdev->dev,
+				       &msm_soc_component,
+					NULL, 0);
 
 done:
 	return rc;
@@ -1673,7 +1685,7 @@ done:
 
 static int msm_pcm_remove(struct platform_device *pdev)
 {
-	snd_soc_unregister_platform(&pdev->dev);
+	snd_soc_unregister_component(&pdev->dev);
 	return 0;
 }
 
@@ -1688,12 +1700,13 @@ static struct platform_driver msm_pcm_driver = {
 		.name = "msm-voip-dsp",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_voip_dt_match,
+		.suppress_bind_attrs = true,
 	},
 	.probe = msm_pcm_probe,
 	.remove = msm_pcm_remove,
 };
 
-static int __init msm_soc_platform_init(void)
+int __init msm_pcm_voip_init(void)
 {
 	memset(&voip_info, 0, sizeof(voip_info));
 	voip_info.mode = MODE_PCM;
@@ -1712,13 +1725,12 @@ static int __init msm_soc_platform_init(void)
 
 	return platform_driver_register(&msm_pcm_driver);
 }
-module_init(msm_soc_platform_init);
 
-static void __exit msm_soc_platform_exit(void)
+void msm_pcm_voip_exit(void)
 {
 	platform_driver_unregister(&msm_pcm_driver);
+	mutex_destroy(&voip_info.lock);
 }
-module_exit(msm_soc_platform_exit);
 
 MODULE_DESCRIPTION("PCM module platform driver");
 MODULE_LICENSE("GPL v2");

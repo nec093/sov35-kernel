@@ -1,14 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -164,12 +157,11 @@ struct wcd_spi_priv {
 	void *tx_buf;
 	void *rx_buf;
 
-	/* Handle to child (qmi client) device */
-	struct device *ac_dev;
-
 	/* DMA handles for transfer buffers */
 	dma_addr_t tx_dma;
 	dma_addr_t rx_dma;
+	/* Handle to child (qmi client) device */
+	struct device *ac_dev;
 };
 
 enum xfer_request {
@@ -252,6 +244,7 @@ static int wcd_spi_read_single(struct spi_device *spi,
 	struct spi_transfer *tx_xfer = &wcd_spi->xfer2[0];
 	struct spi_transfer *rx_xfer = &wcd_spi->xfer2[1];
 	u8 *tx_buf = wcd_spi->tx_buf;
+	u8 *rx_buf = wcd_spi->rx_buf;
 	u32 frame = 0;
 	int ret;
 
@@ -274,10 +267,15 @@ static int wcd_spi_read_single(struct spi_device *spi,
 	tx_xfer->len = WCD_SPI_READ_SINGLE_LEN;
 
 	wcd_spi_reinit_xfer(rx_xfer);
-	rx_xfer->rx_buf = val;
+	rx_xfer->rx_buf = rx_buf;
 	rx_xfer->len = sizeof(*val);
 
 	ret = spi_sync(spi, &wcd_spi->msg2);
+	if (ret)
+		dev_err(&spi->dev, "%s: spi_sync failed, err %d\n",
+			__func__, ret);
+	else
+		memcpy((u8*) val, rx_buf, sizeof(*val));
 
 	return ret;
 }
@@ -329,22 +327,22 @@ static int wcd_spi_write_single(struct spi_device *spi,
 {
 	struct wcd_spi_priv *wcd_spi = spi_get_drvdata(spi);
 	struct spi_transfer *xfer = &wcd_spi->xfer1;
-	u8 buf[WCD_SPI_WRITE_SINGLE_LEN];
+	u8 *tx_buf = wcd_spi->tx_buf;
 	u32 frame = 0;
 
 	dev_dbg(&spi->dev, "%s: remote_addr = 0x%x, val = 0x%x\n",
 		__func__, remote_addr, val);
 
-	memset(buf, 0, WCD_SPI_WRITE_SINGLE_LEN);
+	memset(tx_buf, 0, WCD_SPI_WRITE_SINGLE_LEN);
 	frame |= WCD_SPI_WRITE_FRAME_OPCODE;
 	frame |= (remote_addr & WCD_CMD_ADDR_MASK);
 
 	frame = cpu_to_be32(frame);
-	memcpy(buf, &frame, sizeof(frame));
-	memcpy(buf + sizeof(frame), &val, sizeof(val));
+	memcpy(tx_buf, &frame, sizeof(frame));
+	memcpy(tx_buf + sizeof(frame), &val, sizeof(val));
 
 	wcd_spi_reinit_xfer(xfer);
-	xfer->tx_buf = buf;
+	xfer->tx_buf = tx_buf;
 	xfer->len = WCD_SPI_WRITE_SINGLE_LEN;
 
 	return spi_sync(spi, &wcd_spi->msg1);
@@ -497,21 +495,26 @@ done:
 
 static int wcd_spi_cmd_nop(struct spi_device *spi)
 {
-	u8 nop = WCD_SPI_CMD_NOP;
+	struct wcd_spi_priv *wcd_spi = spi_get_drvdata(spi);
+	u8 *tx_buf = wcd_spi->tx_buf;
 
-	return spi_write(spi, &nop, WCD_SPI_CMD_NOP_LEN);
+	tx_buf[0] = WCD_SPI_CMD_NOP;
+
+	return spi_write(spi, tx_buf, WCD_SPI_CMD_NOP_LEN);
 }
 
 static int wcd_spi_cmd_clkreq(struct spi_device *spi)
 {
 	struct wcd_spi_priv *wcd_spi = spi_get_drvdata(spi);
 	struct spi_transfer *xfer = &wcd_spi->xfer1;
+	u8 *tx_buf = wcd_spi->tx_buf;
 	u8 cmd[WCD_SPI_CMD_CLKREQ_LEN] = {
 		WCD_SPI_CMD_CLKREQ,
 		0xBA, 0x80, 0x00};
 
+	memcpy(tx_buf, cmd, WCD_SPI_CMD_CLKREQ_LEN);
 	wcd_spi_reinit_xfer(xfer);
-	xfer->tx_buf = cmd;
+	xfer->tx_buf = tx_buf;
 	xfer->len = WCD_SPI_CMD_CLKREQ_LEN;
 	xfer->delay_usecs = WCD_SPI_CLKREQ_DELAY_USECS;
 
@@ -520,9 +523,12 @@ static int wcd_spi_cmd_clkreq(struct spi_device *spi)
 
 static int wcd_spi_cmd_wr_en(struct spi_device *spi)
 {
-	u8 wr_en = WCD_SPI_CMD_WREN;
+	struct wcd_spi_priv *wcd_spi = spi_get_drvdata(spi);
+	u8 *tx_buf = wcd_spi->tx_buf;
 
-	return spi_write(spi, &wr_en, WCD_SPI_CMD_WREN_LEN);
+	tx_buf[0] = WCD_SPI_CMD_WREN;
+
+	return spi_write(spi, tx_buf, WCD_SPI_CMD_WREN_LEN);
 }
 
 static int wcd_spi_cmd_rdsr(struct spi_device *spi,
@@ -531,19 +537,19 @@ static int wcd_spi_cmd_rdsr(struct spi_device *spi,
 	struct wcd_spi_priv *wcd_spi = spi_get_drvdata(spi);
 	struct spi_transfer *tx_xfer = &wcd_spi->xfer2[0];
 	struct spi_transfer *rx_xfer = &wcd_spi->xfer2[1];
-	u8 rdsr_cmd;
-	u32 status = 0;
+	u8 *tx_buf = wcd_spi->tx_buf;
+	u8 *rx_buf = wcd_spi->rx_buf;
 	int ret;
 
-	rdsr_cmd = WCD_SPI_CMD_RDSR;
+	tx_buf[0] = WCD_SPI_CMD_RDSR;
 	wcd_spi_reinit_xfer(tx_xfer);
-	tx_xfer->tx_buf = &rdsr_cmd;
-	tx_xfer->len = sizeof(rdsr_cmd);
+	tx_xfer->tx_buf = tx_buf;
+	tx_xfer->len = WCD_SPI_OPCODE_LEN;
 
-
+	memset(rx_buf, 0, sizeof(*rdsr_status));
 	wcd_spi_reinit_xfer(rx_xfer);
-	rx_xfer->rx_buf = &status;
-	rx_xfer->len = sizeof(status);
+	rx_xfer->rx_buf = rx_buf;
+	rx_xfer->len = sizeof(*rdsr_status);
 
 	ret = spi_sync(spi, &wcd_spi->msg2);
 	if (ret < 0) {
@@ -552,10 +558,10 @@ static int wcd_spi_cmd_rdsr(struct spi_device *spi,
 		goto done;
 	}
 
-	*rdsr_status = be32_to_cpu(status);
+	*rdsr_status = be32_to_cpu(*((u32*)rx_buf));
 
 	dev_dbg(&spi->dev, "%s: RDSR success, value = 0x%x\n",
-		 __func__, *rdsr_status);
+		__func__, *rdsr_status);
 done:
 	return ret;
 }
@@ -810,6 +816,15 @@ static int __wcd_spi_data_xfer(struct spi_device *spi,
 		return -EINVAL;
 	}
 
+	WCD_SPI_MUTEX_LOCK(spi, wcd_spi->clk_mutex);
+	if (wcd_spi_is_suspended(wcd_spi)) {
+		dev_dbg(&spi->dev,
+			"%s: SPI suspended, cannot perform transfer\n",
+			__func__);
+		ret = -EIO;
+		goto done;
+	}
+
 	WCD_SPI_MUTEX_LOCK(spi, wcd_spi->xfer_mutex);
 	if (msg->len == WCD_SPI_WORD_BYTE_CNT) {
 		if (xfer_req == WCD_SPI_XFER_WRITE)
@@ -822,7 +837,8 @@ static int __wcd_spi_data_xfer(struct spi_device *spi,
 		ret = wcd_spi_transfer_split(spi, msg, xfer_req);
 	}
 	WCD_SPI_MUTEX_UNLOCK(spi, wcd_spi->xfer_mutex);
-
+done:
+	WCD_SPI_MUTEX_UNLOCK(spi, wcd_spi->clk_mutex);
 	return ret;
 }
 
@@ -1069,7 +1085,7 @@ static int wcd_spi_bus_gwrite(void *context, const void *reg,
 	struct device *dev = context;
 	struct spi_device *spi = to_spi_device(dev);
 	struct wcd_spi_priv *wcd_spi = spi_get_drvdata(spi);
-	u8 tx_buf[WCD_SPI_CMD_IRW_LEN];
+	u8 *tx_buf = wcd_spi->tx_buf;
 
 	if (!reg || !val || reg_len != wcd_spi->reg_bytes ||
 	    val_len != wcd_spi->val_bytes) {
@@ -1079,9 +1095,10 @@ static int wcd_spi_bus_gwrite(void *context, const void *reg,
 		return -EINVAL;
 	}
 
+	memset(tx_buf, 0, WCD_SPI_CMD_IRW_LEN);
 	tx_buf[0] = WCD_SPI_CMD_IRW;
 	tx_buf[1] = *((u8 *)reg);
-	memcpy(&tx_buf[WCD_SPI_OPCODE_LEN + reg_len],
+	memcpy(tx_buf + WCD_SPI_OPCODE_LEN + reg_len,
 	       val, val_len);
 
 	return spi_write(spi, tx_buf, WCD_SPI_CMD_IRW_LEN);
@@ -1115,7 +1132,9 @@ static int wcd_spi_bus_read(void *context, const void *reg,
 	struct wcd_spi_priv *wcd_spi = spi_get_drvdata(spi);
 	struct spi_transfer *tx_xfer = &wcd_spi->xfer2[0];
 	struct spi_transfer *rx_xfer = &wcd_spi->xfer2[1];
-	u8 tx_buf[WCD_SPI_CMD_IRR_LEN];
+	u8 *tx_buf = wcd_spi->tx_buf;
+	u8 *rx_buf = wcd_spi->rx_buf;
+	int ret = 0;
 
 	if (!reg || !val || reg_len != wcd_spi->reg_bytes ||
 	    val_len != wcd_spi->val_bytes) {
@@ -1125,7 +1144,7 @@ static int wcd_spi_bus_read(void *context, const void *reg,
 		return -EINVAL;
 	}
 
-	memset(tx_buf, 0, WCD_SPI_OPCODE_LEN);
+	memset(tx_buf, 0, WCD_SPI_CMD_IRR_LEN);
 	tx_buf[0] = WCD_SPI_CMD_IRR;
 	tx_buf[1] = *((u8 *)reg);
 
@@ -1136,10 +1155,20 @@ static int wcd_spi_bus_read(void *context, const void *reg,
 
 	wcd_spi_reinit_xfer(rx_xfer);
 	rx_xfer->tx_buf = NULL;
-	rx_xfer->rx_buf = val;
+	rx_xfer->rx_buf = rx_buf;
 	rx_xfer->len = val_len;
 
-	return spi_sync(spi, &wcd_spi->msg2);
+	ret = spi_sync(spi, &wcd_spi->msg2);
+	if (ret) {
+		dev_err(&spi->dev, "%s: spi_sync failed, err %d\n",
+			__func__, ret);
+		goto done;
+	}
+
+	memcpy(val, rx_buf, val_len);
+
+done:
+	return ret;
 }
 
 static struct regmap_bus wcd_spi_regmap_bus = {
@@ -1450,7 +1479,7 @@ static int wcd_spi_component_bind(struct device *dev,
 	spi_message_add_tail(&wcd_spi->xfer2[1], &wcd_spi->msg2);
 
 	/* Pre-allocate the buffers */
-	wcd_spi->tx_buf = dma_zalloc_coherent(&spi->dev,
+	wcd_spi->tx_buf = dma_alloc_coherent(&spi->dev,
 					      WCD_SPI_RW_MAX_BUF_SIZE,
 					      &wcd_spi->tx_dma, GFP_KERNEL);
 	if (!wcd_spi->tx_buf) {
@@ -1458,7 +1487,7 @@ static int wcd_spi_component_bind(struct device *dev,
 		goto done;
 	}
 
-	wcd_spi->rx_buf = dma_zalloc_coherent(&spi->dev,
+	wcd_spi->rx_buf = dma_alloc_coherent(&spi->dev,
 					      WCD_SPI_RW_MAX_BUF_SIZE,
 					      &wcd_spi->rx_dma, GFP_KERNEL);
 	if (!wcd_spi->rx_buf) {

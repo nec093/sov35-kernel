@@ -1,14 +1,5 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -33,6 +24,7 @@ void q6_audio_cb(uint32_t opcode, uint32_t token,
 	case ASM_DATA_EVENT_WRITE_DONE_V2:
 	case ASM_DATA_EVENT_READ_DONE_V2:
 	case ASM_DATA_EVENT_RENDERED_EOS:
+	case ASM_DATA_EVENT_RENDERED_EOS_V2:
 	case ASM_DATA_CMD_MEDIA_FMT_UPDATE_V2:
 	case ASM_STREAM_CMD_SET_ENCDEC_PARAM:
 	case ASM_DATA_EVENT_SR_CM_CHANGE_NOTIFY:
@@ -51,7 +43,13 @@ void audio_aio_cb(uint32_t opcode, uint32_t token,
 {
 	struct q6audio_aio *audio = (struct q6audio_aio *)priv;
 	union msm_audio_event_payload e_payload;
+	unsigned long flags = 0;
 
+	spin_lock_irqsave(&enc_dec_lock, flags);
+	if (audio == NULL) {
+		pr_err("%s: failed to get q6audio value\n", __func__);
+		goto error;
+	}
 	switch (opcode) {
 	case ASM_DATA_EVENT_WRITE_DONE_V2:
 		pr_debug("%s[%pK]:ASM_DATA_EVENT_WRITE_DONE token = 0x%x\n",
@@ -64,6 +62,7 @@ void audio_aio_cb(uint32_t opcode, uint32_t token,
 		audio_aio_async_read_ack(audio, token, payload);
 		break;
 	case ASM_DATA_EVENT_RENDERED_EOS:
+	case ASM_DATA_EVENT_RENDERED_EOS_V2:
 		/* EOS Handle */
 		pr_debug("%s[%pK]:ASM_DATA_CMDRSP_EOS\n", __func__, audio);
 		if (audio->feedback) { /* Non-Tunnel mode */
@@ -111,26 +110,36 @@ void audio_aio_cb(uint32_t opcode, uint32_t token,
 		pr_err("%s: Received opcode:0x%x\n", __func__, opcode);
 		audio->stopped = 1;
 		audio->reset_event = true;
-		wake_up(&audio->event_wait);
+		if (audio->wake_event_initialized)
+			wake_up(&audio->event_wait);
 		break;
 	default:
 		break;
 	}
+error:
+	spin_unlock_irqrestore(&enc_dec_lock, flags);
 }
 
-void extract_meta_out_info(struct q6audio_aio *audio,
+int extract_meta_out_info(struct q6audio_aio *audio,
 		struct audio_aio_buffer_node *buf_node, int dir)
 {
 	struct dec_meta_out *meta_data = buf_node->kvaddr;
 	uint32_t temp;
 
 	if (dir) { /* input buffer - Write */
-		if (audio->buf_cfg.meta_info_enable)
+		if (audio->buf_cfg.meta_info_enable) {
+			if (buf_node->buf.buf_len <
+				sizeof(struct dec_meta_in)) {
+				pr_debug("%s: invalid buf len %d\n",
+					 __func__, buf_node->buf.buf_len);
+				return -EINVAL;
+			}
 			memcpy(&buf_node->meta_info.meta_in,
 			(char *)buf_node->kvaddr, sizeof(struct dec_meta_in));
-		else
+		} else {
 			memset(&buf_node->meta_info.meta_in,
 			0, sizeof(struct dec_meta_in));
+		}
 		pr_debug("%s[%pK]:i/p: msw_ts %d lsw_ts %d nflags 0x%8x\n",
 			__func__, audio,
 			buf_node->meta_info.meta_in.ntimestamp.highpart,
@@ -156,6 +165,7 @@ void extract_meta_out_info(struct q6audio_aio *audio,
 			meta_out_dsp[0].nflags,
 		((struct dec_meta_out *)buf_node->kvaddr)->num_of_frames);
 	}
+	return 0;
 }
 
 /* Read buffer from DSP / Handle Ack from DSP */
@@ -165,6 +175,7 @@ void audio_aio_async_read_ack(struct q6audio_aio *audio, uint32_t token,
 	unsigned long flags;
 	union msm_audio_event_payload event_payload;
 	struct audio_aio_buffer_node *filled_buf;
+	int ret;
 
 	pr_debug("%s\n", __func__);
 
@@ -208,7 +219,7 @@ void audio_aio_async_read_ack(struct q6audio_aio *audio, uint32_t token,
 				__func__, audio,
 				filled_buf->meta_info.meta_out.num_of_frames,
 				event_payload.aio_buf.data_len);
-			extract_meta_out_info(audio, filled_buf, 0);
+			ret = extract_meta_out_info(audio, filled_buf, 0);
 			audio->eos_rsp = 0;
 		}
 		pr_debug("%s, posting read done to the app here\n", __func__);

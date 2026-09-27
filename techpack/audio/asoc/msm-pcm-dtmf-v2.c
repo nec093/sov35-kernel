@@ -1,13 +1,5 @@
-/* Copyright (c) 2013-2014, 2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2013-2014, 2017-2020 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -25,6 +17,10 @@
 
 #include "msm-pcm-q6-v2.h"
 #include "msm-pcm-routing-v2.h"
+
+#define DRV_NAME "msm-pcm-dtmf-v2"
+
+#define DTMF_MAX_DURATION 65535
 
 enum {
 	DTMF_IN_RX,
@@ -100,8 +96,12 @@ static int msm_dtmf_rx_generate_put(struct snd_kcontrol *kcontrol,
 	int64_t duration = ucontrol->value.integer.value[2];
 	uint16_t gain = ucontrol->value.integer.value[3];
 
-	pr_debug("%s: low_freq=%d high_freq=%d duration=%d gain=%d\n",
+	pr_debug("%s: low_freq=%d high_freq=%d duration=%lld gain=%d\n",
 		 __func__, low_freq, high_freq, (int)duration, gain);
+
+	if (duration == DTMF_MAX_DURATION)
+		duration = -1;
+
 	afe_dtmf_generate_rx(duration, high_freq, low_freq, gain);
 	return 0;
 }
@@ -165,9 +165,9 @@ static struct snd_kcontrol_new msm_dtmf_controls[] = {
 				msm_dtmf_detect_volte_rx_put),
 };
 
-static int msm_pcm_dtmf_probe(struct snd_soc_platform *platform)
+static int msm_pcm_dtmf_probe(struct snd_soc_component *component)
 {
-	snd_soc_add_platform_controls(platform, msm_dtmf_controls,
+	snd_soc_add_component_controls(component, msm_dtmf_controls,
 				      ARRAY_SIZE(msm_dtmf_controls));
 	return 0;
 }
@@ -217,24 +217,21 @@ static void dtmf_rx_detected_cb(uint8_t *pkt,
 }
 
 static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
-				int channel, snd_pcm_uframes_t hwoff,
-				void __user *buf, snd_pcm_uframes_t frames)
+				int channel, unsigned long hwoff,
+				void __user *buf, unsigned long fbytes)
 {
 	int ret = 0;
-	int count = 0;
 	struct dtmf_buf_node *buf_node = NULL;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct dtmf_drv_info *prtd = runtime->private_data;
-	unsigned long dsp_flags;
-
-	count = frames_to_bytes(runtime, frames);
+	unsigned long dsp_flags = 0;
 
 	ret = wait_event_interruptible_timeout(prtd->out_wait,
 				(!list_empty(&prtd->out_queue)),
 				1 * HZ);
 
 	if (ret > 0) {
-		if (count <= DTMF_PKT_SIZE) {
+		if (fbytes <= DTMF_PKT_SIZE) {
 			spin_lock_irqsave(&prtd->dsp_lock, dsp_flags);
 			buf_node = list_first_entry(&prtd->out_queue,
 					struct dtmf_buf_node, list);
@@ -242,7 +239,7 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 			spin_unlock_irqrestore(&prtd->dsp_lock, dsp_flags);
 			ret = copy_to_user(buf,
 					   &buf_node->dtmf_det_pkt,
-					   count);
+					   fbytes);
 			if (ret) {
 				pr_err("%s: Copy to user returned %d\n",
 					__func__, ret);
@@ -254,8 +251,8 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 			spin_unlock_irqrestore(&prtd->dsp_lock, dsp_flags);
 
 		} else {
-			pr_err("%s: Read count %d > DTMF_PKT_SIZE\n",
-				__func__, count);
+			pr_err("%s: Read count %lu > DTMF_PKT_SIZE\n",
+				__func__, fbytes);
 			ret = -ENOMEM;
 		}
 	} else if (ret == 0) {
@@ -269,14 +266,14 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 }
 
 static int msm_pcm_copy(struct snd_pcm_substream *substream, int a,
-	 snd_pcm_uframes_t hwoff, void __user *buf, snd_pcm_uframes_t frames)
+	 unsigned long hwoff, void __user *buf, unsigned long fbytes)
 {
 	int ret = 0;
 
 	pr_debug("%s() DTMF\n", __func__);
 
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
-		ret = msm_pcm_capture_copy(substream, a, hwoff, buf, frames);
+		ret = msm_pcm_capture_copy(substream, a, hwoff, buf, fbytes);
 
 	return ret;
 }
@@ -327,7 +324,7 @@ static int msm_pcm_close(struct snd_pcm_substream *substream)
 	struct snd_pcm_substream *c_substream;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct dtmf_drv_info *prtd = runtime->private_data;
-	unsigned long dsp_flags;
+	unsigned long dsp_flags = 0;
 
 	pr_debug("%s() DTMF\n", __func__);
 
@@ -522,18 +519,9 @@ static snd_pcm_uframes_t msm_pcm_pointer(struct snd_pcm_substream *substream)
 	return ret;
 }
 
-static int msm_pcm_copy_user(struct snd_pcm_substream *substream, int channel,
-			unsigned long pos, void __user *buf, unsigned long bytes)
-{
-	struct snd_pcm_runtime *runtime = substream->runtime;
-
-	return msm_pcm_copy(substream, channel, bytes_to_frames(runtime, pos), buf,
-		  bytes_to_frames(runtime, bytes));
-}
-
 static const struct snd_pcm_ops msm_pcm_ops = {
 	.open           = msm_pcm_open,
-	.copy_user		= msm_pcm_copy_user,
+	.copy_user	= msm_pcm_copy,
 	.hw_params	= msm_pcm_hw_params,
 	.close          = msm_pcm_close,
 	.prepare        = msm_pcm_prepare,
@@ -551,7 +539,8 @@ static int msm_asoc_pcm_new(struct snd_soc_pcm_runtime *rtd)
 	return ret;
 }
 
-static struct snd_soc_platform_driver msm_soc_platform = {
+static struct snd_soc_component_driver msm_soc_component = {
+	.name		= DRV_NAME,
 	.ops		= &msm_pcm_ops,
 	.pcm_new	= msm_asoc_pcm_new,
 	.probe		= msm_pcm_dtmf_probe,
@@ -561,13 +550,13 @@ static int msm_pcm_probe(struct platform_device *pdev)
 {
 	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
 
-	return snd_soc_register_platform(&pdev->dev,
-					 &msm_soc_platform);
+	return snd_soc_register_component(&pdev->dev,
+					 &msm_soc_component, NULL, 0);
 }
 
 static int msm_pcm_remove(struct platform_device *pdev)
 {
-	snd_soc_unregister_platform(&pdev->dev);
+	snd_soc_unregister_component(&pdev->dev);
 	return 0;
 }
 
@@ -584,22 +573,21 @@ static struct platform_driver msm_pcm_driver = {
 		.name = "msm-pcm-dtmf",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_pcm_dtmf_dt_match,
+		.suppress_bind_attrs = true,
 	},
 	.probe = msm_pcm_probe,
 	.remove = msm_pcm_remove,
 };
 
-static int __init msm_soc_platform_init(void)
+int __init msm_pcm_dtmf_init(void)
 {
 	return platform_driver_register(&msm_pcm_driver);
 }
-module_init(msm_soc_platform_init);
 
-static void __exit msm_soc_platform_exit(void)
+void msm_pcm_dtmf_exit(void)
 {
 	platform_driver_unregister(&msm_pcm_driver);
 }
-module_exit(msm_soc_platform_exit);
 
 MODULE_DESCRIPTION("DTMF platform driver");
 MODULE_LICENSE("GPL v2");

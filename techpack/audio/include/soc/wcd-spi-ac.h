@@ -1,13 +1,5 @@
-/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __WCD_SPI_AC_H__
@@ -28,7 +20,7 @@ enum wcd_spi_acc_req {
 #define WCD_SPI_AC_SVC_OFFLINE		BIT(3)
 #define WCD_SPI_AC_UNINITIALIZED	BIT(4)
 
-#if defined(CONFIG_WCD_SPI_AC)
+#if IS_ENABLED(CONFIG_WCD_SPI_AC)
 int wcd_spi_access_ctl(struct device *dev,
 		       enum wcd_spi_acc_req req,
 		       u32 reason);

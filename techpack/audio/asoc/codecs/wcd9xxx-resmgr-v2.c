@@ -1,30 +1,26 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  */
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <sound/soc.h>
-#include "wcd9xxx-resmgr-v2.h"
-#include "core.h"
-#include "wcd9335_registers.h"
-#include <asoc/wcd934x_registers.h>
+#include <asoc/wcd9xxx-resmgr-v2.h>
+#include <asoc/core.h>
 
 #define WCD9XXX_RCO_CALIBRATION_DELAY_INC_US 5000
+/* This register is valid only for WCD9335 */
+#define WCD93XX_ANA_CLK_TOP 0x0602
+
 #define WCD93XX_ANA_BIAS 0x0601
 #define WCD93XX_CDC_CLK_RST_CTRL_MCLK_CONTROL 0x0d41
 #define WCD93XX_CDC_CLK_RST_CTRL_FS_CNT_CONTROL 0x0d42
-
+#define WCD93XX_CLK_SYS_MCLK_PRG 0x711
+#define WCD93XX_CODEC_RPM_CLK_GATE 0x002
+#define WCD93XX_ANA_RCO 0x603
+#define WCD93XX_ANA_BUCK_CTL 0x606
 
 static const char *wcd_resmgr_clk_type_to_str(enum wcd_clock_type clk_type)
 {
@@ -44,17 +40,18 @@ static int wcd_resmgr_codec_reg_update_bits(struct wcd9xxx_resmgr_v2 *resmgr,
 	bool change;
 	int ret;
 
-	if (resmgr->codec_type == WCD934X) {
-		/* Tavil does not support ANA_CLK_TOP register */
-		if (reg == WCD9335_ANA_CLK_TOP)
+	if (resmgr->codec_type != WCD9335) {
+		/* Tavil and Pahu does not support ANA_CLK_TOP register */
+		if (reg == WCD93XX_ANA_CLK_TOP)
 			return 0;
 	} else {
 		/* Tasha does not support CLK_SYS_MCLK_PRG register */
-		if (reg == WCD934X_CLK_SYS_MCLK_PRG)
+		if (reg == WCD93XX_CLK_SYS_MCLK_PRG)
 			return 0;
 	}
-	if (resmgr->codec) {
-		ret = snd_soc_update_bits(resmgr->codec, reg, mask, val);
+	if (resmgr->component) {
+		ret = snd_soc_component_update_bits(resmgr->component, reg,
+					mask, val);
 	} else if (resmgr->core_res->wcd_core_regmap) {
 		ret = regmap_update_bits_check(
 				resmgr->core_res->wcd_core_regmap,
@@ -74,15 +71,15 @@ static int wcd_resmgr_codec_reg_read(struct wcd9xxx_resmgr_v2 *resmgr,
 {
 	int val, ret;
 
-	if (resmgr->codec_type == WCD934X) {
-		if (reg == WCD9335_ANA_CLK_TOP)
+	if (resmgr->codec_type != WCD9335) {
+		if (reg == WCD93XX_ANA_CLK_TOP)
 			return 0;
 	} else {
-		if (reg == WCD934X_CLK_SYS_MCLK_PRG)
+		if (reg == WCD93XX_CLK_SYS_MCLK_PRG)
 			return 0;
 	}
-	if (resmgr->codec) {
-		val = snd_soc_read(resmgr->codec, reg);
+	if (resmgr->component) {
+		val = snd_soc_component_read32(resmgr->component, reg);
 	} else if (resmgr->core_res->wcd_core_regmap) {
 		ret = regmap_read(resmgr->core_res->wcd_core_regmap,
 				  reg, &val);
@@ -118,8 +115,8 @@ static void wcd_resmgr_cdc_specific_get_clk(struct wcd9xxx_resmgr_v2 *resmgr,
 		if (resmgr->resmgr_cb &&
 		    resmgr->resmgr_cb->cdc_rco_ctrl) {
 			while (clk_users--)
-				resmgr->resmgr_cb->cdc_rco_ctrl(resmgr->codec,
-								true);
+				resmgr->resmgr_cb->cdc_rco_ctrl(
+					resmgr->component, true);
 		}
 	}
 }
@@ -242,26 +239,26 @@ static int wcd_resmgr_enable_clk_mclk(struct wcd9xxx_resmgr_v2 *resmgr)
 
 	if (++resmgr->clk_mclk_users == 1) {
 		wcd_resmgr_codec_reg_update_bits(resmgr,
-				WCD9335_ANA_CLK_TOP, 0x80, 0x80);
+				WCD93XX_ANA_CLK_TOP, 0x80, 0x80);
 		wcd_resmgr_codec_reg_update_bits(resmgr,
-				WCD9335_ANA_CLK_TOP, 0x08, 0x00);
+				WCD93XX_ANA_CLK_TOP, 0x08, 0x00);
 		wcd_resmgr_codec_reg_update_bits(resmgr,
-				WCD9335_ANA_CLK_TOP, 0x04, 0x04);
-		if (resmgr->codec_type == WCD934X) {
+				WCD93XX_ANA_CLK_TOP, 0x04, 0x04);
+		if (resmgr->codec_type != WCD9335) {
 			/*
 			 * In tavil clock contrl register is changed
 			 * to CLK_SYS_MCLK_PRG
 			 */
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x80, 0x80);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x80, 0x80);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x30, 0x10);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x30, 0x10);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x02, 0x00);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x02, 0x00);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x01, 0x01);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x01, 0x01);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x02, 0x00);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x02, 0x00);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
 					WCD93XX_CDC_CLK_RST_CTRL_FS_CNT_CONTROL,
 					0x01, 0x01);
@@ -269,10 +266,7 @@ static int wcd_resmgr_enable_clk_mclk(struct wcd9xxx_resmgr_v2 *resmgr)
 					WCD93XX_CDC_CLK_RST_CTRL_MCLK_CONTROL,
 					0x01, 0x01);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD93XX_CDC_CLK_RST_CTRL_MCLK_CONTROL,
-					0x01, 0x01);
-			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CODEC_RPM_CLK_GATE, 0x03, 0x00);
+					WCD93XX_CODEC_RPM_CLK_GATE, 0x03, 0x00);
 		} else {
 			wcd_resmgr_codec_reg_update_bits(resmgr,
 					WCD93XX_CDC_CLK_RST_CTRL_FS_CNT_CONTROL,
@@ -308,28 +302,28 @@ static int wcd_resmgr_disable_clk_mclk(struct wcd9xxx_resmgr_v2 *resmgr)
 		if (resmgr->clk_rco_users > 0) {
 			/* MCLK to RCO switch */
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD9335_ANA_CLK_TOP,
+					WCD93XX_ANA_CLK_TOP,
 					0x08, 0x08);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x02, 0x02);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x02, 0x02);
 			/* Disable clock buffer */
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x80, 0x00);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x80, 0x00);
 			resmgr->clk_type = WCD_CLK_RCO;
 		} else {
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD9335_ANA_CLK_TOP,
+					WCD93XX_ANA_CLK_TOP,
 					0x04, 0x00);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-					WCD934X_CLK_SYS_MCLK_PRG, 0x81, 0x00);
+					WCD93XX_CLK_SYS_MCLK_PRG, 0x81, 0x00);
 			resmgr->clk_type = WCD_CLK_OFF;
 		}
 
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_CLK_TOP,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_CLK_TOP,
 						 0x80, 0x00);
 	}
 
-	if ((resmgr->codec_type == WCD934X) &&
+	if ((resmgr->codec_type != WCD9335) &&
 	    (resmgr->clk_type == WCD_CLK_OFF))
 		wcd_resmgr_set_sido_input_src(resmgr, SIDO_SOURCE_INTERNAL);
 
@@ -342,15 +336,15 @@ static int wcd_resmgr_disable_clk_mclk(struct wcd9xxx_resmgr_v2 *resmgr)
 
 static void wcd_resmgr_set_buck_accuracy(struct wcd9xxx_resmgr_v2 *resmgr)
 {
-	wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+	wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 					 0x02, 0x02);
 	/* 100us sleep needed after HIGH_ACCURACY_PRE_EN1 */
 	usleep_range(100, 110);
-	wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+	wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 					 0x01, 0x01);
 	/* 100us sleep needed after HIGH_ACCURACY_PRE_EN2 */
 	usleep_range(100, 110);
-	wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+	wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 					 0x04, 0x04);
 	/* 100us sleep needed after HIGH_ACCURACY_EN */
 	usleep_range(100, 110);
@@ -373,9 +367,9 @@ static int wcd_resmgr_enable_clk_rco(struct wcd9xxx_resmgr_v2 *resmgr)
 		/* RCO Enable */
 		if (resmgr->sido_input_src == SIDO_SOURCE_INTERNAL) {
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-							 WCD9335_ANA_RCO,
-							 0x80, 0x80);
-			if (resmgr->codec_type == WCD934X)
+				 WCD93XX_ANA_RCO,
+				 0x80, 0x80);
+			if (resmgr->codec_type != WCD9335)
 				wcd_resmgr_set_buck_accuracy(resmgr);
 		}
 
@@ -384,7 +378,7 @@ static int wcd_resmgr_enable_clk_rco(struct wcd9xxx_resmgr_v2 *resmgr)
 		 * requirements
 		 */
 		usleep_range(20, 25);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_RCO,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_RCO,
 						 0x40, 0x40);
 		/*
 		 * 20us required after RCO is enabled as per HW
@@ -392,20 +386,20 @@ static int wcd_resmgr_enable_clk_rco(struct wcd9xxx_resmgr_v2 *resmgr)
 		 */
 		usleep_range(20, 25);
 		/* RCO Calibration */
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_RCO,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_RCO,
 						 0x04, 0x04);
-		if (resmgr->codec_type == WCD934X)
+		if (resmgr->codec_type != WCD9335)
 			/*
-			 * For wcd934x codec, 20us sleep is needed
+			 * For wcd934x and wcd936x codecs, 20us sleep is needed
 			 * after enabling RCO calibration
 			 */
 			usleep_range(20, 25);
 
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_RCO,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_RCO,
 						 0x04, 0x00);
-		if (resmgr->codec_type == WCD934X)
+		if (resmgr->codec_type != WCD9335)
 			/*
-			 * For wcd934x codec, 20us sleep is needed
+			 * For wcd934x and wcd936x codecs, 20us sleep is needed
 			 * after disabling RCO calibration
 			 */
 			usleep_range(20, 25);
@@ -413,7 +407,7 @@ static int wcd_resmgr_enable_clk_rco(struct wcd9xxx_resmgr_v2 *resmgr)
 		/* RCO calibration takes app. 5ms to complete */
 		usleep_range(WCD9XXX_RCO_CALIBRATION_DELAY_INC_US,
 		       WCD9XXX_RCO_CALIBRATION_DELAY_INC_US + 100);
-		if (wcd_resmgr_codec_reg_read(resmgr, WCD9335_ANA_RCO) & 0x02)
+		if (wcd_resmgr_codec_reg_read(resmgr, WCD93XX_ANA_RCO) & 0x02)
 			rco_cal_done = false;
 
 		WARN((!rco_cal_done), "RCO Calibration failed\n");
@@ -421,10 +415,10 @@ static int wcd_resmgr_enable_clk_rco(struct wcd9xxx_resmgr_v2 *resmgr)
 		/* Switch MUX to RCO */
 		if (resmgr->clk_mclk_users == 1) {
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-							WCD9335_ANA_CLK_TOP,
+							WCD93XX_ANA_CLK_TOP,
 							0x08, 0x08);
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-						 WCD934X_CLK_SYS_MCLK_PRG,
+						 WCD93XX_CLK_SYS_MCLK_PRG,
 						 0x02, 0x02);
 			resmgr->clk_type = WCD_CLK_RCO;
 		}
@@ -449,35 +443,35 @@ static int wcd_resmgr_disable_clk_rco(struct wcd9xxx_resmgr_v2 *resmgr)
 
 	if ((resmgr->clk_rco_users == 0) &&
 	    (resmgr->clk_type == WCD_CLK_RCO)) {
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_CLK_TOP,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_CLK_TOP,
 						 0x08, 0x00);
 		wcd_resmgr_codec_reg_update_bits(resmgr,
-						 WCD934X_CLK_SYS_MCLK_PRG,
+						 WCD93XX_CLK_SYS_MCLK_PRG,
 						 0x02, 0x00);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_CLK_TOP,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_CLK_TOP,
 						 0x04, 0x00);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_RCO,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_RCO,
 						 0x40, 0x00);
 		if (resmgr->sido_input_src == SIDO_SOURCE_INTERNAL)
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-							 WCD9335_ANA_RCO,
+							 WCD93XX_ANA_RCO,
 							 0x80, 0x00);
 		wcd_resmgr_codec_reg_update_bits(resmgr,
-						 WCD934X_CLK_SYS_MCLK_PRG,
+						 WCD93XX_CLK_SYS_MCLK_PRG,
 						 0x01, 0x00);
 		resmgr->clk_type = WCD_CLK_OFF;
 	} else if ((resmgr->clk_rco_users == 0) &&
 	      (resmgr->clk_mclk_users)) {
 		/* Disable RCO while MCLK is ON */
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD9335_ANA_RCO,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_RCO,
 						 0x40, 0x00);
 		if (resmgr->sido_input_src == SIDO_SOURCE_INTERNAL)
 			wcd_resmgr_codec_reg_update_bits(resmgr,
-							 WCD9335_ANA_RCO,
+							 WCD93XX_ANA_RCO,
 							 0x80, 0x00);
 	}
 
-	if ((resmgr->codec_type == WCD934X) &&
+	if ((resmgr->codec_type != WCD9335) &&
 	    (resmgr->clk_type == WCD_CLK_OFF))
 		wcd_resmgr_set_sido_input_src(resmgr, SIDO_SOURCE_INTERNAL);
 
@@ -530,28 +524,28 @@ void wcd_resmgr_set_sido_input_src(struct wcd9xxx_resmgr_v2 *resmgr,
 		return;
 
 	if (sido_src == SIDO_SOURCE_INTERNAL) {
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 						 0x04, 0x00);
 		usleep_range(100, 110);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 						 0x03, 0x00);
 		usleep_range(100, 110);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_RCO,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_RCO,
 						 0x80, 0x00);
 		usleep_range(100, 110);
 		resmgr->sido_input_src = SIDO_SOURCE_INTERNAL;
 		pr_debug("%s: sido input src to internal\n", __func__);
 	} else if (sido_src == SIDO_SOURCE_RCO_BG) {
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_RCO,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_RCO,
 						 0x80, 0x80);
 		usleep_range(100, 110);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 						 0x02, 0x02);
 		usleep_range(100, 110);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 						 0x01, 0x01);
 		usleep_range(100, 110);
-		wcd_resmgr_codec_reg_update_bits(resmgr, WCD934X_ANA_BUCK_CTL,
+		wcd_resmgr_codec_reg_update_bits(resmgr, WCD93XX_ANA_BUCK_CTL,
 						 0x04, 0x04);
 		usleep_range(100, 110);
 		resmgr->sido_input_src = SIDO_SOURCE_RCO_BG;
@@ -615,11 +609,11 @@ EXPORT_SYMBOL(wcd_resmgr_disable_clk_block);
  * wcd_resmgr_init: initialize wcd resource manager
  * @core_res: handle to struct wcd9xxx_core_resource
  *
- * Early init call without a handle to snd_soc_codec *
+ * Early init call without a handle to snd_soc_component *
  */
 struct wcd9xxx_resmgr_v2 *wcd_resmgr_init(
 		struct wcd9xxx_core_resource *core_res,
-		struct snd_soc_codec *codec)
+		struct snd_soc_component *component)
 {
 	struct wcd9xxx_resmgr_v2 *resmgr;
 	struct wcd9xxx *wcd9xxx;
@@ -641,7 +635,7 @@ struct wcd9xxx_resmgr_v2 *wcd_resmgr_init(
 	resmgr->clk_mclk_users = 0;
 	resmgr->clk_rco_users = 0;
 	resmgr->master_bias_users = 0;
-	resmgr->codec = codec;
+	resmgr->component = component;
 	resmgr->core_res = core_res;
 	resmgr->sido_input_src = SIDO_SOURCE_INTERNAL;
 	resmgr->codec_type = wcd9xxx->type;
@@ -665,24 +659,24 @@ EXPORT_SYMBOL(wcd_resmgr_remove);
  * wcd_resmgr_post_init: post init call to assign codec handle
  * @resmgr: handle to struct wcd9xxx_resmgr_v2 created during early init
  * @resmgr_cb: codec callback function for resmgr
- * @codec: handle to struct snd_soc_codec
+ * @component: handle to struct snd_soc_component
  */
 int wcd_resmgr_post_init(struct wcd9xxx_resmgr_v2 *resmgr,
 			 const struct wcd_resmgr_cb *resmgr_cb,
-			 struct snd_soc_codec *codec)
+			 struct snd_soc_component *component)
 {
 	if (!resmgr) {
 		pr_err("%s: resmgr not allocated\n", __func__);
 		return -EINVAL;
 	}
 
-	if (!codec) {
+	if (!component) {
 		pr_err("%s: Codec memory is NULL, nothing to post init\n",
 			__func__);
 		return -EINVAL;
 	}
 
-	resmgr->codec = codec;
+	resmgr->component = component;
 	resmgr->resmgr_cb = resmgr_cb;
 
 	return 0;

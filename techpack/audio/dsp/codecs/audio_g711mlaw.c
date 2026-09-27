@@ -1,24 +1,16 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2016-2017, 2019-2021 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/types.h>
-#include <linux/msm_audio_g711_dec.h>
+#include <audio/linux/msm_audio_g711_dec.h>
 #include <linux/compat.h>
 #include "audio_utils_aio.h"
 
 static struct miscdevice audio_g711mlaw_misc;
 static struct ws_mgr audio_g711_ws_mgr;
 
+#ifdef CONFIG_DEBUG_FS
 static const struct file_operations audio_g711_debug_fops = {
 	.read = audio_aio_debug_read,
 	.open = audio_aio_debug_open,
@@ -29,7 +21,7 @@ static struct dentry *config_debugfs_create_file(const char *name, void *data)
 	return debugfs_create_file(name, S_IFREG | 0444,
 				NULL, (void *)data, &audio_g711_debug_fops);
 }
-
+#endif
 static int g711_channel_map(u8 *channel_mapping, uint32_t channels);
 
 static long audio_ioctl_shared(struct file *file, unsigned int cmd,
@@ -253,7 +245,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	}
 	rc = audio_aio_open(audio, file);
 	if (rc < 0) {
-		pr_err("%s: audio_aio_open rc=%d\n",
+		pr_err_ratelimited("%s: audio_aio_open rc=%d\n",
 			__func__, rc);
 		goto fail;
 	}
@@ -286,6 +278,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	}
 
 	snprintf(name, sizeof(name), "msm_g711_%04x", audio->ac->session);
+#ifdef CONFIG_DEBUG_FS
 	audio->dentry = config_debugfs_create_file(name, (void *)audio);
 
 	if (IS_ERR_OR_NULL(audio->dentry))
@@ -293,6 +286,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	pr_debug("%s: g711dec success mode[%d]session[%d]\n", __func__,
 						audio->feedback,
 						audio->ac->session);
+#endif
 	return rc;
 fail:
 	q6asm_audio_client_free(audio->ac);
@@ -374,7 +368,7 @@ static struct miscdevice audio_g711mlaw_misc = {
 	.fops = &audio_g711_fops,
 };
 
-static int __init audio_g711mlaw_init(void)
+int __init audio_g711mlaw_init(void)
 {
 	int ret = misc_register(&audio_g711mlaw_misc);
 
@@ -386,11 +380,9 @@ static int __init audio_g711mlaw_init(void)
 	return ret;
 }
 
-static void __exit audio_g711mlaw_exit(void)
+void audio_g711mlaw_exit(void)
 {
-	misc_deregister(&audio_g711mlaw_misc);
 	mutex_destroy(&audio_g711_ws_mgr.ws_lock);
+	misc_deregister(&audio_g711mlaw_misc);
 }
 
-device_initcall(audio_g711mlaw_init);
-__exitcall(audio_g711mlaw_exit);

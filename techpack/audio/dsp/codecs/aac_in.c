@@ -1,15 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) 2010-2017, 2020 The Linux Foundation. All rights reserved.
  */
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -19,7 +10,7 @@
 #include <linux/wait.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
-#include <linux/msm_audio_aac.h>
+#include <audio/linux/msm_audio_aac.h>
 #include <linux/compat.h>
 #include <linux/atomic.h>
 #include <asm/ioctls.h>
@@ -702,8 +693,12 @@ struct miscdevice audio_aac_in_misc = {
 	.fops	= &audio_in_fops,
 };
 
-static int __init aac_in_init(void)
+int __init aac_in_init(void)
 {
 	return misc_register(&audio_aac_in_misc);
 }
-device_initcall(aac_in_init);
+
+void aac_in_exit(void)
+{
+	misc_deregister(&audio_aac_in_misc);
+}

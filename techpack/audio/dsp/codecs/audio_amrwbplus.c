@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* amr-wbplus audio output device
  *
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2017, 2019-2021 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -14,7 +15,7 @@
  * GNU General Public License for more details.
  *
  */
-#include <linux/msm_audio_amrwbplus.h>
+#include <audio/linux/msm_audio_amrwbplus.h>
 #include <linux/compat.h>
 #include "audio_utils_aio.h"
 
@@ -322,7 +323,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	}
 	rc = audio_aio_open(audio, file);
 	if (rc < 0) {
-		pr_err("%s: audio_aio_open rc=%d\n",
+		pr_err_ratelimited("%s: audio_aio_open rc=%d\n",
 			__func__, rc);
 		goto fail;
 	}
@@ -382,7 +383,7 @@ static struct miscdevice audio_amrwbplus_misc = {
 	.fops = &audio_amrwbplus_fops,
 };
 
-static int __init audio_amrwbplus_init(void)
+int __init audio_amrwbplus_init(void)
 {
 	int ret = misc_register(&audio_amrwbplus_misc);
 
@@ -394,4 +395,8 @@ static int __init audio_amrwbplus_init(void)
 	return ret;
 }
 
-device_initcall(audio_amrwbplus_init);
+void audio_amrwbplus_exit(void)
+{
+	mutex_destroy(&audio_amrwbplus_ws_mgr.ws_lock);
+	misc_deregister(&audio_amrwbplus_misc);
+}

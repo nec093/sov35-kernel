@@ -1,13 +1,5 @@
-/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2011-2020, The Linux Foundation. All rights reserved.
  */
 #include <linux/bitops.h>
 #include <linux/kernel.h>
@@ -26,9 +18,9 @@
 #include <soc/qcom/pm.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
-#include <linux/mfd/wcd9xxx/wcd9xxx_registers.h>
-#include "core.h"
-#include "wcd9xxx-irq.h"
+#include <audio/linux/mfd/wcd9xxx/wcd9xxx_registers.h>
+#include <asoc/core.h>
+#include <asoc/wcd9xxx-irq.h>
 
 #define BYTE_BIT_MASK(nr)		(1UL << ((nr) % BITS_PER_BYTE))
 #define BIT_BYTE(nr)			((nr) / BITS_PER_BYTE)
@@ -295,6 +287,7 @@ static irqreturn_t wcd9xxx_irq_thread(int irq, void *data)
 	static DEFINE_RATELIMIT_STATE(ratelimit, 5 * HZ, 1);
 	struct wcd9xxx_core_resource *wcd9xxx_res = data;
 	int num_irq_regs = wcd9xxx_res->num_irq_regs;
+	struct wcd9xxx *wcd9xxx;
 	u8 status[4], status1[4] = {0}, unmask_status[4] = {0};
 
 	if (unlikely(wcd9xxx_lock_sleep(wcd9xxx_res) == false)) {
@@ -307,6 +300,23 @@ static irqreturn_t wcd9xxx_irq_thread(int irq, void *data)
 			"%s: Codec core regmap not supplied\n",
 			   __func__);
 		goto err_disable_irq;
+	}
+
+	wcd9xxx = (struct wcd9xxx *)wcd9xxx_res->parent;
+	if (!wcd9xxx) {
+		dev_err(wcd9xxx_res->dev,
+			"%s: Codec core not supplied\n", __func__);
+		goto err_disable_irq;
+	}
+
+	if (!wcd9xxx->dev_up) {
+		dev_info_ratelimited(wcd9xxx_res->dev, "wcd9xxx dev not up\n");
+		/*
+		 * sleep to not block the core when device is
+		 * not up (slimbus will not be available) to
+		 * process interrupts.
+		 */
+		msleep(10);
 	}
 
 	memset(status, 0, sizeof(status));
@@ -515,7 +525,7 @@ static int wcd9xxx_irq_setup_downstream_irq(
 int wcd9xxx_irq_init(struct wcd9xxx_core_resource *wcd9xxx_res)
 {
 	int i, ret;
-	u8 irq_level[wcd9xxx_res->num_irq_regs];
+	u8 *irq_level = NULL;
 	struct irq_domain *domain;
 	struct device_node *pnode;
 
@@ -545,9 +555,7 @@ int wcd9xxx_irq_init(struct wcd9xxx_core_resource *wcd9xxx_res)
 	ret = wcd9xxx_irq_setup_downstream_irq(wcd9xxx_res);
 	if (ret) {
 		pr_err("%s: Failed to setup downstream IRQ\n", __func__);
-		wcd9xxx_irq_put_upstream_irq(wcd9xxx_res);
-		mutex_destroy(&wcd9xxx_res->irq_lock);
-		mutex_destroy(&wcd9xxx_res->nested_irq_lock);
+		goto fail_irq_level;
 		return ret;
 	}
 
@@ -555,7 +563,11 @@ int wcd9xxx_irq_init(struct wcd9xxx_core_resource *wcd9xxx_res)
 	wcd9xxx_res->irq_level_high[0] = true;
 
 	/* mask all the interrupts */
-	memset(irq_level, 0, wcd9xxx_res->num_irq_regs);
+	irq_level = kzalloc(wcd9xxx_res->num_irq_regs, GFP_KERNEL);
+	if (!irq_level) {
+		ret = -ENOMEM;
+		goto fail_irq_level;
+	}
 	for (i = 0; i < wcd9xxx_res->num_irqs; i++) {
 		wcd9xxx_res->irq_masks_cur[BIT_BYTE(i)] |= BYTE_BIT_MASK(i);
 		wcd9xxx_res->irq_masks_cache[BIT_BYTE(i)] |= BYTE_BIT_MASK(i);
@@ -600,11 +612,14 @@ int wcd9xxx_irq_init(struct wcd9xxx_core_resource *wcd9xxx_res)
 	if (ret)
 		goto fail_irq_init;
 
+	kfree(irq_level);
 	return ret;
 
 fail_irq_init:
 	dev_err(wcd9xxx_res->dev,
 			"%s: Failed to init wcd9xxx irq\n", __func__);
+	kfree(irq_level);
+fail_irq_level:
 	wcd9xxx_irq_put_upstream_irq(wcd9xxx_res);
 	mutex_destroy(&wcd9xxx_res->irq_lock);
 	mutex_destroy(&wcd9xxx_res->nested_irq_lock);
@@ -863,6 +878,7 @@ static struct platform_driver wcd9xxx_irq_driver = {
 		.name = "wcd9xxx_intc",
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(of_match),
+		.suppress_bind_attrs = true,
 	},
 };
 

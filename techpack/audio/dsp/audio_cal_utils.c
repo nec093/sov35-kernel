@@ -1,14 +1,6 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  */
 #include <linux/slab.h>
 #include <linux/fs.h>
@@ -18,12 +10,15 @@
 #include <linux/mutex.h>
 #include <dsp/audio_cal_utils.h>
 
+struct mutex cal_lock;
+
 static int unmap_memory(struct cal_type_data *cal_type,
 			struct cal_block_data *cal_block);
 
 size_t get_cal_info_size(int32_t cal_type)
 {
 	size_t size = 0;
+	size_t size1 = 0, size2 = 0;
 
 	switch (cal_type) {
 	case CVP_VOC_RX_TOPOLOGY_CAL_TYPE:
@@ -63,6 +58,8 @@ size_t get_cal_info_size(int32_t cal_type)
 		break;
 	case ADM_AUDPROC_CAL_TYPE:
 	case ADM_LSM_AUDPROC_CAL_TYPE:
+	case ADM_LSM_AUDPROC_PERSISTENT_CAL_TYPE:
+	case ADM_AUDPROC_PERSISTENT_CAL_TYPE:
 		size = sizeof(struct audio_cal_info_audproc);
 		break;
 	case ADM_AUDVOL_CAL_TYPE:
@@ -100,8 +97,11 @@ size_t get_cal_info_size(int32_t cal_type)
 		 * Since get and set parameter structures are different in size
 		 * use the maximum size of get and set parameter structure
 		 */
-		size = max(sizeof(struct audio_cal_info_sp_th_vi_ftm_cfg),
+		size1 = max(sizeof(struct audio_cal_info_sp_th_vi_ftm_cfg),
 			   sizeof(struct audio_cal_info_sp_th_vi_param));
+		size2 = max(sizeof(struct audio_cal_info_sp_th_vi_v_vali_cfg),
+			   sizeof(struct audio_cal_info_sp_th_vi_v_vali_param));
+		size = max(size1, size2);
 		break;
 	case AFE_FB_SPKR_PROT_EX_VI_CAL_TYPE:
 		/*
@@ -110,6 +110,9 @@ size_t get_cal_info_size(int32_t cal_type)
 		 */
 		size = max(sizeof(struct audio_cal_info_sp_ex_vi_ftm_cfg),
 			   sizeof(struct audio_cal_info_sp_ex_vi_param));
+		break;
+	case AFE_FB_SPKR_PROT_V4_EX_VI_CAL_TYPE:
+		size = sizeof(struct audio_cal_info_sp_v4_ex_vi_param);
 		break;
 	case AFE_ANC_CAL_TYPE:
 		size = 0;
@@ -213,6 +216,8 @@ size_t get_user_cal_type_size(int32_t cal_type)
 		break;
 	case ADM_AUDPROC_CAL_TYPE:
 	case ADM_LSM_AUDPROC_CAL_TYPE:
+	case ADM_LSM_AUDPROC_PERSISTENT_CAL_TYPE:
+	case ADM_AUDPROC_PERSISTENT_CAL_TYPE:
 		size = sizeof(struct audio_cal_type_audproc);
 		break;
 	case ADM_AUDVOL_CAL_TYPE:
@@ -260,6 +265,9 @@ size_t get_user_cal_type_size(int32_t cal_type)
 		 */
 		size = max(sizeof(struct audio_cal_type_sp_ex_vi_ftm_cfg),
 			   sizeof(struct audio_cal_type_sp_ex_vi_param));
+		break;
+	case AFE_FB_SPKR_PROT_V4_EX_VI_CAL_TYPE:
+		size = sizeof(struct audio_cal_type_sp_v4_ex_vi_param);
 		break;
 	case AFE_ANC_CAL_TYPE:
 		size = 0;
@@ -442,11 +450,12 @@ static void delete_cal_block(struct cal_block_data *cal_block)
 	cal_block->client_info = NULL;
 	kfree(cal_block->cal_info);
 	cal_block->cal_info = NULL;
-	if (cal_block->map_data.ion_client  != NULL) {
-		msm_audio_ion_free(cal_block->map_data.ion_client,
-			cal_block->map_data.ion_handle);
-		cal_block->map_data.ion_client = NULL;
-		cal_block->map_data.ion_handle = NULL;
+	if (cal_block->map_data.dma_buf  != NULL) {
+		if (cal_block->cma_mem)
+			msm_audio_ion_free_cma(cal_block->map_data.dma_buf);
+		else
+			msm_audio_ion_free(cal_block->map_data.dma_buf);
+		cal_block->map_data.dma_buf = NULL;
 	}
 	kfree(cal_block);
 done:
@@ -489,6 +498,14 @@ done:
 	return;
 }
 
+/**
+ * cal_utils_destroy_cal_types -
+ *        Destroys cal types and deregister from cal info
+ *
+ * @num_cal_types: number of cal types
+ * @cal_type: cal type pointer with cal info
+ *
+ */
 void cal_utils_destroy_cal_types(int num_cal_types,
 			struct cal_type_data **cal_type)
 {
@@ -514,6 +531,7 @@ void cal_utils_destroy_cal_types(int num_cal_types,
 done:
 	return;
 }
+EXPORT_SYMBOL(cal_utils_destroy_cal_types);
 
 /**
  * cal_utils_get_only_cal_block
@@ -595,14 +613,22 @@ static int cal_block_ion_alloc(struct cal_block_data *cal_block)
 		goto done;
 	}
 
-	ret = msm_audio_ion_import("audio_cal_client",
-		&cal_block->map_data.ion_client,
-		&cal_block->map_data.ion_handle,
-		cal_block->map_data.ion_map_handle,
-		NULL, 0,
-		&cal_block->cal_data.paddr,
-		&cal_block->map_data.map_size,
-		&cal_block->cal_data.kvaddr);
+	if (cal_block->cma_mem) {
+		ret = msm_audio_ion_import_cma(&cal_block->map_data.dma_buf,
+			cal_block->map_data.ion_map_handle,
+			NULL, 0,
+			&cal_block->cal_data.paddr,
+			&cal_block->map_data.map_size,
+			&cal_block->cal_data.kvaddr);
+	} else {
+		ret = msm_audio_ion_import(&cal_block->map_data.dma_buf,
+			cal_block->map_data.ion_map_handle,
+			NULL, 0,
+			&cal_block->cal_data.paddr,
+			&cal_block->map_data.map_size,
+			&cal_block->cal_data.kvaddr);
+	}
+
 	if (ret) {
 		pr_err("%s: audio ION import failed, rc = %d\n",
 			__func__, ret);
@@ -635,6 +661,7 @@ static struct cal_block_data *create_cal_block(struct cal_type_data *cal_type,
 	INIT_LIST_HEAD(&cal_block->list);
 
 	cal_block->map_data.ion_map_handle = basic_cal->cal_data.mem_handle;
+	cal_block->cma_mem = basic_cal->cal_data.cma_mem;
 	if (basic_cal->cal_data.mem_handle > 0) {
 		if (cal_block_ion_alloc(cal_block)) {
 			pr_err("%s: cal_block_ion_alloc failed!\n",
@@ -727,10 +754,11 @@ static int realloc_memory(struct cal_block_data *cal_block)
 {
 	int ret = 0;
 
-	msm_audio_ion_free(cal_block->map_data.ion_client,
-		cal_block->map_data.ion_handle);
-	cal_block->map_data.ion_client = NULL;
-	cal_block->map_data.ion_handle = NULL;
+	if (cal_block->cma_mem)
+		msm_audio_ion_free_cma(cal_block->map_data.dma_buf);
+	else
+		msm_audio_ion_free(cal_block->map_data.dma_buf);
+	cal_block->map_data.dma_buf = NULL;
 	cal_block->cal_data.size = 0;
 
 	ret = cal_block_ion_alloc(cal_block);
@@ -847,6 +875,7 @@ int cal_utils_alloc_cal(size_t data_size, void *data,
 	cal_block = get_matching_cal_block(cal_type,
 		data);
 	if (cal_block != NULL) {
+		cal_block->cma_mem = alloc_data->cal_data.cma_mem;
 		ret = unmap_memory(cal_type, cal_block);
 		if (ret < 0)
 			goto err;
@@ -937,7 +966,9 @@ int cal_utils_dealloc_cal(size_t data_size, void *data,
 	if (ret < 0)
 		goto err;
 
+	mutex_lock(&cal_lock);
 	delete_cal_block(cal_block);
+	mutex_unlock(&cal_lock);
 err:
 	mutex_unlock(&cal_type->lock);
 done:
@@ -1030,9 +1061,55 @@ int cal_utils_set_cal(size_t data_size, void *data,
 		((uint8_t *)data + sizeof(struct audio_cal_type_basic)),
 		data_size - sizeof(struct audio_cal_type_basic));
 
+	/* reset buffer stale flag */
+	cal_block->cal_stale = false;
+
 err:
 	mutex_unlock(&cal_type->lock);
 done:
 	return ret;
 }
 EXPORT_SYMBOL(cal_utils_set_cal);
+
+/**
+ * cal_utils_mark_cal_used
+ *
+ * @cal_block: pointer to cal block
+ */
+void cal_utils_mark_cal_used(struct cal_block_data *cal_block)
+{
+	if (cal_block)
+		cal_block->cal_stale = true;
+}
+EXPORT_SYMBOL(cal_utils_mark_cal_used);
+
+int __init cal_utils_init(void)
+{
+	mutex_init(&cal_lock);
+	return 0;
+}
+/**
+ * cal_utils_is_cal_stale
+ *
+ * @cal_block: pointer to cal block
+ *
+ * Returns true if cal block is stale, false otherwise
+ */
+bool cal_utils_is_cal_stale(struct cal_block_data *cal_block)
+{
+	bool ret = false;
+
+	mutex_lock(&cal_lock);
+	if (!cal_block) {
+		pr_err("%s: cal_block is Null", __func__);
+		goto unlock;
+	}
+
+	if (cal_block->cal_stale)
+	    ret = true;
+
+unlock:
+	mutex_unlock(&cal_lock);
+	return ret;
+}
+EXPORT_SYMBOL(cal_utils_is_cal_stale);

@@ -1,14 +1,6 @@
-/* Copyright (c) 2010-2011, 2016-2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2010-2011, 2016-2018 The Linux Foundation. All rights reserved.
  */
 #ifndef __APR_TAL_H_
 #define __APR_TAL_H_
@@ -73,11 +65,11 @@ int apr_tal_write(struct apr_svc_ch_dev *apr_ch, void *data,
 int apr_tal_close(struct apr_svc_ch_dev *apr_ch);
 int apr_tal_rx_intents_config(struct apr_svc_ch_dev *apr_ch,
 		int num_of_intents, uint32_t size);
+int apr_tal_init(void);
+void apr_tal_exit(void);
 int apr_tal_start_rx_rt(struct apr_svc_ch_dev *apr_ch);
 int apr_tal_end_rx_rt(struct apr_svc_ch_dev *apr_ch);
 
-#if defined(CONFIG_MSM_QDSP6_APRV2_GLINK) || \
-	 defined(CONFIG_MSM_QDSP6_APRV3_GLINK)
 struct apr_svc_ch_dev {
 	void               *handle;
 	spinlock_t         w_lock;
@@ -86,23 +78,8 @@ struct apr_svc_ch_dev {
 	apr_svc_cb_fn      func;
 	wait_queue_head_t  wait;
 	void               *priv;
-	unsigned           channel_state;
+	unsigned int       channel_state;
 	bool               if_remote_intent_ready;
 };
-#else
-struct apr_svc_ch_dev {
-	struct smd_channel *ch;
-	spinlock_t         lock;
-	spinlock_t         w_lock;
-	struct mutex       m_lock;
-	apr_svc_cb_fn      func;
-	char               data[APR_MAX_BUF];
-	wait_queue_head_t  wait;
-	void               *priv;
-	uint32_t           smd_state;
-	wait_queue_head_t  dest;
-	uint32_t           dest_state;
-};
-#endif
 
 #endif

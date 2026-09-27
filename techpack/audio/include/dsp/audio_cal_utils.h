@@ -1,20 +1,12 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2014, 2018, 2020 The Linux Foundation. All rights reserved.
  */
 #ifndef _AUDIO_CAL_UTILS_H
 #define _AUDIO_CAL_UTILS_H
 
 #include <linux/msm_ion.h>
-#include <linux/msm_audio_calibration.h>
+#include <audio/linux/msm_audio_calibration.h>
 #include <dsp/msm_audio_ion.h>
 #include <dsp/audio_calibration.h>
 
@@ -28,8 +20,7 @@ struct mem_map_data {
 	size_t			map_size;
 	int32_t			q6map_handle;
 	int32_t			ion_map_handle;
-	struct ion_client	*ion_client;
-	struct ion_handle	*ion_handle;
+	struct dma_buf		*dma_buf;
 };
 
 struct cal_block_data {
@@ -38,6 +29,8 @@ struct cal_block_data {
 	void			*cal_info;
 	struct list_head	list;
 	struct cal_data		cal_data;
+	bool			cal_stale;
+	bool			cma_mem;
 	struct mem_map_data	map_data;
 	int32_t			buffer_number;
 };
@@ -99,4 +92,10 @@ size_t get_user_cal_type_size(int32_t cal_type);
 
 /* Version of the cal type*/
 int32_t cal_utils_get_cal_type_version(void *cal_type_data);
+
+void cal_utils_mark_cal_used(struct cal_block_data *cal_block);
+
+bool cal_utils_is_cal_stale(struct cal_block_data *cal_block);
+
+int cal_utils_init(void);
 #endif

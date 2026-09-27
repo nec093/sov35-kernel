@@ -1,14 +1,6 @@
-/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2010-2017, 2019-2021, The Linux Foundation. All rights reserved.
  */
 #ifndef __APR_H_
 #define __APR_H_
@@ -20,6 +12,7 @@ enum apr_subsys_state {
 	APR_SUBSYS_DOWN,
 	APR_SUBSYS_UP,
 	APR_SUBSYS_LOADED,
+	APR_SUBSYS_UNKNOWN,
 };
 
 struct apr_q6 {
@@ -27,6 +20,13 @@ struct apr_q6 {
 	atomic_t q6_state;
 	atomic_t modem_state;
 	struct mutex lock;
+/*
+ * ToDo - Multiple client support to be added.
+ * And checking for state UNKNOWN currently.
+ */
+	void (*state_notify_cb)(enum apr_subsys_state state,
+				void *client_handle);
+	void *client_handle;
 };
 
 struct apr_hdr {
@@ -137,6 +137,10 @@ struct apr_svc {
 	struct mutex m_lock;
 	spinlock_t w_lock;
 	uint8_t pkt_owner;
+#ifdef CONFIG_MSM_QDSP6_APRV2_VM
+	uint16_t vm_dest_svc;
+	uint32_t vm_handle;
+#endif
 };
 
 struct apr_client {
@@ -174,6 +178,7 @@ int apr_send_pkt(void *handle, uint32_t *buf);
 int apr_deregister(void *handle);
 void subsys_notif_register(char *client_name, int domain,
 			   struct notifier_block *nb);
+void subsys_notif_deregister(char *client_name);
 int apr_get_dest_id(char *dest);
 uint16_t apr_get_data_src(struct apr_hdr *hdr);
 void change_q6_state(int state);
@@ -189,4 +194,6 @@ const char *apr_get_lpass_subsys_name(void);
 uint16_t apr_get_reset_domain(uint16_t proc);
 int apr_start_rx_rt(void *handle);
 int apr_end_rx_rt(void *handle);
+void apr_register_adsp_state_cb(void *adsp_cb, void *client_handle);
+int apr_pkt_config(void *handle, struct apr_pkt_cfg *cfg);
 #endif

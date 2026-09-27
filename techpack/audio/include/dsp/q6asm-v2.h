@@ -1,13 +1,7 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
+ * Copyright (c) 2012-2019, 2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __Q6_ASM_V2_H__
 #define __Q6_ASM_V2_H__
@@ -57,10 +51,13 @@
 #define FORMAT_GEN_COMPR    0x001f
 #define FORMAT_TRUEHD       0x0020
 #define FORMAT_IEC61937     0x0021
+#define FORMAT_BESPOKE      0x0022
 
 #define ENCDEC_SBCBITRATE   0x0001
 #define ENCDEC_IMMEDIATE_DECODE 0x0002
 #define ENCDEC_CFG_BLK          0x0003
+
+#define ENC_CFG_ID_NONE    0x0000
 
 #define CMD_PAUSE          0x0001
 #define CMD_FLUSH          0x0002
@@ -99,7 +96,7 @@
 #define SOFT_PAUSE_ENABLE	1
 #define SOFT_PAUSE_DISABLE	0
 
-#define ASM_ACTIVE_STREAMS_ALLOWED	0x8
+#define ASM_ACTIVE_STREAMS_ALLOWED	0xF
 /* Control session is used for mapping calibration memory */
 #define ASM_CONTROL_SESSION	(ASM_ACTIVE_STREAMS_ALLOWED + 1)
 
@@ -109,11 +106,14 @@
 #define ASM_LITTLE_ENDIAN 0
 #define ASM_BIG_ENDIAN 1
 
+#define ADSP_ASM_API_VERSION_V2   2
+
 /* PCM_MEDIA_FORMAT_Version */
 enum {
 	PCM_MEDIA_FORMAT_V2 = 0,
 	PCM_MEDIA_FORMAT_V3,
 	PCM_MEDIA_FORMAT_V4,
+	PCM_MEDIA_FORMAT_V5,
 };
 
 /* PCM format modes in DSP */
@@ -151,6 +151,7 @@ enum {
 	SOFT_VOLUME_CURVE_LINEAR = 0,
 	SOFT_VOLUME_CURVE_EXP,
 	SOFT_VOLUME_CURVE_LOG,
+	SOFT_VOLUME_CURVE_ENUM_MAX,
 };
 
 #define SOFT_VOLUME_INSTANCE_1	1
@@ -165,8 +166,7 @@ struct audio_buffer {
 	uint32_t   used;
 	uint32_t   size;/* size of buffer */
 	uint32_t   actual_size; /* actual number of bytes read by DSP */
-	struct      ion_handle *handle;
-	struct      ion_client *client;
+	struct      dma_buf *dma_buf;
 };
 
 struct audio_aio_write_param {
@@ -209,6 +209,12 @@ struct shared_io_config {
 	uint32_t bufcnt;
 };
 
+struct dsp_timestamp {
+	uint64_t time_stamp;
+	uint64_t abs_time_stamp;
+	uint64_t last_time_stamp;
+};
+
 struct audio_client {
 	int                    session;
 	app_cb		       cb;
@@ -220,7 +226,7 @@ struct audio_client {
 	atomic_t               mem_state;
 	void		       *priv;
 	uint32_t               io_mode;
-	uint64_t	       time_stamp;
+	struct dsp_timestamp   dsp_ts;
 	struct apr_svc         *apr;
 	struct apr_svc         *mmap_apr;
 	struct apr_svc         *apr2;
@@ -244,6 +250,13 @@ struct audio_client {
 	/* shared io */
 	struct audio_buffer shared_pos_buf;
 	struct shared_io_config config;
+	int stream_type;
+	int fedai_id;
+};
+
+struct q6asm_cal_info {
+	int topology_id;
+	int app_type;
 };
 
 void q6asm_audio_client_free(struct audio_client *ac);
@@ -265,6 +278,17 @@ int q6asm_audio_client_buf_alloc_contiguous(unsigned int dir
 int q6asm_audio_client_buf_free_contiguous(unsigned int dir,
 			struct audio_client *ac);
 
+int q6asm_set_pp_params(struct audio_client *ac,
+			struct mem_mapping_hdr *mem_hdr, u8 *param_data,
+			u32 param_size);
+
+int q6asm_pack_and_set_pp_param_in_band(struct audio_client *ac,
+					struct param_hdr_v3 param_hdr,
+					u8 *param_data);
+
+int q6asm_set_soft_volume_module_instance_ids(int instance,
+					      struct param_hdr_v3 *param_hdr);
+
 int q6asm_open_read(struct audio_client *ac, uint32_t format
 		/*, uint16_t bits_per_sample*/);
 
@@ -275,7 +299,15 @@ int q6asm_open_read_v3(struct audio_client *ac, uint32_t format,
 		       uint16_t bits_per_sample);
 
 int q6asm_open_read_v4(struct audio_client *ac, uint32_t format,
-		       uint16_t bits_per_sample, bool ts_mode);
+		       uint16_t bits_per_sample, bool ts_mode,
+			   uint32_t enc_cfg_id);
+
+int q6asm_open_read_v5(struct audio_client *ac, uint32_t format,
+			uint16_t bits_per_sample, bool ts_mode,
+			uint32_t enc_cfg_id);
+
+int q6asm_open_read_with_retry(struct audio_client *ac, uint32_t format,
+			uint16_t bits_per_sample, bool ts_mode);
 
 int q6asm_open_write(struct audio_client *ac, uint32_t format
 		/*, uint16_t bits_per_sample*/);
@@ -284,12 +316,19 @@ int q6asm_open_write_v2(struct audio_client *ac, uint32_t format,
 			uint16_t bits_per_sample);
 
 int q6asm_open_shared_io(struct audio_client *ac,
-			 struct shared_io_config *c, int dir);
+			 struct shared_io_config *c, int dir,
+			 bool use_default_chmap, u8 *channel_map);
 
 int q6asm_open_write_v3(struct audio_client *ac, uint32_t format,
 			uint16_t bits_per_sample);
 
 int q6asm_open_write_v4(struct audio_client *ac, uint32_t format,
+			uint16_t bits_per_sample);
+
+int q6asm_open_write_v5(struct audio_client *ac, uint32_t format,
+			uint16_t bits_per_sample);
+
+int q6asm_open_write_with_retry(struct audio_client *ac, uint32_t format,
 			uint16_t bits_per_sample);
 
 int q6asm_stream_open_write_v2(struct audio_client *ac, uint32_t format,
@@ -304,6 +343,13 @@ int q6asm_stream_open_write_v4(struct audio_client *ac, uint32_t format,
 			       uint16_t bits_per_sample, int32_t stream_id,
 			       bool is_gapless_mode);
 
+int q6asm_stream_open_write_v5(struct audio_client *ac, uint32_t format,
+			       uint16_t bits_per_sample, int32_t stream_id,
+			       bool is_gapless_mode);
+
+int q6asm_open_read_compressed(struct audio_client *ac, uint32_t format,
+				uint32_t passthrough_flag);
+
 int q6asm_open_write_compressed(struct audio_client *ac, uint32_t format,
 				uint32_t passthrough_flag);
 
@@ -317,6 +363,9 @@ int q6asm_open_read_write_v2(struct audio_client *ac, uint32_t rd_format,
 			     int topology);
 
 int q6asm_open_loopback_v2(struct audio_client *ac,
+			   uint16_t bits_per_sample);
+
+int q6asm_open_loopback_with_retry(struct audio_client *ac,
 			   uint16_t bits_per_sample);
 
 int q6asm_open_transcode_loopback(struct audio_client *ac,
@@ -384,6 +433,8 @@ void *q6asm_is_cpu_buf_avail(int dir, struct audio_client *ac,
 
 int q6asm_cpu_buf_release(int dir, struct audio_client *ac);
 
+int q6asm_cpu_buf_release_nolock(int dir, struct audio_client *ac);
+
 void *q6asm_is_cpu_buf_avail_nolock(int dir, struct audio_client *ac,
 					uint32_t *size, uint32_t *idx);
 
@@ -438,6 +489,19 @@ int q6asm_enc_cfg_blk_pcm_format_support_v4(struct audio_client *ac,
 					    uint16_t sample_word_size,
 					    uint16_t endianness,
 					    uint16_t mode);
+
+int q6asm_enc_cfg_blk_pcm_format_support_v5(struct audio_client *ac,
+					    uint32_t rate, uint32_t channels,
+					    bool use_default_chmap,
+					    char *channel_map,
+					    uint16_t bits_per_sample,
+					    uint16_t sample_word_size,
+					    uint16_t endianness,
+					    uint16_t mode);
+
+int q6asm_enc_cfg_blk_custom(struct audio_client *ac,
+			uint32_t sample_rate, uint32_t channels,
+			uint32_t format, void *cfg);
 
 int q6asm_set_encdec_chan_map(struct audio_client *ac,
 		uint32_t num_channels);
@@ -499,6 +563,17 @@ int q6asm_media_format_block_pcm_format_support_v4(struct audio_client *ac,
 						   uint16_t endianness,
 						   uint16_t mode);
 
+int q6asm_media_format_block_pcm_format_support_v5(struct audio_client *ac,
+		   uint32_t rate,
+		   uint32_t channels,
+		   uint16_t bits_per_sample,
+		   int stream_id,
+		   bool use_default_chmap,
+		   char *channel_map,
+		   uint16_t sample_word_size,
+		   uint16_t endianness,
+		   uint16_t mode);
+
 int q6asm_media_format_block_multi_ch_pcm(struct audio_client *ac,
 			uint32_t rate, uint32_t channels,
 			bool use_default_chmap, char *channel_map);
@@ -526,6 +601,15 @@ int q6asm_media_format_block_multi_ch_pcm_v3(struct audio_client *ac,
 					     uint16_t sample_word_size);
 
 int q6asm_media_format_block_multi_ch_pcm_v4(struct audio_client *ac,
+					     uint32_t rate, uint32_t channels,
+					     bool use_default_chmap,
+					     char *channel_map,
+					     uint16_t bits_per_sample,
+					     uint16_t sample_word_size,
+					     uint16_t endianness,
+					     uint16_t mode);
+
+int q6asm_media_format_block_multi_ch_pcm_v5(struct audio_client *ac,
 					     uint32_t rate, uint32_t channels,
 					     bool use_default_chmap,
 					     char *channel_map,
@@ -611,14 +695,6 @@ int q6asm_set_softvolume(struct audio_client *ac,
 int q6asm_set_softvolume_v2(struct audio_client *ac,
 			    struct asm_softvolume_params *param, int instance);
 
-/* Set panning and MFC params */
-int q6asm_set_mfc_panning_params(struct audio_client *ac,
-				 struct asm_stream_pan_ctrl_params *pan_param);
-
-/* Set vol gain pair */
-int q6asm_set_vol_ctrl_gain_pair(struct audio_client *ac,
-				 struct asm_stream_pan_ctrl_params *pan_param);
-
 /* Send left-right channel gain */
 int q6asm_set_lrgain(struct audio_client *ac, int left_gain, int right_gain);
 
@@ -630,11 +706,9 @@ int q6asm_set_multich_gain(struct audio_client *ac, uint32_t channels,
 int q6asm_set_mute(struct audio_client *ac, int muteflag);
 
 int q6asm_get_session_time(struct audio_client *ac, uint64_t *tstamp);
-
+int q6asm_get_session_time_v2(struct audio_client *ac, uint64_t *ses_time,
+			      uint64_t *abs_time);
 int q6asm_get_session_time_legacy(struct audio_client *ac, uint64_t *tstamp);
-
-int q6asm_send_audio_effects_params(struct audio_client *ac, char *params,
-				    uint32_t params_length);
 
 int q6asm_send_stream_cmd(struct audio_client *ac,
 			  struct msm_adsp_event_data *data);
@@ -661,6 +735,7 @@ int q6asm_send_meta_data(struct audio_client *ac, uint32_t initial_samples,
 int q6asm_stream_send_meta_data(struct audio_client *ac, uint32_t stream_id,
 		uint32_t initial_samples, uint32_t trailing_samples);
 
+uint8_t q6asm_get_asm_stream_id(int session_id);
 int q6asm_get_asm_topology(int session_id);
 int q6asm_get_asm_app_type(int session_id);
 
@@ -691,4 +766,8 @@ uint8_t q6asm_get_stream_id_from_token(uint32_t token);
 int q6asm_adjust_session_clock(struct audio_client *ac,
 		uint32_t adjust_time_lsw,
 		uint32_t adjust_time_msw);
+
+/* Provide default asm channel mapping for given channel count */
+int q6asm_map_channels(u8 *channel_mapping, uint32_t channels,
+		bool use_back_flavor);
 #endif /* __Q6_ASM_H__ */

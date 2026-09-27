@@ -1,18 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* amrwb audio output device
  *
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) 2011-2017, 2021 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/compat.h>
@@ -216,7 +207,7 @@ static struct miscdevice audio_amrwb_misc = {
 	.fops = &audio_amrwb_fops,
 };
 
-static int __init audio_amrwb_init(void)
+int __init audio_amrwb_init(void)
 {
 	int ret = misc_register(&audio_amrwb_misc);
 
@@ -228,4 +219,8 @@ static int __init audio_amrwb_init(void)
 	return ret;
 }
 
-device_initcall(audio_amrwb_init);
+void audio_amrwb_exit(void)
+{
+	mutex_destroy(&audio_amrwb_ws_mgr.ws_lock);
+	misc_deregister(&audio_amrwb_misc);
+}

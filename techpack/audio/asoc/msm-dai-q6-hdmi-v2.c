@@ -1,13 +1,5 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/init.h>
@@ -28,6 +20,18 @@
 #define HDMI_RX_CA_MAX 0x32
 
 enum {
+	DP_CONTROLLER0 = 0,
+	DP_CONTROLLER1,
+	DP_CONTROLLER_MAX,
+};
+
+enum {
+	DP_STREAM0 = 0,
+	DP_STREAM1,
+	DP_STREAM_MAX,
+};
+
+enum {
 	STATUS_PORT_STARTED, /* track if AFE port has started */
 	STATUS_MAX
 };
@@ -41,9 +45,20 @@ struct msm_dai_q6_hdmi_dai_data {
 	DECLARE_BITMAP(status_mask, STATUS_MAX);
 	u32 rate;
 	u32 channels;
+	u32 stream_idx;
+	u32 ctl_idx;
 	struct msm_ext_disp_ca ca;
 	union afe_port_config port_config;
 };
+
+static int get_port_id(int dai_id)
+{
+	/* Currently, display devices share a common AFE port */
+	if (dai_id != HDMI_RX || dai_id != HDMI_RX_MS)
+		return DISPLAY_PORT_RX;
+
+	return dai_id;
+}
 
 static int msm_dai_q6_ext_disp_format_put(struct snd_kcontrol *kcontrol,
 					  struct snd_ctl_elem_value *ucontrol)
@@ -76,6 +91,50 @@ static int msm_dai_q6_ext_disp_format_get(struct snd_kcontrol *kcontrol,
 		dai_data->port_config.hdmi_multi_ch.datatype;
 	pr_debug("%s: value = %ld\n",
 		 __func__, ucontrol->value.integer.value[0]);
+
+	return 0;
+}
+
+static int msm_dai_q6_ext_disp_device_idx_put(struct snd_kcontrol *kcontrol,
+					  struct snd_ctl_elem_value *ucontrol)
+{
+	struct msm_dai_q6_hdmi_dai_data *dai_data = kcontrol->private_data;
+
+	if (!dai_data) {
+		pr_err("%s: dai_data is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	if ((ucontrol->value.integer.value[0] > (DP_CONTROLLER_MAX - 1)) ||
+		(ucontrol->value.integer.value[1] > (DP_STREAM_MAX - 1)) ||
+		(ucontrol->value.integer.value[0] < 0) ||
+		(ucontrol->value.integer.value[1] < 0)) {
+		pr_err("%s: DP control index invalid\n", __func__);
+		return -EINVAL;
+	}
+
+	dai_data->ctl_idx = ucontrol->value.integer.value[0];
+	dai_data->stream_idx = ucontrol->value.integer.value[1];
+	pr_debug("%s: DP ctl id %d stream id %d\n", __func__,
+		 dai_data->ctl_idx, dai_data->stream_idx);
+
+	return 0;
+}
+
+static int msm_dai_q6_ext_disp_device_idx_get(struct snd_kcontrol *kcontrol,
+					  struct snd_ctl_elem_value *ucontrol)
+{
+	struct msm_dai_q6_hdmi_dai_data *dai_data = kcontrol->private_data;
+
+	if (!dai_data) {
+		pr_err("%s: dai_data is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	ucontrol->value.integer.value[0] = dai_data->ctl_idx;
+	ucontrol->value.integer.value[1] = dai_data->stream_idx;
+	pr_debug("%s: DP ctl id %d stream id %d\n", __func__,
+		 dai_data->ctl_idx, dai_data->stream_idx);
 
 	return 0;
 }
@@ -142,16 +201,16 @@ static int msm_dai_q6_ext_disp_drift_get(struct snd_kcontrol *kcontrol,
 	struct msm_dai_q6_hdmi_dai_data *dai_data = dev_get_drvdata(dai->dev);
 
 	if (!test_bit(STATUS_PORT_STARTED, dai_data->status_mask)) {
-		pr_err("%s:  afe port not started. status_mask = %ld\n",
+		pr_debug("%s:  afe port not started. status_mask = %ld\n",
 			__func__, *dai_data->status_mask);
 		goto done;
 	}
 
 	memset(&timing_stats, 0, sizeof(struct afe_param_id_dev_timing_stats));
-	ret = afe_get_av_dev_drift(&timing_stats, dai->id);
+	ret = afe_get_av_dev_drift(&timing_stats, get_port_id(dai->id));
 	if (ret) {
 		pr_err("%s: Error getting AFE Drift for port %d, err=%d\n",
-			__func__, dai->id, ret);
+			__func__, get_port_id(dai->id), ret);
 
 		ret = -EINVAL;
 		goto done;
@@ -188,10 +247,32 @@ static const struct snd_kcontrol_new display_port_config_controls[] = {
 				 HDMI_RX_CA_MAX, 0, 1,
 				 msm_dai_q6_ext_disp_ca_get,
 				 msm_dai_q6_ext_disp_ca_put),
+	SOC_SINGLE_MULTI_EXT("Display Port RX DEVICE IDX", SND_SOC_NOPM, 0,
+				 1, 0, 2,
+				 msm_dai_q6_ext_disp_device_idx_get,
+				 msm_dai_q6_ext_disp_device_idx_put),
 	{
 		.access = SNDRV_CTL_ELEM_ACCESS_READ,
 		.iface	= SNDRV_CTL_ELEM_IFACE_PCM,
 		.name	= "DISPLAY_PORT DRIFT",
+		.info	= msm_dai_q6_ext_disp_drift_info,
+		.get	= msm_dai_q6_ext_disp_drift_get,
+	},
+	SOC_ENUM_EXT("Display Port1 RX Format", hdmi_config_enum[0],
+				 msm_dai_q6_ext_disp_format_get,
+				 msm_dai_q6_ext_disp_format_put),
+	SOC_SINGLE_MULTI_EXT("Display Port1 RX CA", SND_SOC_NOPM, 0,
+				 HDMI_RX_CA_MAX, 0, 1,
+				 msm_dai_q6_ext_disp_ca_get,
+				 msm_dai_q6_ext_disp_ca_put),
+	SOC_SINGLE_MULTI_EXT("Display Port1 RX DEVICE IDX", SND_SOC_NOPM, 0,
+				 1, 0, 2,
+				 msm_dai_q6_ext_disp_device_idx_get,
+				 msm_dai_q6_ext_disp_device_idx_put),
+	{
+		.access = SNDRV_CTL_ELEM_ACCESS_READ,
+		.iface	= SNDRV_CTL_ELEM_IFACE_PCM,
+		.name	= "DISPLAY_PORT1 DRIFT",
 		.info	= msm_dai_q6_ext_disp_drift_info,
 		.get	= msm_dai_q6_ext_disp_drift_get,
 	},
@@ -243,12 +324,7 @@ static int msm_dai_q6_hdmi_hw_params(struct snd_pcm_substream *substream,
 		dai_data->port_config.hdmi_multi_ch.channel_allocation = 0x12;
 		break;
 	case 8:
-		if (dai_data->ca.set_ca == false) {
-			dai_data->port_config.hdmi_multi_ch.channel_allocation = 0x13;
-		} else {
-			dai_data->port_config.hdmi_multi_ch.channel_allocation =
-				dai_data->ca.ca;
-		}
+		dai_data->port_config.hdmi_multi_ch.channel_allocation = 0x13;
 		break;
 	default:
 		dev_err(dai->dev, "invalid Channels = %u\n",
@@ -280,7 +356,7 @@ static void msm_dai_q6_hdmi_shutdown(struct snd_pcm_substream *substream,
 		return;
 	}
 
-	rc = afe_close(dai->id); /* can block */
+	rc = afe_close(get_port_id(dai->id)); /* can block */
 	if (rc < 0)
 		dev_err(dai->dev, "fail to close AFE port\n");
 
@@ -302,16 +378,28 @@ static int msm_dai_q6_hdmi_prepare(struct snd_pcm_substream *substream,
 							      dai_data->ca.ca;
 
 	if (!test_bit(STATUS_PORT_STARTED, dai_data->status_mask)) {
-		rc = afe_port_start(dai->id, &dai_data->port_config,
+		rc = afe_set_display_stream(get_port_id(dai->id), dai_data->stream_idx,
+						dai_data->ctl_idx);
+		if (rc < 0) {
+			dev_err(dai->dev, "fail to set AFE ctl, stream ID params %x\n",
+				dai->id);
+			if (rc != -EOPNOTSUPP) {
+				dev_err(dai->dev, "not starting AFE port\n");
+				goto err;
+			}
+		}
+
+		rc = afe_port_start(get_port_id(dai->id), &dai_data->port_config,
 				    dai_data->rate);
 		if (rc < 0)
 			dev_err(dai->dev, "fail to open AFE port %x\n",
-				dai->id);
+				get_port_id(dai->id));
 		else
 			set_bit(STATUS_PORT_STARTED,
 				dai_data->status_mask);
 	}
 
+err:
 	return rc;
 }
 
@@ -348,7 +436,7 @@ static int msm_dai_q6_hdmi_dai_probe(struct snd_soc_dai *dai)
 
 	msm_dai_q6_hdmi_set_dai_id(dai);
 
-	if (dai->driver->id == HDMI_RX) {
+	if (dai->driver->id == HDMI_RX || dai->driver->id == HDMI_RX_MS) {
 		kcontrol = &hdmi_config_controls[0];
 		rc = snd_ctl_add(dai->component->card->snd_card,
 				 snd_ctl_new1(kcontrol, dai_data));
@@ -360,7 +448,7 @@ static int msm_dai_q6_hdmi_dai_probe(struct snd_soc_dai *dai)
 		kcontrol = &hdmi_config_controls[2];
 		rc = snd_ctl_add(dai->component->card->snd_card,
 				 snd_ctl_new1(kcontrol, dai));
-	} else if (dai->driver->id == DISPLAY_PORT_RX) {
+	} else if (dai->driver->id == MSM_DISPLAY_PORT) {
 		kcontrol = &display_port_config_controls[0];
 		rc = snd_ctl_add(dai->component->card->snd_card,
 				 snd_ctl_new1(kcontrol, dai_data));
@@ -370,6 +458,26 @@ static int msm_dai_q6_hdmi_dai_probe(struct snd_soc_dai *dai)
 				 snd_ctl_new1(kcontrol, dai_data));
 
 		kcontrol = &display_port_config_controls[2];
+		rc = snd_ctl_add(dai->component->card->snd_card,
+				snd_ctl_new1(kcontrol, dai_data));
+
+		kcontrol = &display_port_config_controls[3];
+		rc = snd_ctl_add(dai->component->card->snd_card,
+				snd_ctl_new1(kcontrol, dai));
+	} else if (dai->driver->id == MSM_DISPLAY_PORT1) {
+		kcontrol = &display_port_config_controls[4];
+		rc = snd_ctl_add(dai->component->card->snd_card,
+				 snd_ctl_new1(kcontrol, dai_data));
+
+		kcontrol = &display_port_config_controls[5];
+		rc = snd_ctl_add(dai->component->card->snd_card,
+				 snd_ctl_new1(kcontrol, dai_data));
+
+		kcontrol = &display_port_config_controls[6];
+		rc = snd_ctl_add(dai->component->card->snd_card,
+				 snd_ctl_new1(kcontrol, dai_data));
+
+		kcontrol = &display_port_config_controls[7];
 		rc = snd_ctl_add(dai->component->card->snd_card,
 				snd_ctl_new1(kcontrol, dai));
 	} else {
@@ -416,7 +524,7 @@ static int msm_dai_q6_hdmi_dai_remove(struct snd_soc_dai *dai)
 
 	/* If AFE port is still up, close it */
 	if (test_bit(STATUS_PORT_STARTED, dai_data->status_mask)) {
-		rc = afe_close(dai->id); /* can block */
+		rc = afe_close(get_port_id(dai->id)); /* can block */
 		if (rc < 0)
 			dev_err(dai->dev, "fail to close AFE port\n");
 
@@ -455,6 +563,28 @@ static struct snd_soc_dai_driver msm_dai_q6_hdmi_hdmi_rx_dai = {
 	.remove = msm_dai_q6_hdmi_dai_remove,
 };
 
+static struct snd_soc_dai_driver msm_dai_q6_hdmi_hdmi_ms_rx_dai = {
+	.playback = {
+		.stream_name = "HDMI MS Playback",
+		.aif_name = "HDMI_MS",
+		.rates = SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
+			 SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_88200 |
+			 SNDRV_PCM_RATE_96000 | SNDRV_PCM_RATE_176400 |
+			 SNDRV_PCM_RATE_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE |
+			   SNDRV_PCM_FMTBIT_S24_LE |
+			   SNDRV_PCM_FMTBIT_S24_3LE,
+		.channels_min = 2,
+		.channels_max = 8,
+		.rate_max = 192000,
+		.rate_min = 48000,
+	},
+	.ops = &msm_dai_q6_hdmi_ops,
+	.id = HDMI_RX_MS,
+	.probe = msm_dai_q6_hdmi_dai_probe,
+	.remove = msm_dai_q6_hdmi_dai_remove,
+};
+
 static struct snd_soc_dai_driver msm_dai_q6_display_port_rx_dai[] = {
 	{
 		.playback = {
@@ -473,7 +603,28 @@ static struct snd_soc_dai_driver msm_dai_q6_display_port_rx_dai[] = {
 			.rate_min =     48000,
 		},
 		.ops = &msm_dai_q6_hdmi_ops,
-		.id = DISPLAY_PORT_RX,
+		.id = MSM_DISPLAY_PORT,
+		.probe = msm_dai_q6_hdmi_dai_probe,
+		.remove = msm_dai_q6_hdmi_dai_remove,
+	},
+	{
+		.playback = {
+			.stream_name = "Display Port1 Playback",
+			.aif_name = "DISPLAY_PORT1",
+			.rates = SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
+				 SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_88200 |
+				 SNDRV_PCM_RATE_96000 | SNDRV_PCM_RATE_176400 |
+				 SNDRV_PCM_RATE_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				   SNDRV_PCM_FMTBIT_S24_LE |
+				   SNDRV_PCM_FMTBIT_S24_3LE,
+			.channels_min = 2,
+			.channels_max = 8,
+			.rate_max =     192000,
+			.rate_min =     48000,
+		},
+		.ops = &msm_dai_q6_hdmi_ops,
+		.id = MSM_DISPLAY_PORT1,
 		.probe = msm_dai_q6_hdmi_dai_probe,
 		.remove = msm_dai_q6_hdmi_dai_remove,
 	},
@@ -507,12 +658,22 @@ static int msm_dai_q6_hdmi_dev_probe(struct platform_device *pdev)
 			&msm_dai_hdmi_q6_component,
 			&msm_dai_q6_hdmi_hdmi_rx_dai, 1);
 		break;
-	case DISPLAY_PORT_RX:
+	case MSM_DISPLAY_PORT:
 		rc = snd_soc_register_component(&pdev->dev,
 			&msm_dai_hdmi_q6_component,
-			&msm_dai_q6_display_port_rx_dai[0],
-			ARRAY_SIZE(msm_dai_q6_display_port_rx_dai));
+			&msm_dai_q6_display_port_rx_dai[0], 1);
 		break;
+	case MSM_DISPLAY_PORT1:
+		rc = snd_soc_register_component(&pdev->dev,
+			&msm_dai_hdmi_q6_component,
+			&msm_dai_q6_display_port_rx_dai[1], 1);
+		break;
+	case HDMI_RX_MS:
+		rc = snd_soc_register_component(&pdev->dev,
+			&msm_dai_hdmi_q6_component,
+			&msm_dai_q6_hdmi_hdmi_ms_rx_dai, 1);
+		break;
+
 	default:
 		dev_err(&pdev->dev, "invalid device ID %d\n", pdev->id);
 		rc = -ENODEV;
@@ -540,20 +701,19 @@ static struct platform_driver msm_dai_q6_hdmi_driver = {
 		.name = "msm-dai-q6-hdmi",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_dai_q6_hdmi_dt_match,
+		.suppress_bind_attrs = true,
 	},
 };
 
-static int __init msm_dai_q6_hdmi_init(void)
+int __init msm_dai_q6_hdmi_init(void)
 {
 	return platform_driver_register(&msm_dai_q6_hdmi_driver);
 }
-module_init(msm_dai_q6_hdmi_init);
 
-static void __exit msm_dai_q6_hdmi_exit(void)
+void msm_dai_q6_hdmi_exit(void)
 {
 	platform_driver_unregister(&msm_dai_q6_hdmi_driver);
 }
-module_exit(msm_dai_q6_hdmi_exit);
 
 /* Module information */
 MODULE_DESCRIPTION("MSM DSP HDMI DAI driver");

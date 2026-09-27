@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2015, 2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2015, 2017-2018, 2020 The Linux Foundation. All rights reserved.
  *
  */
 #include <linux/kernel.h>
@@ -17,17 +9,12 @@
 #include <linux/ioctl.h>
 #include <linux/bitops.h>
 #include <sound/hwdep.h>
-#include <sound/msmcal-hwdep.h>
+#include <audio/sound/msmcal-hwdep.h>
 #include <sound/soc.h>
-#include "wcdcal-hwdep.h"
+#include <asoc/wcdcal-hwdep.h>
 
 const int cal_size_info[WCD9XXX_MAX_CAL] = {
-#if defined(CONFIG_ARCH_SONY_LOIRE) || defined(CONFIG_ARCH_SONY_TONE) \
-    || defined(CONFIG_ARCH_SONY_YOSHINO)
-	[WCD9XXX_ANC_CAL] = 36864,
-#else
 	[WCD9XXX_ANC_CAL] = 16384,
-#endif
 	[WCD9XXX_MBHC_CAL] = 4096,
 	[WCD9XXX_MAD_CAL] = 4096,
 	[WCD9XXX_VBAT_CAL] = 72,
@@ -65,6 +52,7 @@ struct firmware_cal *wcdcal_get_fw_cal(struct fw_info *fw_data,
 }
 EXPORT_SYMBOL(wcdcal_get_fw_cal);
 
+#if IS_ENABLED(CONFIG_AUDIO_QGKI)
 static int wcdcal_hwdep_ioctl_shared(struct snd_hwdep *hw,
 			struct wcdcal_ioctl_buffer fw_user)
 {
@@ -99,6 +87,7 @@ static int wcdcal_hwdep_ioctl_shared(struct snd_hwdep *hw,
 	mutex_unlock(&fw_data->lock);
 	return 0;
 }
+#endif /* CONFIG_AUDIO_QGKI */
 
 #ifdef CONFIG_COMPAT
 struct wcdcal_ioctl_buffer32 {
@@ -112,6 +101,7 @@ enum {
 		_IOW('U', 0x1, struct wcdcal_ioctl_buffer32),
 };
 
+#if IS_ENABLED(CONFIG_AUDIO_QGKI)
 static int wcdcal_hwdep_ioctl_compat(struct snd_hwdep *hw, struct file *file,
 		unsigned int cmd, unsigned long arg)
 {
@@ -132,10 +122,12 @@ static int wcdcal_hwdep_ioctl_compat(struct snd_hwdep *hw, struct file *file,
 	fw_user_compat.cal_type = fw_user32.cal_type;
 	return wcdcal_hwdep_ioctl_shared(hw, fw_user_compat);
 }
+#endif /* CONFIG_AUDIO_QGKI */
 #else
 #define wcdcal_hwdep_ioctl_compat NULL
 #endif
 
+#if IS_ENABLED(CONFIG_AUDIO_QGKI)
 static int wcdcal_hwdep_ioctl(struct snd_hwdep *hw, struct file *file,
 		unsigned int cmd, unsigned long arg)
 {
@@ -165,7 +157,8 @@ static int wcdcal_hwdep_release(struct snd_hwdep *hw, struct file *file)
 	return 0;
 }
 
-int wcd_cal_create_hwdep(void *data, int node, struct snd_soc_codec *codec)
+int wcd_cal_create_hwdep(void *data, int node,
+			 struct snd_soc_component *component)
 {
 	char hwname[40];
 	struct snd_hwdep *hwdep;
@@ -173,23 +166,23 @@ int wcd_cal_create_hwdep(void *data, int node, struct snd_soc_codec *codec)
 	struct fw_info *fw_data = data;
 	int err, cal_bit;
 
-	if (!fw_data || !codec) {
+	if (!fw_data || !component) {
 		pr_err("%s: wrong arguments passed\n", __func__);
 		return -EINVAL;
 	}
 
 	fw = fw_data->fw;
 	snprintf(hwname, strlen("Codec %s"), "Codec %s",
-		 codec->component.name);
-	err = snd_hwdep_new(codec->component.card->snd_card,
+		 component->name);
+	err = snd_hwdep_new(component->card->snd_card,
 			    hwname, node, &hwdep);
 	if (err < 0) {
-		dev_err(codec->dev, "%s: new hwdep failed %d\n",
+		dev_err(component->dev, "%s: new hwdep failed %d\n",
 				__func__, err);
 		return err;
 	}
 	snprintf(hwdep->name, strlen("Codec %s"), "Codec %s",
-		 codec->component.name);
+		 component->name);
 	hwdep->iface = SNDRV_HWDEP_IFACE_AUDIO_CODEC;
 	hwdep->private_data = fw_data;
 	hwdep->ops.ioctl_compat = wcdcal_hwdep_ioctl_compat;
@@ -201,11 +194,8 @@ int wcd_cal_create_hwdep(void *data, int node, struct snd_soc_codec *codec)
 		set_bit(WCDCAL_UNINITIALISED,
 				&fw_data->wcdcal_state[cal_bit]);
 		fw[cal_bit] = kzalloc(sizeof *(fw[cal_bit]), GFP_KERNEL);
-		if (!fw[cal_bit]) {
-			dev_err(codec->dev, "%s: no memory for %s cal\n",
-				__func__, cal_name_info[cal_bit]);
+		if (!fw[cal_bit])
 			goto end;
-		}
 	}
 	for_each_set_bit(cal_bit, fw_data->cal_bit, WCD9XXX_MAX_CAL) {
 		fw[cal_bit]->data = kzalloc(cal_size_info[cal_bit],
@@ -228,4 +218,11 @@ end:
 	}
 	return -ENOMEM;
 }
+#else
+int wcd_cal_create_hwdep(void *data, int node,
+			 struct snd_soc_component *component)
+{
+	return 0;
+}
+#endif /* CONFIG_AUDIO_QGKI */
 EXPORT_SYMBOL(wcd_cal_create_hwdep);

@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2012-2015, 2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2012-2015, 2017-2021 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -20,11 +12,14 @@
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/platform_device.h>
-#include <linux/avtimer.h>
+#include <audio/linux/avtimer.h>
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
+#if IS_ENABLED(CONFIG_AVTIMER_LEGACY)
+#include <media/msmb_isp.h>
+#endif
 #include <ipc/apr.h>
 #include <dsp/q6core.h>
 
@@ -70,6 +65,7 @@ struct avtimer_t {
 };
 
 static struct avtimer_t avtimer;
+static void avcs_set_isp_fptr(bool enable);
 
 static int32_t aprv2_core_fn_q(struct apr_client_data *data, void *priv)
 {
@@ -93,6 +89,13 @@ static int32_t aprv2_core_fn_q(struct apr_client_data *data, void *priv)
 		}
 
 		payload1 = data->payload;
+
+		if (data->payload_size < 2 * sizeof(uint32_t)) {
+			pr_err("%s: payload has invalid size %d\n",
+				__func__, data->payload_size);
+			return -EINVAL;
+		}
+
 		switch (payload1[0]) {
 		case AVCS_CMD_REMOTE_AVTIMER_RELEASE_REQUEST:
 			pr_debug("%s: Cmd = TIMER RELEASE status[0x%x]\n",
@@ -118,6 +121,11 @@ static int32_t aprv2_core_fn_q(struct apr_client_data *data, void *priv)
 	}
 
 	case AVCS_CMD_RSP_REMOTE_AVTIMER_VOTE_REQUEST:
+		if (data->payload_size < sizeof(uint32_t)) {
+			pr_err("%s: payload has invalid size %d\n",
+				__func__, data->payload_size);
+			return -EINVAL;
+		}
 		payload1 = data->payload;
 		pr_debug("%s: RSP_REMOTE_AVTIMER_VOTE_REQUEST handle %x\n",
 			__func__, payload1[0]);
@@ -263,6 +271,7 @@ int avcs_core_disable_power_collapse(int enable)
 				rc = avcs_core_disable_avtimer(
 				avtimer.timer_handle);
 				avtimer.timer_handle = 0;
+				atomic_set(&avtimer.adsp_ready, 0);
 			}
 		}
 	}
@@ -313,6 +322,89 @@ int avcs_core_query_timer(uint64_t *avtimer_tick)
 }
 EXPORT_SYMBOL(avcs_core_query_timer);
 
+/*
+ * avcs_core_query_timer_offset:
+ *       derive offset between system clock & avtimer clock
+ *
+ * @ avoffset: offset between system clock & avtimer clock
+ * @ clock_id: clock id to get the system time
+ *
+ */
+int avcs_core_query_timer_offset(int64_t *av_offset, int32_t clock_id)
+{
+	uint32_t avtimer_msw = 0, avtimer_lsw = 0;
+	uint64_t avtimer_tick_temp, avtimer_tick, sys_time = 0;
+	struct timespec64 ts;
+
+	if (!atomic_read(&avtimer.adsp_ready)) {
+		pr_debug("%s:In SSR, return\n", __func__);
+		return -ENETRESET;
+	}
+
+	if ((avtimer.p_avtimer_lsw == NULL) ||
+	    (avtimer.p_avtimer_msw == NULL)) {
+		return -EINVAL;
+	}
+
+	memset(&ts, 0, sizeof(struct timespec64));
+	avtimer_lsw = ioread32(avtimer.p_avtimer_lsw);
+	avtimer_msw = ioread32(avtimer.p_avtimer_msw);
+
+	switch (clock_id) {
+	case CLOCK_MONOTONIC_RAW:
+		ktime_get_raw_ts64(&ts);
+		break;
+	case CLOCK_BOOTTIME:
+		ktime_get_boottime_ts64(&ts);
+		break;
+	case CLOCK_MONOTONIC:
+		ktime_get_ts64(&ts);
+		break;
+	case CLOCK_REALTIME:
+		ktime_get_real_ts64(&ts);
+		break;
+	default:
+		pr_debug("%s: unsupported clock id %d\n", __func__, clock_id);
+		return -EINVAL;
+	}
+
+	sys_time = ts.tv_sec * 1000000LL + div64_u64(ts.tv_nsec, 1000);
+	avtimer_tick_temp = (uint64_t)((uint64_t)avtimer_msw << 32) |
+						 avtimer_lsw;
+
+	avtimer_tick = mul_u64_u32_div(avtimer_tick_temp, avtimer.clk_mult,
+					avtimer.clk_div);
+	*av_offset = sys_time - avtimer_tick;
+	pr_debug("%s: sys_time: %llu, offset %lld, avtimer tick %lld\n",
+		 __func__, sys_time, *av_offset, avtimer_tick);
+
+	return 0;
+}
+EXPORT_SYMBOL(avcs_core_query_timer_offset);
+
+#if IS_ENABLED(CONFIG_AVTIMER_LEGACY)
+static void avcs_set_isp_fptr(bool enable)
+{
+	struct avtimer_fptr_t av_fptr;
+
+	if (enable) {
+		av_fptr.fptr_avtimer_open = avcs_core_open;
+		av_fptr.fptr_avtimer_enable = avcs_core_disable_power_collapse;
+		av_fptr.fptr_avtimer_get_time = avcs_core_query_timer;
+		msm_isp_set_avtimer_fptr(av_fptr);
+	} else {
+		av_fptr.fptr_avtimer_open = NULL;
+		av_fptr.fptr_avtimer_enable = NULL;
+		av_fptr.fptr_avtimer_get_time = NULL;
+		msm_isp_set_avtimer_fptr(av_fptr);
+	}
+}
+#else
+static void avcs_set_isp_fptr(bool enable)
+{
+}
+#endif
+
 static int avtimer_open(struct inode *inode, struct file *file)
 {
 	return avcs_core_disable_power_collapse(1);
@@ -345,7 +437,7 @@ static long avtimer_ioctl(struct file *file, unsigned int ioctl_num,
 
 		pr_debug_ratelimited("%s: AV Timer tick: time %llx\n",
 		__func__, avtimer_tick);
-		if (copy_to_user((void *) ioctl_param, &avtimer_tick,
+		if (copy_to_user((void __user *)ioctl_param, &avtimer_tick,
 		    sizeof(avtimer_tick))) {
 			pr_err("%s: copy_to_user failed\n", __func__);
 			return -EFAULT;
@@ -469,6 +561,8 @@ static int dev_avtimer_probe(struct platform_device *pdev)
 	else
 		avtimer.clk_mult = clk_mult_val;
 
+	avcs_set_isp_fptr(true);
+
 	pr_debug("%s: avtimer.clk_div = %d, avtimer.clk_mult = %d\n",
 		 __func__, avtimer.clk_div, avtimer.clk_mult);
 	return 0;
@@ -500,6 +594,7 @@ static int dev_avtimer_remove(struct platform_device *pdev)
 	cdev_del(&avtimer.myc);
 	class_destroy(avtimer.avtimer_class);
 	unregister_chrdev_region(MKDEV(major, 0), 1);
+	avcs_set_isp_fptr(false);
 
 	return 0;
 }
@@ -514,10 +609,11 @@ static struct platform_driver dev_avtimer_driver = {
 	.driver = {
 		.name = "dev_avtimer",
 		.of_match_table = avtimer_machine_of_match,
+		.suppress_bind_attrs = true,
 	},
 };
 
-static int  __init avtimer_init(void)
+int  __init avtimer_init(void)
 {
 	s32 rc;
 
@@ -535,14 +631,10 @@ error_platform_driver:
 	return rc;
 }
 
-static void __exit avtimer_exit(void)
+void avtimer_exit(void)
 {
-	pr_debug("%s: avtimer_exit\n", __func__);
 	platform_driver_unregister(&dev_avtimer_driver);
 }
-
-module_init(avtimer_init);
-module_exit(avtimer_exit);
 
 MODULE_DESCRIPTION("avtimer driver");
 MODULE_LICENSE("GPL v2");

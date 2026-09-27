@@ -1,13 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -19,7 +11,7 @@
 #include <linux/delay.h>
 #include <sound/soc.h>
 #include "wcd9335_registers.h"
-#include "core.h"
+#include <asoc/core.h>
 #include "cpe_cmi.h"
 #include "wcd_cpe_services.h"
 #include "wcd_cmi_api.h"
@@ -2581,15 +2573,8 @@ static enum cpe_svc_result cpe_tgt_wcd9335_write_RAM(struct cpe_info *t_info,
 			return CPE_SVC_FAILED;
 		}
 
-		rc = cpe_register_write_repeat(WCD9335_CPE_SS_MEM_BANK_0,
+		cpe_register_write_repeat(WCD9335_CPE_SS_MEM_BANK_0,
 			temp_ptr, to_write);
-		if (rc) {
-			pr_err("%s: cpe_register_write_repeat error rc=%d\n",
-				 __func__, rc);
-			cpe_register_write(WCD9335_CPE_SS_MEM_CTRL, 0);
-			return rc;
-		}
-
 		temp_size += CHUNK_SIZE;
 		temp_ptr += CHUNK_SIZE;
 	}

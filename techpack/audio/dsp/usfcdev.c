@@ -1,14 +1,6 @@
-/* Copyright (c) 2012-2013, 2016-2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2012-2013, 2016-2017 The Linux Foundation. All rights reserved.
  */
 
 #include <linux/sched.h>
@@ -217,7 +209,7 @@ static bool usfcdev_filter(struct input_handle *handle,
 	uint16_t ind = (uint16_t)handle->handler->minor;
 	bool rc = (s_usfcdev_events[ind].event_status != USFCDEV_EVENT_ENABLED);
 
-	if (s_usf_pid == sys_getpid()) {
+	if (s_usf_pid == current->pid) {
 		/* Pass events from usfcdev driver */
 		rc = false;
 		pr_debug("%s: event_type=%d; type=%d; code=%d; val=%d",
@@ -395,7 +387,7 @@ bool usfcdev_set_filter(uint16_t event_type_ind, bool filter)
 		if (filter) {
 			s_usfcdev_events[event_type_ind].event_status =
 						USFCDEV_EVENT_DISABLING;
-			s_usf_pid = sys_getpid();
+			s_usf_pid = current->pid;
 			usfcdev_clean_dev(event_type_ind);
 			s_usfcdev_events[event_type_ind].event_status =
 						USFCDEV_EVENT_DISABLED;
@@ -411,12 +403,3 @@ bool usfcdev_set_filter(uint16_t event_type_ind, bool filter)
 
 	return rc;
 }
-
-static int __init usfcdev_init(void)
-{
-	return 0;
-}
-
-device_initcall(usfcdev_init);
-
-MODULE_DESCRIPTION("Handle of events from devices, conflicting with USF");

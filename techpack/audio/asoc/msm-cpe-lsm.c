@@ -1,17 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2013-2020, The Linux Foundation. All rights reserved.
  */
 
-#include <linux/sched/signal.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/device.h>
@@ -24,10 +15,12 @@
 #include <linux/sched.h>
 #include <linux/freezer.h>
 #include <sound/soc.h>
-#include <sound/lsm_params.h>
+#include <audio/sound/lsm_params.h>
 #include <sound/pcm_params.h>
 #include "msm-slim-dma.h"
 #include "codecs/cpe_core.h"
+
+#define DRV_NAME "msm-cpe-lsm"
 
 #define SAMPLE_RATE_48KHZ 48000
 #define SAMPLE_RATE_16KHZ 16000
@@ -508,7 +501,7 @@ static int msm_cpe_lab_buf_alloc(struct snd_pcm_substream *substream,
 
 	return 0;
 fail:
-	if (pcm_buf)
+	if (pcm_buf && pcm_buf->mem)
 		kfree(pcm_buf->mem);
 	kfree(pcm_buf);
 	lab_d->pcm_buf = NULL;
@@ -2429,6 +2422,7 @@ enum {
 		_IOW('U', 0x0B, struct snd_lsm_module_params_32),
 };
 
+#if IS_ENABLED(CONFIG_AUDIO_QGKI)
 static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 			 unsigned int cmd, void *arg)
 {
@@ -2855,7 +2849,13 @@ done:
 			     "lsm_api_lock");
 	return err;
 }
-
+#else
+static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
+			 unsigned int cmd, void *arg)
+{
+	return 0;
+}
+#endif /* CONFIG_AUDIO_QGKI */
 #else
 #define msm_cpe_lsm_ioctl_compat NULL
 #endif
@@ -3137,7 +3137,7 @@ static snd_pcm_uframes_t msm_cpe_lsm_pointer(
 }
 
 static int msm_cpe_lsm_copy(struct snd_pcm_substream *substream, int a,
-	 snd_pcm_uframes_t hwoff, void __user *buf, snd_pcm_uframes_t frames)
+	 unsigned long hwoff, void __user *buf, unsigned long fbytes)
 {
 	struct cpe_lsm_data *lsm_d = cpe_get_lsm_data(substream);
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
@@ -3145,10 +3145,8 @@ static int msm_cpe_lsm_copy(struct snd_pcm_substream *substream, int a,
 	struct cpe_lsm_session *session;
 	struct cpe_lsm_lab *lab_d = &lsm_d->lab;
 	char *pcm_buf;
-	int fbytes = 0;
 	int rc = 0;
 
-	fbytes = frames_to_bytes(runtime, frames);
 	if (runtime->status->state == SNDRV_PCM_STATE_XRUN ||
 	   runtime->status->state == SNDRV_PCM_STATE_PREPARED) {
 		pr_err("%s: XRUN ignore for now\n", __func__);
@@ -3213,55 +3211,57 @@ fail:
 }
 
 /*
- * msm_asoc_cpe_lsm_probe: ASoC framework for lsm platform driver
- * @platform: platform registered with ASoC core
+ * msm_asoc_cpe_lsm_probe: ASoC framework for lsm component driver
+ * @component: component registered with ASoC core
  *
- * Allocate the private data for this platform and obtain the ops for
+ * Allocate the private data for this component and obtain the ops for
  * lsm and afe modules from underlying driver. Also find the codec
- * for this platform as specified by machine driver for ASoC framework.
+ * for this component as specified by machine driver for ASoC framework.
  */
-static int msm_asoc_cpe_lsm_probe(struct snd_soc_platform *platform)
+static int msm_asoc_cpe_lsm_probe(struct snd_soc_component *component)
 {
 	struct snd_soc_card *card;
 	struct snd_soc_pcm_runtime *rtd;
 	struct snd_soc_codec *codec;
 	struct cpe_priv *cpe_priv;
+	struct snd_soc_component *component_rtd = NULL;
 	const struct snd_kcontrol_new *kcontrol;
 	bool found_runtime = false;
 	const char *cpe_dev_id = "qcom,msm-cpe-lsm-id";
 	u32 port_id = 0;
 	int ret = 0;
 
-	if (!platform || !platform->component.card) {
-		pr_err("%s: Invalid platform or card\n",
+	if (!component || !component->card) {
+		pr_err("%s: Invalid component or card\n",
 			__func__);
 		return -EINVAL;
 	}
 
-	card = platform->component.card;
+	card = component->card;
 
-	/* Match platform to codec */
+	/* Match component to codec */
 	list_for_each_entry(rtd, &card->rtd_list, list) {
-		if (!rtd->platform)
+		component_rtd = snd_soc_rtdcom_lookup(rtd, DRV_NAME);
+		if (!component_rtd)
 			continue;
-		if (!strcmp(rtd->platform->component.name,
-			    platform->component.name)) {
+		if (!strcmp(component_rtd->name,
+			    component->name)) {
 			found_runtime = true;
 			break;
 		}
 	}
 
 	if (!found_runtime) {
-		dev_err(platform->dev,
-			"%s: Failed to find runtime for platform\n",
+		dev_err(component->dev,
+			"%s: Failed to find runtime for component\n",
 			__func__);
 		return -EINVAL;
 	}
 
-	ret = of_property_read_u32(platform->dev->of_node, cpe_dev_id,
+	ret = of_property_read_u32(component->dev->of_node, cpe_dev_id,
 				  &port_id);
 	if (ret) {
-		dev_dbg(platform->dev,
+		dev_dbg(component->dev,
 			"%s: missing 0x%x in dt node\n", __func__, port_id);
 		port_id = 1;
 	}
@@ -3278,19 +3278,10 @@ static int msm_asoc_cpe_lsm_probe(struct snd_soc_platform *platform)
 	wcd_cpe_get_lsm_ops(&cpe_priv->lsm_ops);
 	wcd_cpe_get_afe_ops(&cpe_priv->afe_ops);
 
-	snd_soc_platform_set_drvdata(platform, cpe_priv);
+	snd_soc_component_set_drvdata(component, cpe_priv);
 	kcontrol = &msm_cpe_kcontrols[0];
 	snd_ctl_add(card->snd_card, snd_ctl_new1(kcontrol, cpe_priv));
 	return 0;
-}
-
-static int msm_cpe_lsm_copy_user(struct snd_pcm_substream *substream, int channel,
-			unsigned long pos, void __user *buf, unsigned long bytes)
-{
-	struct snd_pcm_runtime *runtime = substream->runtime;
-
-	return msm_cpe_lsm_copy(substream, channel, bytes_to_frames(runtime, pos), buf,
-		  bytes_to_frames(runtime, bytes));
 }
 
 static const struct snd_pcm_ops msm_cpe_lsm_ops = {
@@ -3300,12 +3291,15 @@ static const struct snd_pcm_ops msm_cpe_lsm_ops = {
 	.prepare = msm_cpe_lsm_prepare,
 	.trigger = msm_cpe_lsm_trigger,
 	.pointer = msm_cpe_lsm_pointer,
-	.copy_user = msm_cpe_lsm_copy_user,
+	.copy_user = msm_cpe_lsm_copy,
 	.hw_params = msm_cpe_lsm_hwparams,
+#if IS_ENABLED(CONFIG_AUDIO_QGKI)
 	.compat_ioctl = msm_cpe_lsm_ioctl_compat,
+#endif /* CONFIG_AUDIO_QGKI */
 };
 
-static struct snd_soc_platform_driver msm_soc_cpe_platform = {
+static struct snd_soc_component_driver msm_soc_cpe_component = {
+	.name = DRV_NAME,
 	.ops = &msm_cpe_lsm_ops,
 	.probe = msm_asoc_cpe_lsm_probe,
 };
@@ -3319,8 +3313,9 @@ static struct snd_soc_platform_driver msm_soc_cpe_platform = {
 static int msm_cpe_lsm_probe(struct platform_device *pdev)
 {
 
-	return snd_soc_register_platform(&pdev->dev,
-					 &msm_soc_cpe_platform);
+	return snd_soc_register_component(&pdev->dev,
+					  &msm_soc_cpe_component,
+					  NULL, 0);
 }
 
 /*
@@ -3331,7 +3326,7 @@ static int msm_cpe_lsm_probe(struct platform_device *pdev)
  */
 static int msm_cpe_lsm_remove(struct platform_device *pdev)
 {
-	snd_soc_unregister_platform(&pdev->dev);
+	snd_soc_unregister_commponent(&pdev->dev);
 	return 0;
 }
 
@@ -3350,8 +3345,19 @@ static struct platform_driver msm_cpe_lsm_driver = {
 	.probe = msm_cpe_lsm_probe,
 	.remove = msm_cpe_lsm_remove,
 };
-module_platform_driver(msm_cpe_lsm_driver);
 
+int __init msm_cpe_lsm_init(void)
+{
+	return platform_driver_register(&msm_cpe_lsm_driver);
+}
+
+void __exit msm_cpe_lsm_exit(void)
+{
+	platform_driver_unregister(&msm_cpe_lsm_driver);
+}
+
+module_init(msm_cpe_lsm_init);
+module_exit(msm_cpe_lsm_exit);
 MODULE_DESCRIPTION("CPE LSM platform driver");
 MODULE_DEVICE_TABLE(of, msm_cpe_lsm_dt_match);
 MODULE_LICENSE("GPL v2");

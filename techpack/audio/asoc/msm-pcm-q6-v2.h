@@ -1,26 +1,15 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2008 Google, Inc.
  * Copyright (C) 2008 HTC Corporation
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- *
- * See the GNU General Public License for more details.
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, you can find it at http://www.fsf.org.
+ * Copyright (c) 2012-2017, 2019, 2021 The Linux Foundation. All rights reserved.
  */
 
 #ifndef _MSM_PCM_H
 #define _MSM_PCM_H
 #include <dsp/apr_audio-v2.h>
 #include <dsp/q6asm-v2.h>
-
+#include "msm-pcm-routing-v2.h"
 
 
 /* Support unconventional sample rates 12000, 24000 as well */
@@ -60,11 +49,11 @@ struct msm_audio_in_frame_info {
 #define PLAYBACK_MIN_NUM_PERIODS    2
 #define PLAYBACK_MAX_NUM_PERIODS    8
 #define PLAYBACK_MAX_PERIOD_SIZE    122880
-#define PLAYBACK_MIN_PERIOD_SIZE    128
+#define PLAYBACK_MIN_PERIOD_SIZE    120
 #define CAPTURE_MIN_NUM_PERIODS     2
 #define CAPTURE_MAX_NUM_PERIODS     8
 #define CAPTURE_MAX_PERIOD_SIZE     122880
-#define CAPTURE_MIN_PERIOD_SIZE     320
+#define CAPTURE_MIN_PERIOD_SIZE     120
 
 struct msm_audio {
 	struct snd_pcm_substream *substream;
@@ -105,7 +94,7 @@ struct msm_audio {
 	int mmap_flag;
 	atomic_t pending_buffer;
 	bool set_channel_map;
-	char channel_map[8];
+	char channel_map[PCM_FORMAT_MAX_NUM_CHANNEL_V8];
 	int cmd_interrupt;
 	bool meta_data_mode;
 	uint32_t volume;
@@ -125,6 +114,16 @@ struct output_meta_data_st {
 struct msm_plat_data {
 	int perf_mode;
 	struct snd_pcm *pcm;
+	struct msm_pcm_ch_map *ch_map[MSM_FRONTEND_DAI_MAX];
+	struct snd_pcm *pcm_device[MSM_FRONTEND_DAI_MM_SIZE];
+	struct msm_pcm_channel_mixer *chmixer_pspd[MSM_FRONTEND_DAI_MM_SIZE][2];
+	struct msm_pcm_channel_mixer *chmixer_ec_ref[MSM_FRONTEND_DAI_MM_SIZE];
+	struct mutex lock;
+};
+
+struct msm_pcm_ch_map {
+	bool set_ch_map;
+	char channel_map[PCM_FORMAT_MAX_NUM_CHANNEL];
 };
 
 #endif /*_MSM_PCM_H*/

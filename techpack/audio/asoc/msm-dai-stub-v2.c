@@ -1,13 +1,5 @@
-/* Copyright (c) 2013-2014, 2017 The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2013-2014, 2017, 2019 The Linux Foundation. All rights reserved.
  */
 #include <linux/init.h>
 #include <linux/module.h>
@@ -94,7 +86,7 @@ static struct snd_soc_dai_driver msm_dai_stub_dai_rx = {
 		.aif_name = "STUB_RX",
 		.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
-		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE,
 		.channels_min = 1,
 		.channels_max = 2,
 		.rate_min = 8000,
@@ -112,7 +104,8 @@ static struct snd_soc_dai_driver msm_dai_stub_dai_tx[] = {
 			.aif_name = "STUB_TX",
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 				SNDRV_PCM_RATE_16000,
-			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_3LE |
+				SNDRV_PCM_FMTBIT_S32_LE,
 			.channels_min = 1,
 			.channels_max = 2,
 			.rate_min = 8000,
@@ -128,7 +121,8 @@ static struct snd_soc_dai_driver msm_dai_stub_dai_tx[] = {
 			.aif_name = "STUB_1_TX",
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 				SNDRV_PCM_RATE_16000,
-			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_3LE |
+				SNDRV_PCM_FMTBIT_S32_LE,
 			.channels_min = 1,
 			.channels_max = 2,
 			.rate_min = 8000,
@@ -310,6 +304,7 @@ static struct platform_driver msm_dai_stub_dev = {
 		.name = "msm-dai-stub-dev",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_dai_stub_dev_dt_match,
+		.suppress_bind_attrs = true,
 	},
 };
 
@@ -351,10 +346,11 @@ static struct platform_driver msm_dai_stub_driver = {
 		.name = "msm-dai-stub",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_dai_stub_dt_match,
+		.suppress_bind_attrs = true,
 	},
 };
 
-static int __init msm_dai_stub_init(void)
+int __init msm_dai_stub_init(void)
 {
 	int rc = 0;
 
@@ -378,16 +374,14 @@ dai_stub_dev_fail:
 fail:
 	return rc;
 }
-module_init(msm_dai_stub_init);
 
-static void __exit msm_dai_stub_exit(void)
+void msm_dai_stub_exit(void)
 {
 	pr_debug("%s:\n", __func__);
 
 	platform_driver_unregister(&msm_dai_stub_dev);
 	platform_driver_unregister(&msm_dai_stub_driver);
 }
-module_exit(msm_dai_stub_exit);
 
 /* Module information */
 MODULE_DESCRIPTION("MSM Stub DSP DAI driver");
