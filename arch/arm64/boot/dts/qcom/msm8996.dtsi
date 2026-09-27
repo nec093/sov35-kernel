@@ -1073,16 +1073,30 @@
 		pinctrl-0 = <&wcd_intr_default>;
 	};
 
+	/*
+	 * Codec clocks, audio-ext-clk-up binding (audio-kernel for 5.4):
+	 * MCLK is the RPM divider clock 1 on PM8994 GPIO15 (func1), the
+	 * native clock the LPASS speaker I2S OSR clock set through the AFE
+	 * (11.2896 MHz, on gpio69).
+	 */
 	clock_audio: audio_ext_clk {
 		compatible = "qcom,audio-ref-clk";
-		qcom,audio-ref-clk-gpio = <&pm8994_gpios 15 0>;
-		clock-names = "osr_clk";
+		qcom,codec-ext-clk-src = <0>;	/* AUDIO_EXT_CLK_PMI */
+		pmic-clock-names = "div_clk1";
 		clocks = <&clock_rpmcc RPM_DIV_CLK1>;
-		qcom,node_has_rpm_clock;
 		#clock-cells = <1>;
+	};
+
+	clock_audio_native: audio_ext_clk_native {
+		compatible = "qcom,audio-ref-clk";
+		qcom,codec-ext-clk-src = <2>;	/* AUDIO_EXT_CLK_LPASS */
+		qcom,codec-lpass-clk-id = <0x10a>; /* SPEAKER_I2S_OSR */
+		qcom,codec-lpass-ext-clk-freq = <11289600>;
+		qcom,use-pinctrl = <1>;
 		pinctrl-names = "sleep", "active";
 		pinctrl-0 = <&spkr_i2s_clk_sleep>;
 		pinctrl-1 = <&spkr_i2s_clk_active>;
+		#clock-cells = <1>;
 	};
 
 	tspp: msm_tspp@075e7000 {
@@ -1172,8 +1186,8 @@
 			qcom,wcd-rst-gpio-node = <&wcd_rst_gpio>;
 
 			clock-names = "wcd_clk", "wcd_native_clk";
-			clocks = <&clock_audio AUDIO_PMI_CLK>,
-				 <&clock_audio AUDIO_AP_CLK2>;
+			clocks = <&clock_audio 0>,
+				 <&clock_audio_native 0>;
 
 			cdc-vdd-buck-supply = <&pm8994_s4>;
 			qcom,cdc-vdd-buck-voltage = <1800000 1800000>;
@@ -2957,8 +2971,10 @@
 
 	qcom,msm-audio-apr {
 		compatible = "qcom,msm-audio-apr";
-		msm_audio_apr_dummy {
-			compatible = "qcom,msm-audio-apr-dummy";
+		qcom,subsys-name = "apr_adsp";
+
+		q6core: qcom,q6core-audio {
+			compatible = "qcom,q6core-audio";
 		};
 	};
 

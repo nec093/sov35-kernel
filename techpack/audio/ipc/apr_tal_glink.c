@@ -56,6 +56,24 @@ static char *svc_names[APR_DEST_MAX][APR_CLIENT_MAX] = {
 	},
 };
 
+/*
+ * G-Link transport the APR channels are opened on. The msm8996 ADSP and
+ * modem firmware only speak SMD, so the channels live on the SMD
+ * transport of G-Link ("smd_trans"), not on native glink-smem ("smem").
+ */
+static char *apr_glink_xprt = "smd_trans";
+module_param(apr_glink_xprt, charp, 0444);
+MODULE_PARM_DESC(apr_glink_xprt, "G-Link transport for APR (smd_trans/smem)");
+
+/*
+ * SMD has no rx intents: the SMD transport grants one synchronously when
+ * asked (GCAP_AUTO_QUEUE_RX_INT), and never announces any by itself.
+ */
+static bool apr_glink_xprt_is_smd(void)
+{
+	return !strcmp(apr_glink_xprt, "smd_trans");
+}
+
 static struct apr_svc_ch_dev
 	apr_svc_ch[APR_DL_MAX][APR_DEST_MAX][APR_CLIENT_MAX];
 
@@ -97,7 +115,9 @@ static int __apr_tal_write(struct apr_svc_ch_dev *apr_ch, void *data,
 	unsigned long flags;
 
 	spin_lock_irqsave(&apr_ch->w_lock, flags);
-	rc = glink_tx(apr_ch->handle, pkt_priv, data, len, GLINK_TX_ATOMIC);
+	rc = glink_tx(apr_ch->handle, pkt_priv, data, len,
+		      apr_glink_xprt_is_smd() ?
+		      GLINK_TX_ATOMIC | GLINK_TX_REQ_INTENT : GLINK_TX_ATOMIC);
 	spin_unlock_irqrestore(&apr_ch->w_lock, flags);
 
 	if (rc)
@@ -307,7 +327,7 @@ struct apr_svc_ch_dev *apr_tal_open(uint32_t clnt, uint32_t dest, uint32_t dl,
 	open_cfg.notify_remote_rx_intent = apr_tal_notify_remote_rx_intent;
 	open_cfg.notify_tx_abort = apr_tal_notify_tx_abort;
 	open_cfg.priv = apr_ch;
-	open_cfg.transport = "smem";
+	open_cfg.transport = apr_glink_xprt;
 
 	apr_ch->channel_state = GLINK_REMOTE_DISCONNECTED;
 	apr_ch->handle = glink_open(&open_cfg);
@@ -331,10 +351,13 @@ struct apr_svc_ch_dev *apr_tal_open(uint32_t clnt, uint32_t dest, uint32_t dl,
 	 * Remote intent is not required for GLINK <--> SMD IPC, so this is
 	 * designed not to fail the open call.
 	 */
-	rc = wait_event_timeout(apr_ch->wait,
-		apr_ch->if_remote_intent_ready, 5 * HZ);
-	if (rc == 0)
-		pr_err("%s: TIMEOUT for remote intent readiness\n", __func__);
+	if (!apr_glink_xprt_is_smd()) {
+		rc = wait_event_timeout(apr_ch->wait,
+			apr_ch->if_remote_intent_ready, 5 * HZ);
+		if (rc == 0)
+			pr_err("%s: TIMEOUT for remote intent readiness\n",
+			       __func__);
+	}
 
 	rc = apr_tal_rx_intents_config(apr_ch, APR_DEFAULT_NUM_OF_INTENTS,
 				       APR_MAX_BUF);
@@ -437,13 +460,11 @@ static void apr_tal_link_state_cb(struct glink_link_state_cb_info *cb_info,
 }
 
 static struct glink_link_info mpss_link_info = {
-	.transport = "smem",
 	.edge = "mpss",
 	.glink_link_state_notif_cb = apr_tal_link_state_cb,
 };
 
 static struct glink_link_info lpass_link_info = {
-	.transport = "smem",
 	.edge = "lpass",
 	.glink_link_state_notif_cb = apr_tal_link_state_cb,
 };
@@ -475,6 +496,9 @@ int apr_tal_init(void)
 
 	for (i = 0; i < APR_DEST_MAX; i++)
 		init_waitqueue_head(&link_state[i].wait);
+
+	mpss_link_info.transport = apr_glink_xprt;
+	lpass_link_info.transport = apr_glink_xprt;
 
 	link_state[APR_DEST_MODEM].link_state = GLINK_LINK_STATE_DOWN;
 	link_state[APR_DEST_MODEM].handle =

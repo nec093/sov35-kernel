@@ -232,6 +232,7 @@ static const char * const audio_ext_pmi_div_clk[] = {
 	"pms405_div_clk1",
 	"pm6150_div_clk1",
 	"pm6125_div_clk1",
+	"div_clk1",		/* msm8996 rpmcc RPM_DIV_CLK1 */
 };
 
 static int audio_ext_clk_dummy_prepare(struct clk_hw *hw)
