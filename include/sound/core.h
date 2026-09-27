@@ -11,6 +11,7 @@
 #include <linux/sched.h>		/* wake_up() */
 #include <linux/mutex.h>		/* struct mutex */
 #include <linux/rwsem.h>		/* struct rw_semaphore */
+#include <linux/xarray.h>
 #include <linux/pm.h>			/* pm_message_t */
 #include <linux/stringify.h>
 #include <linux/printk.h>
@@ -102,6 +103,7 @@ struct snd_card {
 	int controls_count;		/* count of all controls */
 	int user_ctl_count;		/* count of all user controls */
 	struct list_head controls;	/* all controls for this card */
+	struct xarray ctl_numids;	/* numid -> control, for lookups */
 	struct list_head ctl_files;	/* active control files */
 
 	struct snd_info_entry *proc_root;	/* root for soundcard specific files */

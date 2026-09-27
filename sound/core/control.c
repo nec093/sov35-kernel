@@ -334,6 +334,30 @@ enum snd_ctl_add_mode {
 };
 
 /* add/replace a new kcontrol object; call with card->controls_rwsem locked */
+/*
+ * numid -> control for every element. Every control ioctl from userspace
+ * looks its control up by numid, and walking card->controls for that made
+ * a mixer_open() on a card with ~7000 controls (msm8996 audio) take tens
+ * of seconds of kernel time. Lookups fall back to the list walk if an
+ * entry could not be stored. (Same idea as upstream's CONFIG_SND_CTL_FAST_LOOKUP.)
+ */
+static void snd_ctl_numid_add(struct snd_card *card, struct snd_kcontrol *kctl)
+{
+	unsigned int i;
+
+	for (i = 0; i < kctl->count; i++)
+		xa_store(&card->ctl_numids, kctl->id.numid + i, kctl,
+			 GFP_KERNEL);
+}
+
+static void snd_ctl_numid_del(struct snd_card *card, struct snd_kcontrol *kctl)
+{
+	unsigned int i;
+
+	for (i = 0; i < kctl->count; i++)
+		xa_erase(&card->ctl_numids, kctl->id.numid + i);
+}
+
 static int __snd_ctl_add_replace(struct snd_card *card,
 				 struct snd_kcontrol *kcontrol,
 				 enum snd_ctl_add_mode mode)
@@ -373,6 +397,7 @@ static int __snd_ctl_add_replace(struct snd_card *card,
 	card->controls_count += kcontrol->count;
 	kcontrol->id.numid = card->last_numid + 1;
 	card->last_numid += kcontrol->count;
+	snd_ctl_numid_add(card, kcontrol);
 
 	id = kcontrol->id;
 	count = kcontrol->count;
@@ -465,6 +490,7 @@ int snd_ctl_remove(struct snd_card *card, struct snd_kcontrol *kcontrol)
 
 	if (snd_BUG_ON(!card || !kcontrol))
 		return -EINVAL;
+	snd_ctl_numid_del(card, kcontrol);
 	list_del(&kcontrol->list);
 	card->controls_count -= kcontrol->count;
 	id = kcontrol->id;
@@ -613,9 +639,11 @@ int snd_ctl_rename_id(struct snd_card *card, struct snd_ctl_elem_id *src_id,
 		up_write(&card->controls_rwsem);
 		return -ENOENT;
 	}
+	snd_ctl_numid_del(card, kctl);
 	kctl->id = *dst_id;
 	kctl->id.numid = card->last_numid + 1;
 	card->last_numid += kctl->count;
+	snd_ctl_numid_add(card, kctl);
 	up_write(&card->controls_rwsem);
 	return 0;
 }
@@ -640,6 +668,9 @@ struct snd_kcontrol *snd_ctl_find_numid(struct snd_card *card, unsigned int numi
 
 	if (snd_BUG_ON(!card || !numid))
 		return NULL;
+	kctl = xa_load(&card->ctl_numids, numid);
+	if (kctl)
+		return kctl;
 	list_for_each_entry(kctl, &card->controls, list) {
 		if (kctl->id.numid <= numid && kctl->id.numid + kctl->count > numid)
 			return kctl;
@@ -1844,6 +1875,7 @@ static int snd_ctl_dev_free(struct snd_device *device)
 		control = snd_kcontrol(card->controls.next);
 		snd_ctl_remove(card, control);
 	}
+	xa_destroy(&card->ctl_numids);
 	up_write(&card->controls_rwsem);
 	put_device(&card->ctl_dev);
 	return 0;
