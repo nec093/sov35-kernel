@@ -11,7 +11,7 @@ endif
 KDIR := $(TOP)/kernel/msm-5.4
 
 ifeq ($(KERNEL_BUILD), 1)
-	AUDIO_ROOT := $(KDIR)/techpack/audio
+	AUDIO_ROOT := $(srctree)/techpack/audio
 endif
 
 ifeq ($(CONFIG_SND_SOC_AUTO), y)
@@ -145,6 +145,12 @@ APRV_GLINK += apr_v3.o
 APRV_GLINK += apr_tal_rpmsg.o
 endif
 
+ifdef CONFIG_MSM_QDSP6_APRV2_GLINK
+APRV_GLINK += apr.o
+APRV_GLINK += apr_v2.o
+APRV_GLINK += apr_tal_glink.o
+endif
+
 ifdef CONFIG_MSM_QDSP6_APRV2_VM
 APRV_GLINK += apr_vm.o
 APRV_GLINK += apr_v2.o
@@ -169,7 +175,7 @@ CDEFINES +=	-DANI_LITTLE_BYTE_ENDIAN \
 		-DANI_OS_TYPE_ANDROID=6 \
 		-DPTT_SOCK_SVC_ENABLE \
 		-Wall\
-		-Werror\
+		-Wno-error\
 		-D__linux__
 
 KBUILD_CPPFLAGS += $(CDEFINES)
@@ -209,6 +215,7 @@ endif
 obj-$(CONFIG_MSM_QDSP6_APRV2_RPMSG) += apr_dlkm.o
 obj-$(CONFIG_MSM_QDSP6_APRV3_RPMSG) += apr_dlkm.o
 obj-$(CONFIG_MSM_QDSP6_APRV2_VM) += apr_dlkm.o
+obj-$(CONFIG_MSM_QDSP6_APRV2_GLINK) += apr_dlkm.o
 apr_dlkm-y := $(APRV_GLINK)
 
 obj-$(CONFIG_WCD_DSP_GLINK) += wglink_dlkm.o

@@ -17,8 +17,67 @@
 #include <linux/of_device.h>
 #include <linux/export.h>
 #include <linux/ion.h>
+#include <linux/msm_ion.h>
+#include <linux/sizes.h>
 #include <ipc/apr.h>
 #include <dsp/msm_audio_ion.h>
+
+/*
+ * This kernel has the 4.9 msm ION (ion_client/ion_handle) instead of the
+ * dma-buf based ion_alloc() and dma_buf_get_flags() of later kernels;
+ * provide both on top of a kernel ION client.
+ */
+static struct ion_client *msm_audio_ion_client;
+static DEFINE_MUTEX(msm_audio_ion_client_lock);
+
+static struct ion_client *msm_audio_get_ion_client(void)
+{
+	mutex_lock(&msm_audio_ion_client_lock);
+	if (IS_ERR_OR_NULL(msm_audio_ion_client))
+		msm_audio_ion_client = msm_ion_client_create("audio_client");
+	mutex_unlock(&msm_audio_ion_client_lock);
+	return msm_audio_ion_client;
+}
+
+static struct dma_buf *msm_audio_ion_alloc_dmabuf(size_t len,
+						  unsigned int heap_id_mask,
+						  unsigned int flags)
+{
+	struct ion_client *client = msm_audio_get_ion_client();
+	struct ion_handle *handle;
+	struct dma_buf *dmabuf;
+
+	if (IS_ERR_OR_NULL(client))
+		return client ? ERR_CAST(client) : ERR_PTR(-ENODEV);
+
+	handle = ion_alloc(client, len, SZ_4K, heap_id_mask, flags);
+	if (IS_ERR_OR_NULL(handle))
+		return handle ? ERR_CAST(handle) : ERR_PTR(-ENOMEM);
+
+	/* the dma-buf holds its own reference on the ION buffer */
+	dmabuf = ion_share_dma_buf(client, handle);
+	ion_free(client, handle);
+	return dmabuf;
+}
+
+static int msm_audio_dma_buf_get_flags(struct dma_buf *dmabuf,
+				       unsigned long *flags)
+{
+	struct ion_client *client = msm_audio_get_ion_client();
+	struct ion_handle *handle;
+	int rc;
+
+	if (IS_ERR_OR_NULL(client))
+		return client ? PTR_ERR(client) : -ENODEV;
+
+	handle = ion_import_dma_buf(client, dmabuf);
+	if (IS_ERR_OR_NULL(handle))
+		return handle ? PTR_ERR(handle) : -EINVAL;
+
+	rc = ion_handle_get_flags(client, handle, flags);
+	ion_free(client, handle);
+	return rc;
+}
 
 #define MSM_AUDIO_ION_PROBED (1 << 0)
 
@@ -100,15 +159,18 @@ static int msm_audio_dma_buf_map(struct dma_buf *dma_buf,
 	}
 
 	/* For uncached buffers, avoid cache maintanance */
-	rc = dma_buf_get_flags(alloc_data->dma_buf, &ionflag);
+	rc = msm_audio_dma_buf_get_flags(alloc_data->dma_buf, &ionflag);
 	if (rc) {
 		dev_err(cb_dev, "%s: dma_buf_get_flags failed: %d\n",
 			__func__, rc);
 		goto detach_dma_buf;
 	}
 
-	if (!(ionflag & ION_FLAG_CACHED))
-		alloc_data->attach->dma_map_attrs |= DMA_ATTR_SKIP_CPU_SYNC;
+	/*
+	 * No per-attachment DMA attributes in this kernel's dma-buf, so
+	 * uncached buffers get the (harmless) CPU sync as well.
+	 */
+	(void)ionflag;
 
 	/*
 	 * Get the scatter-gather list.
@@ -385,10 +447,10 @@ int msm_audio_ion_alloc(struct dma_buf **dma_buf, size_t bufsz,
 
 	if (msm_audio_ion_data.smmu_enabled == true) {
 		pr_debug("%s: system heap is used\n", __func__);
-		*dma_buf = ion_alloc(bufsz, ION_HEAP(ION_SYSTEM_HEAP_ID), 0);
+		*dma_buf = msm_audio_ion_alloc_dmabuf(bufsz, ION_HEAP(ION_SYSTEM_HEAP_ID), 0);
 	} else {
 		pr_debug("%s: audio heap is used\n", __func__);
-		*dma_buf = ion_alloc(bufsz, ION_HEAP(ION_AUDIO_HEAP_ID), 0);
+		*dma_buf = msm_audio_ion_alloc_dmabuf(bufsz, ION_HEAP(ION_AUDIO_HEAP_ID), 0);
 	}
 	if (IS_ERR_OR_NULL((void *)(*dma_buf))) {
 		if (IS_ERR((void *)(*dma_buf)))
@@ -491,7 +553,7 @@ int msm_audio_ion_import(struct dma_buf **dma_buf, int fd,
 	}
 
 	if (ionflag != NULL) {
-		rc = dma_buf_get_flags(*dma_buf, ionflag);
+		rc = msm_audio_dma_buf_get_flags(*dma_buf, ionflag);
 		if (rc) {
 			pr_err("%s: could not get flags for the dma_buf\n",
 				__func__);
@@ -558,7 +620,7 @@ int msm_audio_ion_import_cma(struct dma_buf **dma_buf, int fd,
 	}
 
 	if (ionflag != NULL) {
-		rc = dma_buf_get_flags(*dma_buf, ionflag);
+		rc = msm_audio_dma_buf_get_flags(*dma_buf, ionflag);
 		if (rc) {
 			pr_err("%s: could not get flags for the dma_buf\n",
 				__func__);
@@ -730,7 +792,7 @@ int msm_audio_ion_cache_operations(struct audio_buffer *abuff, int cache_op)
 		pr_err("%s: Invalid params: %pK\n", __func__, abuff);
 		return -EINVAL;
 	}
-	rc = dma_buf_get_flags(abuff->dma_buf, &ionflag);
+	rc = msm_audio_dma_buf_get_flags(abuff->dma_buf, &ionflag);
 	if (rc) {
 		pr_err("%s: dma_buf_get_flags failed: %d\n", __func__, rc);
 		goto cache_op_failed;
