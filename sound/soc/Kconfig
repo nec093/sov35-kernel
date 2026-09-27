@@ -42,7 +42,10 @@ config SND_SOC_ACPI
 
 config AUDIO_QGKI
 	bool "Audio QGKI support"
-	depends on QGKI
+	help
+	  CAF sound core extensions used by the Qualcomm audio-kernel
+	  techpack (card online state, async DPCM ops, compress and PCM
+	  additions). This tree has no QGKI symbol, so it stands alone.
 
 # All the supported SoCs
 source "sound/soc/adi/Kconfig"

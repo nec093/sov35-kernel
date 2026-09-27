@@ -23,3 +23,5 @@
 #define CONFIG_SOUNDWIRE 1
 #define CONFIG_SOUNDWIRE_WCD_CTRL 1
 #define CONFIG_SND_SOC_WSA881X 1
+/* kernel carries the CAF sound core additions */
+#define CONFIG_AUDIO_QGKI 1

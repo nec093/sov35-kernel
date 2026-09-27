@@ -854,3 +854,4 @@ CONFIG_QMI_ENCDEC=y
 # symbols are not Kconfig symbols of this tree. The mainline SoundWire bus
 # is not used on msm8996 (and clashes with the techpack's soundwire).
 # CONFIG_SOUNDWIRE is not set
+CONFIG_AUDIO_QGKI=y
