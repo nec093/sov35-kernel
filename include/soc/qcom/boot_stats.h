@@ -15,3 +15,14 @@ int boot_stats_init(void);
 #else
 static inline int boot_stats_init(void) { return 0; }
 #endif
+
+#ifndef __QCOM_BOOT_STATS_MARKER_H__
+#define __QCOM_BOOT_STATS_MARKER_H__
+/*
+ * Boot KPI markers (used by the audio techpack). There is no boot marker
+ * driver on this platform, so they compile to nothing.
+ */
+static inline void place_marker(const char *name) { }
+static inline void destroy_marker(const char *name) { }
+static inline int boot_marker_enabled(void) { return 0; }
+#endif
