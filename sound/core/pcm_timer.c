@@ -52,16 +52,23 @@ void snd_pcm_timer_resolution_change(struct snd_pcm_substream *substream)
 static unsigned long snd_pcm_timer_resolution(struct snd_timer * timer)
 {
 	struct snd_pcm_substream *substream;
+#ifdef CONFIG_AUDIO_QGKI
 	unsigned long ret = 0, flags = 0;
-	
+#endif
+
 	substream = timer->private_data;
-	snd_pcm_stream_lock_irqsave(substream, flags);
+#ifdef CONFIG_AUDIO_QGKI
+	spin_lock_irqsave(&substream->runtime_lock, flags);
 	if (substream->runtime)
 		ret = substream->runtime->timer_resolution;
 	else
 		ret = 0;
-	snd_pcm_stream_unlock_irqrestore(substream, flags);
+	spin_unlock_irqrestore(&substream->runtime_lock, flags);
+
 	return ret;
+#else
+	return substream->runtime ? substream->runtime->timer_resolution : 0;
+#endif
 }
 
 static int snd_pcm_timer_start(struct snd_timer * timer)

@@ -639,6 +639,7 @@ enum {
 #endif /* CONFIG_X86_X32 */
 };
 
+#ifdef CONFIG_AUDIO_QGKI
 static int snd_compressed_ioctl32(struct snd_pcm_substream *substream,
 				 unsigned int cmd, void __user *arg)
 {
@@ -657,20 +658,16 @@ static int snd_compressed_ioctl32(struct snd_pcm_substream *substream,
 	pr_debug("%s called with cmd = %d\n", __func__, cmd);
 	return err;
 }
-static int snd_user_ioctl32(struct snd_pcm_substream *substream,
-			  unsigned int cmd, void __user *arg)
+
+static int snd_pcm_ioctl32_compat(struct snd_pcm_substream *substream,
+			unsigned int cmd, void __user *arg)
 {
-	struct snd_pcm_runtime *runtime;
-	int err = -ENOIOCTLCMD;
+	if (_IOC_TYPE(cmd) == 'C' || _IOC_TYPE(cmd) == 'U')
+		return snd_compressed_ioctl32(substream, cmd, arg);
 
-	if (PCM_RUNTIME_CHECK(substream))
-		return -ENXIO;
-	runtime = substream->runtime;
-	if (substream->ops->compat_ioctl)
-		err = substream->ops->compat_ioctl(substream, cmd, arg);
-	return err;
+	return 0;
 }
-
+#endif
 
 static long snd_pcm_ioctl_compat(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -749,11 +746,10 @@ static long snd_pcm_ioctl_compat(struct file *file, unsigned int cmd, unsigned l
 	case SNDRV_PCM_IOCTL_CHANNEL_INFO_X32:
 		return snd_pcm_ioctl_channel_info_x32(substream, argp);
 #endif /* CONFIG_X86_X32 */
+#ifdef CONFIG_AUDIO_QGKI
 	default:
-		if (_IOC_TYPE(cmd) == 'C')
-			return snd_compressed_ioctl32(substream, cmd, argp);
-		else if (_IOC_TYPE(cmd) == 'U')
-			return snd_user_ioctl32(substream, cmd, argp);
+		return snd_pcm_ioctl32_compat(substream, cmd, argp);
+#endif
 	}
 
 	return -ENOIOCTLCMD;

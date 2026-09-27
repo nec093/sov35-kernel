@@ -67,11 +67,10 @@ struct snd_compr_params {
  */
 struct snd_compr_tstamp {
 	__u32 byte_offset;
-	__u64 copied_total;
+	__u32 copied_total;
 	__u32 pcm_frames;
 	__u32 pcm_io_frames;
 	__u32 sampling_rate;
-	__u64 timestamp;
 } __attribute__((packed, aligned(4)));
 
 /**
@@ -133,11 +132,19 @@ struct snd_compr_audio_info {
 	__u32 reserved[15];
 } __attribute__((packed, aligned(4)));
 
+#define SND_COMPR_AUDIO_INFO
+
 #define SNDRV_COMPRESS_RENDER_MODE_AUDIO_MASTER 0
 #define SNDRV_COMPRESS_RENDER_MODE_STC_MASTER 1
+#define SNDRV_COMPRESS_RENDER_MODE_TTP 2
 
 #define SNDRV_COMPRESS_CLK_REC_MODE_NONE 0
 #define SNDRV_COMPRESS_CLK_REC_MODE_AUTO 1
+
+enum sndrv_compress_latency_mode {
+	SNDRV_COMPRESS_LEGACY_LATENCY_MODE = 0,
+	SNDRV_COMPRESS_LOW_LATENCY_MODE = 1,
+};
 
 /**
  * enum sndrv_compress_encoder
@@ -156,15 +163,14 @@ struct snd_compr_audio_info {
 enum sndrv_compress_encoder {
 	SNDRV_COMPRESS_ENCODER_PADDING = 1,
 	SNDRV_COMPRESS_ENCODER_DELAY = 2,
-	SNDRV_COMPRESS_MIN_BLK_SIZE = 3,
-	SNDRV_COMPRESS_MAX_BLK_SIZE = 4,
-	SNDRV_COMPRESS_PATH_DELAY = 5,
-	SNDRV_COMPRESS_RENDER_MODE = 6,
-	SNDRV_COMPRESS_CLK_REC_MODE = 7,
-	SNDRV_COMPRESS_RENDER_WINDOW = 8,
-	SNDRV_COMPRESS_START_DELAY = 9,
-	SNDRV_COMPRESS_ENABLE_ADJUST_SESSION_CLOCK = 10,
-	SNDRV_COMPRESS_ADJUST_SESSION_CLOCK = 11,
+	SNDRV_COMPRESS_PATH_DELAY = 3,
+	SNDRV_COMPRESS_RENDER_MODE = 4,
+	SNDRV_COMPRESS_CLK_REC_MODE = 5,
+	SNDRV_COMPRESS_RENDER_WINDOW = 6,
+	SNDRV_COMPRESS_START_DELAY = 7,
+	SNDRV_COMPRESS_ENABLE_ADJUST_SESSION_CLOCK = 8,
+	SNDRV_COMPRESS_ADJUST_SESSION_CLOCK = 9,
+	SNDRV_COMPRESS_LATENCY_MODE = 10,
 };
 
 #define SNDRV_COMPRESS_PATH_DELAY SNDRV_COMPRESS_PATH_DELAY
@@ -173,8 +179,9 @@ enum sndrv_compress_encoder {
 #define SNDRV_COMPRESS_RENDER_WINDOW SNDRV_COMPRESS_RENDER_WINDOW
 #define SNDRV_COMPRESS_START_DELAY SNDRV_COMPRESS_START_DELAY
 #define SNDRV_COMPRESS_ENABLE_ADJUST_SESSION_CLOCK \
-			SNDRV_COMPRESS_ENABLE_ADJUST_SESSION_CLOCK
+		SNDRV_COMPRESS_ENABLE_ADJUST_SESSION_CLOCK
 #define SNDRV_COMPRESS_ADJUST_SESSION_CLOCK SNDRV_COMPRESS_ADJUST_SESSION_CLOCK
+#define SNDRV_COMPRESS_LATENCY_MODE SNDRV_COMPRESS_LATENCY_MODE
 
 /**
  * struct snd_compr_metadata - compressed stream metadata
@@ -226,7 +233,7 @@ struct snd_compr_metadata {
 #define SNDRV_COMPRESS_NEXT_TRACK	_IO('C', 0x35)
 #define SNDRV_COMPRESS_PARTIAL_DRAIN	_IO('C', 0x36)
 #define SNDRV_COMPRESS_SET_NEXT_TRACK_PARAM\
-					_IOW('C', 0x80, union snd_codec_options)
+				_IOW('C', 0x80, union snd_codec_options)
 /*
  * TODO
  * 1. add mmap support
@@ -235,4 +242,5 @@ struct snd_compr_metadata {
 #define SND_COMPR_TRIGGER_DRAIN 7 /*FIXME move this to pcm.h */
 #define SND_COMPR_TRIGGER_NEXT_TRACK 8
 #define SND_COMPR_TRIGGER_PARTIAL_DRAIN 9
+#define SNDRV_COMPRESS_DSP_POSITION 10
 #endif

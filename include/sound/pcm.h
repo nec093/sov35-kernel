@@ -54,8 +54,10 @@ struct snd_pcm_ops {
 	int (*close)(struct snd_pcm_substream *substream);
 	int (*ioctl)(struct snd_pcm_substream * substream,
 		     unsigned int cmd, void *arg);
+#ifdef CONFIG_AUDIO_QGKI
 	int (*compat_ioctl)(struct snd_pcm_substream *substream,
-		     unsigned int cmd, void *arg);
+		     unsigned int cmd, void __user *arg);
+#endif
 	int (*hw_params)(struct snd_pcm_substream *substream,
 			 struct snd_pcm_hw_params *params);
 	int (*hw_free)(struct snd_pcm_substream *substream);
@@ -66,6 +68,11 @@ struct snd_pcm_ops {
 			struct timespec *system_ts, struct timespec *audio_ts,
 			struct snd_pcm_audio_tstamp_config *audio_tstamp_config,
 			struct snd_pcm_audio_tstamp_report *audio_tstamp_report);
+#ifdef CONFIG_AUDIO_QGKI
+	int (*delay_blk)(struct snd_pcm_substream *substream);
+	int (*wall_clock)(struct snd_pcm_substream *substream,
+			struct timespec *audio_ts);
+#endif
 	int (*fill_silence)(struct snd_pcm_substream *substream, int channel,
 			    unsigned long pos, unsigned long bytes);
 	int (*copy_user)(struct snd_pcm_substream *substream, int channel,
@@ -397,8 +404,6 @@ struct snd_pcm_runtime {
 	wait_queue_head_t sleep;	/* poll sleep */
 	wait_queue_head_t tsleep;	/* transfer sleep */
 	struct fasync_struct *fasync;
-	struct mutex buffer_mutex;	/* protect for buffer changes */
-	atomic_t buffer_accessing;	/* >0: in r/w operation, <0: blocked */
 
 	/* -- private section -- */
 	void *private_data;
@@ -427,6 +432,10 @@ struct snd_pcm_runtime {
 #if IS_ENABLED(CONFIG_SND_PCM_OSS)
 	/* -- OSS things -- */
 	struct snd_pcm_oss_runtime oss;
+#endif
+#ifndef __GENKSYMS__
+	struct mutex buffer_mutex;	/* protect for buffer changes */
+	atomic_t buffer_accessing;	/* >0: in r/w operation, <0: blocked */
 #endif
 };
 
@@ -479,9 +488,10 @@ struct snd_pcm_substream {
 #endif /* CONFIG_SND_VERBOSE_PROCFS */
 	/* misc flags */
 	unsigned int hw_opened: 1;
-	/* CAF addition (not in mainline): see the PCM Volume/User control
-	 * API comment above struct snd_pcm_volume_elem below. */
-	unsigned int hw_no_buffer: 1;
+#ifdef CONFIG_AUDIO_QGKI
+	spinlock_t runtime_lock;
+#endif
+	unsigned int hw_no_buffer: 1; /* substream may not have a buffer */
 };
 
 #define SUBSTREAM_BUSY(substream) ((substream)->ref_count > 0)
@@ -506,10 +516,6 @@ struct snd_pcm_str {
 #endif
 	struct snd_kcontrol *chmap_kctl; /* channel-mapping controls */
 	struct device dev;
-	/* CAF additions (not in mainline): see the PCM Volume/User control
-	 * API comment above struct snd_pcm_volume_elem below. */
-	struct snd_kcontrol *vol_kctl;
-	struct snd_kcontrol *usr_kctl;
 };
 
 struct snd_pcm {
@@ -1426,55 +1432,6 @@ static inline u64 pcm_format_to_bits(snd_pcm_format_t pcm_format)
 {
 	return 1ULL << (__force int) pcm_format;
 }
-
-/*
- * CAF additions (not in mainline): PCM Volume control API and PCM User
- * control API, matching the vol_kctl/usr_kctl members of struct
- * snd_pcm_str and the hw_no_buffer member of struct snd_pcm_substream
- * above.
- */
-
-/* array element of volume */
-struct snd_pcm_volume_elem {
-	int volume;
-};
-
-/* pp information; retrieved via snd_kcontrol_chip() */
-struct snd_pcm_volume {
-	struct snd_pcm *pcm;	/* assigned PCM instance */
-	int stream;		/* PLAYBACK or CAPTURE */
-	struct snd_kcontrol *kctl;
-	const struct snd_pcm_volume_elem *volume;
-	int max_length;
-	void *private_data;	/* optional: private data pointer */
-};
-
-int snd_pcm_add_volume_ctls(struct snd_pcm *pcm, int stream,
-			   const struct snd_pcm_volume_elem *volume,
-			   int max_length,
-			   unsigned long private_value,
-			   struct snd_pcm_volume **info_ret);
-
-/* array element of usr elem */
-struct snd_pcm_usr_elem {
-	int val[128];
-};
-
-/* pp information; retrieved via snd_kcontrol_chip() */
-struct snd_pcm_usr {
-	struct snd_pcm *pcm;	/* assigned PCM instance */
-	int stream;		/* PLAYBACK or CAPTURE */
-	struct snd_kcontrol *kctl;
-	const struct snd_pcm_usr_elem *usr;
-	int max_length;
-	void *private_data;	/* optional: private data pointer */
-};
-
-int snd_pcm_add_usr_ctls(struct snd_pcm *pcm, int stream,
-			 const struct snd_pcm_usr_elem *usr,
-			 int max_length, int max_control_str_len,
-			 unsigned long private_value,
-			 struct snd_pcm_usr **info_ret);
 
 /* printk helpers */
 #define pcm_err(pcm, fmt, args...) \

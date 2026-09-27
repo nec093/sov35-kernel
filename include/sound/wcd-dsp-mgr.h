@@ -1,14 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef __WCD_DSP_MGR_H__
@@ -93,9 +85,9 @@ enum wdsp_signal {
  *		   by the manager as per sequence
  */
 struct wdsp_cmpnt_ops {
-	int (*init)(struct device *, void *priv_data);
-	int (*deinit)(struct device *, void *priv_data);
-	int (*event_handler)(struct device *, void *priv_data,
+	int (*init)(struct device *dev, void *priv_data);
+	int (*deinit)(struct device *dev, void *priv_data);
+	int (*event_handler)(struct device *dev, void *priv_data,
 			     enum wdsp_event_type, void *data);
 };
 
@@ -145,6 +137,17 @@ struct wdsp_mgr_ops {
 	int (*resume)(struct device *wdsp_dev);
 };
 
+#ifdef CONFIG_WCD9XXX_CODEC_CORE
 int wcd_dsp_mgr_init(void);
 void wcd_dsp_mgr_exit(void);
+#else
+static inline int wcd_dsp_mgr_init(void)
+{
+	return 0;
+}
+
+static inline void wcd_dsp_mgr_exit(void)
+{
+}
+#endif
 #endif /* end of __WCD_DSP_MGR_H__ */
