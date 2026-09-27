@@ -95,10 +95,12 @@ int msm_vidc_querycap(void *instance, struct v4l2_capability *cap)
 		rc = msm_venc_querycap(instance, cap);
 	else
 		goto exit;
-	if (!rc) {
-		cap->device_caps = cap->capabilities;
-		cap->capabilities |= V4L2_CAP_DEVICE_CAPS;
-	}
+	/*
+	 * msm_vdec/venc_querycap already fill device_caps and capabilities
+	 * (device_caps | V4L2_CAP_DEVICE_CAPS); copying capabilities into
+	 * device_caps changed them from the video_device's, which v4l_querycap
+	 * warns about on every open since 5.4.
+	 */
 exit:
 	return rc;
 }
