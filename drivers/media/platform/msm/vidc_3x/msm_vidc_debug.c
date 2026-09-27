@@ -246,7 +246,7 @@ struct dentry *msm_vidc_debugfs_init_core(struct msm_vidc_core *core,
 
 	snprintf(debugfs_name, MAX_DEBUGFS_NAME, "core%d", core->id);
 	dir = debugfs_create_dir(debugfs_name, parent);
-	if (!dir) {
+	if (IS_ERR_OR_NULL(dir)) {
 		dprintk(VIDC_ERR, "Failed to create debugfs for msm_vidc\n");
 		goto failed_create_dir;
 	}
@@ -261,7 +261,7 @@ struct dentry *msm_vidc_debugfs_init_core(struct msm_vidc_core *core,
 		goto failed_create_dir;
 	}
 failed_create_dir:
-	return dir;
+	return IS_ERR(dir) ? NULL : dir;
 }
 
 static int inst_info_open(struct inode *inode, struct file *file)
@@ -440,6 +440,8 @@ static const struct file_operations inst_info_fops = {
 	.release = inst_info_release,
 };
 
+static atomic_t msm_vidc_debugfs_inst_id = ATOMIC_INIT(0);
+
 struct dentry *msm_vidc_debugfs_init_inst(struct msm_vidc_inst *inst,
 		struct dentry *parent)
 {
@@ -451,7 +453,8 @@ struct dentry *msm_vidc_debugfs_init_inst(struct msm_vidc_inst *inst,
 		dprintk(VIDC_ERR, "Invalid params, inst: %pK\n", inst);
 		goto exit;
 	}
-	snprintf(debugfs_name, MAX_DEBUGFS_NAME, "inst_%pK", inst);
+	snprintf(debugfs_name, MAX_DEBUGFS_NAME, "inst_%u",
+		 (unsigned int)atomic_inc_return(&msm_vidc_debugfs_inst_id));
 
 	idata = kzalloc(sizeof(struct core_inst_pair), GFP_KERNEL);
 	if (!idata) {
@@ -463,14 +466,14 @@ struct dentry *msm_vidc_debugfs_init_inst(struct msm_vidc_inst *inst,
 	idata->inst = inst;
 
 	dir = debugfs_create_dir(debugfs_name, parent);
-	if (!dir) {
+	if (IS_ERR_OR_NULL(dir)) {
 		dprintk(VIDC_ERR, "Failed to create debugfs for msm_vidc\n");
 		goto failed_create_dir;
 	}
 
 	info = debugfs_create_file("info", S_IRUGO, dir,
 			idata, &inst_info_fops);
-	if (!info) {
+	if (IS_ERR_OR_NULL(info)) {
 		dprintk(VIDC_ERR, "debugfs_create_file: fail\n");
 		goto failed_create_file;
 	}
