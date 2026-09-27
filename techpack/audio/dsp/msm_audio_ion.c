@@ -13,6 +13,7 @@
 #include <linux/list.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-buf.h>
+#include <asm/dma-iommu.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
 #include <linux/export.h>
@@ -188,6 +189,24 @@ static int msm_audio_dma_buf_map(struct dma_buf *dma_buf,
 		goto detach_dma_buf;
 	}
 
+	/*
+	 * This kernel's ION hands out its sg_table without mapping it for
+	 * the attached device (msm-4.9 ION did msm_dma_map_sg here), so the
+	 * "DMA address" was the physical one and the ADSP was given
+	 * addresses its SMMU context bank does not translate (ADec
+	 * exception on the first playback). Map it through the audio
+	 * context bank; the IOMMU DMA ops give one contiguous IOVA range.
+	 */
+	if (msm_audio_ion_data.smmu_enabled &&
+	    !dma_map_sg(cb_dev, alloc_data->table->sgl,
+			alloc_data->table->nents, DMA_BIDIRECTIONAL)) {
+		dev_err(cb_dev, "%s: dma_map_sg failed\n", __func__);
+		dma_buf_unmap_attachment(alloc_data->attach, alloc_data->table,
+					 DMA_BIDIRECTIONAL);
+		rc = -ENOMEM;
+		goto detach_dma_buf;
+	}
+
 	/* physical address from mapping */
 	*addr = MSM_AUDIO_ION_PHYS_ADDR(alloc_data);
 
@@ -231,6 +250,10 @@ static int msm_audio_dma_buf_unmap(struct dma_buf *dma_buf, bool cma_mem)
 
 		if (alloc_data->dma_buf == dma_buf) {
 			found = true;
+			if (msm_audio_ion_data.smmu_enabled)
+				dma_unmap_sg(cb_dev, alloc_data->table->sgl,
+					     alloc_data->table->nents,
+					     DMA_BIDIRECTIONAL);
 			dma_buf_unmap_attachment(alloc_data->attach,
 						 alloc_data->table,
 						 DMA_BIDIRECTIONAL);
@@ -840,8 +863,33 @@ u32 msm_audio_populate_upper_32_bits(dma_addr_t pa)
 }
 EXPORT_SYMBOL(msm_audio_populate_upper_32_bits);
 
+/*
+ * The IOMMU default domains of this kernel are identity (passthrough),
+ * so the audio context bank device gets no IOMMU DMA ops by itself and
+ * buffers went to the ADSP as physical (or swiotlb bounce) addresses.
+ * Give it its own mapping, in the 0x10000000 window the 4.9 driver used.
+ */
+#define MSM_AUDIO_ION_VA_START	0x10000000
+#define MSM_AUDIO_ION_VA_LEN	0x0FFFFFFF
+
 static int msm_audio_smmu_init(struct device *dev)
 {
+	struct dma_iommu_mapping *mapping;
+	int ret;
+
+	mapping = arm_iommu_create_mapping(&platform_bus_type,
+					   MSM_AUDIO_ION_VA_START,
+					   MSM_AUDIO_ION_VA_LEN);
+	if (IS_ERR_OR_NULL(mapping))
+		return mapping ? PTR_ERR(mapping) : -ENODEV;
+
+	ret = arm_iommu_attach_device(dev, mapping);
+	if (ret) {
+		dev_err(dev, "%s: attach failed, err = %d\n", __func__, ret);
+		arm_iommu_release_mapping(mapping);
+		return ret;
+	}
+
 	INIT_LIST_HEAD(&msm_audio_ion_data.alloc_list);
 	mutex_init(&(msm_audio_ion_data.list_mutex));
 
