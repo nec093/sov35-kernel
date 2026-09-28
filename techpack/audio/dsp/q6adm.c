@@ -5,6 +5,7 @@
  */
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/of.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include <linux/jiffies.h>
@@ -3377,6 +3378,11 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 }
 EXPORT_SYMBOL(adm_open);
 
+static bool q6adm_legacy_soc(void)
+{
+	return of_machine_is_compatible("qcom,msm8996");
+}
+
 /**
  * adm_open_v2 -
  *        command to send ADM open with ec_ref config
@@ -3485,6 +3491,23 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 		else
 			flags = ADM_LEGACY_DEVICE_SESSION;
 	}
+
+	/*
+	 * The msm8996 ADSP only implements the original single-mic ECNS
+	 * COPP topology: ADM_CMD_DEVICE_OPEN_V5 with VPM_TX_SM_ECNS_V2
+	 * fails with ADSP_EFAILED, while VPM_TX_SM_ECNS opens and records.
+	 * The ACDB asks for V2 for plain audio recording, so use V1.
+	 * These ECNS/fluence topologies run at 16 kHz there (the legacy
+	 * 4.9 driver always forced 16 kHz for them).
+	 */
+	if (q6adm_legacy_soc() && topology == VPM_TX_SM_ECNS_V2_COPP_TOPOLOGY)
+		topology = VPM_TX_SM_ECNS_COPP_TOPOLOGY;
+	if (q6adm_legacy_soc() &&
+	    ((topology == VPM_TX_SM_ECNS_V2_COPP_TOPOLOGY) ||
+	     (topology == VPM_TX_SM_ECNS_COPP_TOPOLOGY) ||
+	     (topology == VPM_TX_DM_FLUENCE_COPP_TOPOLOGY) ||
+	     (topology == VPM_TX_DM_RFECNS_COPP_TOPOLOGY)))
+		rate = 16000;
 
 	if ((topology == VPM_TX_SM_ECNS_V2_COPP_TOPOLOGY) ||
 	    (topology == VPM_TX_DM_FLUENCE_EF_COPP_TOPOLOGY) ||
