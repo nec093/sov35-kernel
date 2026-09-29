@@ -51,8 +51,12 @@
 #define CNTVCT_LO	0x08
 #define CNTVCT_HI	0x0c
 #define CNTFRQ		0x10
+#define CNTP_CVAL_LO	0x20
+#define CNTP_CVAL_HI	0x24
 #define CNTP_TVAL	0x28
 #define CNTP_CTL	0x2c
+#define CNTV_CVAL_LO	0x30
+#define CNTV_CVAL_HI	0x34
 #define CNTV_TVAL	0x38
 #define CNTV_CTL	0x3c
 
@@ -75,6 +79,7 @@ static struct clock_event_device __percpu *arch_timer_evt;
 static enum arch_timer_ppi_nr arch_timer_uses_ppi = ARCH_TIMER_VIRT_PPI;
 static bool arch_timer_c3stop;
 static bool arch_timer_mem_use_virtual;
+static void __iomem *arch_timer_mem_base;
 static bool arch_counter_suspend_stop;
 static enum vdso_arch_clockmode vdso_default = VDSO_CLOCKMODE_ARCHTIMER;
 
@@ -1171,6 +1176,7 @@ static int __init arch_timer_mem_register(void __iomem *base, unsigned int irq)
 	t->base = base;
 	t->evt.irq = irq;
 	__arch_timer_setup(ARCH_TIMER_TYPE_MEM, &t->evt);
+	arch_timer_mem_base = base;
 
 	if (arch_timer_mem_use_virtual)
 		func = arch_timer_handler_virt_mem;
@@ -1185,6 +1191,37 @@ static int __init arch_timer_mem_register(void __iomem *base, unsigned int irq)
 
 	return ret;
 }
+
+/*
+ * Compare value of the memory-mapped (broadcast) timer, i.e. the next
+ * wake-up once every CPU sits in a timer-stopping idle state; all ones
+ * when it is not armed. The Qualcomm MPM programs it as the wake-up time
+ * of a system-level power collapse (as in the CAF kernels).
+ */
+void arch_timer_mem_get_cval(u32 *lo, u32 *hi)
+{
+	u32 ctrl;
+
+	*lo = *hi = ~0U;
+
+	if (!arch_timer_mem_base)
+		return;
+
+	if (arch_timer_mem_use_virtual) {
+		ctrl = readl_relaxed(arch_timer_mem_base + CNTV_CTL);
+		if (ctrl & ARCH_TIMER_CTRL_ENABLE) {
+			*lo = readl_relaxed(arch_timer_mem_base + CNTV_CVAL_LO);
+			*hi = readl_relaxed(arch_timer_mem_base + CNTV_CVAL_HI);
+		}
+	} else {
+		ctrl = readl_relaxed(arch_timer_mem_base + CNTP_CTL);
+		if (ctrl & ARCH_TIMER_CTRL_ENABLE) {
+			*lo = readl_relaxed(arch_timer_mem_base + CNTP_CVAL_LO);
+			*hi = readl_relaxed(arch_timer_mem_base + CNTP_CVAL_HI);
+		}
+	}
+}
+EXPORT_SYMBOL(arch_timer_mem_get_cval);
 
 static const struct of_device_id arch_timer_of_match[] __initconst = {
 	{ .compatible   = "arm,armv7-timer",    },

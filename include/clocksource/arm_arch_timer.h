@@ -106,4 +106,6 @@ static inline bool arch_timer_evtstrm_available(void)
 
 #endif
 
+extern void arch_timer_mem_get_cval(u32 *lo, u32 *hi);
+
 #endif

@@ -511,16 +511,13 @@ static int system_pm_update_wakeup(bool from_idle)
 		wake_time = msm_pm_sleep_time_override * USEC_PER_SEC;
 		wakeup = us_to_ticks(wake_time);
 	} else {
-		/* Read the hardware to get the most accurate value.
-		 * arch_timer_mem_get_cval() (a memory-mapped-frame CVAL
-		 * read) doesn't exist in this tree; arch_timer_read_counter()
-		 * is the standard, already-exported counter accessor (picks
-		 * the system-register or mem-mapped backend automatically)
-		 * and serves the same "current 64-bit tick count" purpose. */
-		u64 cval = arch_timer_read_counter();
-
-		lo = (uint32_t)cval;
-		hi = (uint32_t)(cval >> 32);
+		/*
+		 * Read the hardware to get the most accurate value: the
+		 * broadcast timer's compare value is the next wake-up of the
+		 * whole system. (The current counter value that was used here
+		 * made the MPM wake the SoC up right away.)
+		 */
+		arch_timer_mem_get_cval(&lo, &hi);
 		wakeup = lo;
 		wakeup |= ((uint64_t)(hi) << 32);
 	}

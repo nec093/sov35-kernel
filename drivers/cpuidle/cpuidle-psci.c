@@ -15,12 +15,14 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/pm_qos.h>
 #include <linux/psci.h>
 #include <linux/slab.h>
 #include <linux/tick.h>
 #include <linux/topology.h>
 
 #include <asm/cpuidle.h>
+#include <soc/qcom/lpm_levels.h>
 
 #include "dt_idle_states.h"
 
@@ -53,6 +55,7 @@ static DEFINE_PER_CPU_READ_MOSTLY(u32 *, psci_power_state);
 struct psci_cluster {
 	raw_spinlock_t		lock;
 	struct cpumask		idle;	/* cores in a non-WFI state */
+	bool			collapsed; /* last core asked for the cluster state */
 };
 
 #define PSCI_MAX_CLUSTERS	8
@@ -68,6 +71,60 @@ static DEFINE_PER_CPU(ktime_t, psci_next_wake);
 /* allows turning the cluster states off at runtime for debugging */
 static bool cluster_idle = true;
 module_param(cluster_idle, bool, 0644);
+
+/*
+ * System-level power collapse (MSM8996 "system-fpc": CBF/L3 collapse with
+ * the RPM notified, so that it can shut XO down / reach VDD min). The CAF
+ * lpm-levels driver does this on this SoC; without it the APSS never sends
+ * its sleep set and never tells the RPM it sleeps (rpm_master_stats APSS
+ * shutdown_req stays 0). It is taken by the last core of the last cluster,
+ * instead of its cluster state, when every other cluster already collapsed,
+ * nobody expects an IPI, the whole system can sleep at least
+ * system_residency_us and the PM QoS latency allows it. The MPM driver
+ * provides the RPM/MPM hooks (register_system_pm_ops()).
+ *
+ * StateID: the cluster state with affinity level 2 and 0x34 in bits [15:8],
+ * as the CAF msm8996-pm.dtsi "system-fpc" level (psci-mode 0x34, shift 8).
+ *
+ * Off until proven stable: /sys/module/cpuidle_psci/parameters/system_idle.
+ */
+#define PSCI_SYSTEM_MODE		0x34
+/* L2 mode in StateID[7:4]; the system state needs both L2s collapsed (4) */
+#define PSCI_STATEID_L2_PC(s)	(PSCI_STATEID_AFF_LEVEL(s) && \
+				 (((s) >> 4) & 0xf) == 4)
+#define PSCI_SYSTEM_PARAM(p)	(((p) & ~((0x3 << 24) | (0xff << 8))) | \
+				 (2 << 24) | (PSCI_SYSTEM_MODE << 8))
+
+static bool system_idle;
+module_param(system_idle, bool, 0644);
+static unsigned int system_residency_us = 20000;
+module_param(system_residency_us, uint, 0644);
+static unsigned int system_latency_us = 11000;
+module_param(system_latency_us, uint, 0644);
+/* statistics */
+static unsigned int system_entered;
+module_param(system_entered, uint, 0444);
+static unsigned int system_failed;	/* firmware refused / woke before */
+module_param(system_failed, uint, 0444);
+static unsigned int system_rpm_busy;	/* RPM hooks refused */
+module_param(system_rpm_busy, uint, 0444);
+/* why requests failed: -EPERM = DENIED by the OSI firmware */
+static int system_last_err;
+module_param(system_last_err, int, 0444);
+static unsigned int system_err_eperm, system_err_other, system_pm_err;
+module_param(system_err_eperm, uint, 0444);
+module_param(system_err_other, uint, 0444);
+module_param(system_pm_err, uint, 0444);
+static unsigned int cluster_err_eperm;
+module_param(cluster_err_eperm, uint, 0444);
+
+static struct system_pm_ops *psci_sys_pm_ops;
+
+uint32_t register_system_pm_ops(struct system_pm_ops *pm_ops)
+{
+	psci_sys_pm_ops = pm_ops;
+	return 0;
+}
 
 /* deepest core-only state below @idx, 0 if there is none */
 static int psci_core_state(const u32 *state, int idx)
@@ -97,6 +154,51 @@ static bool psci_cluster_can_collapse(struct psci_cluster *cl, int cpu,
 	return ktime_us_delta(earliest, now) >= residency_us;
 }
 
+/*
+ * Called with the caller's cluster lock held, after it decided to collapse
+ * its own cluster. Returns the CPU expected to wake up first (the RPM/MPM
+ * wake-up interrupt is routed there), or -1 if the system state can't be
+ * used now.
+ */
+static int psci_system_can_collapse(struct psci_cluster *own, int cpu,
+				    ktime_t now)
+{
+	ktime_t earliest = KTIME_MAX;
+	int c, first = cpu;
+
+	if (!READ_ONCE(system_idle) || !psci_sys_pm_ops ||
+	    !psci_sys_pm_ops->enter || !psci_sys_pm_ops->sleep_allowed)
+		return -1;
+
+	if ((s64)cpuidle_governor_latency_req(cpu) <
+	    (s64)system_latency_us * NSEC_PER_USEC)
+		return -1;
+
+	for_each_online_cpu(c) {
+		struct psci_cluster *cl = per_cpu(psci_cpu_cluster, c);
+		ktime_t next = per_cpu(psci_next_wake, c);
+
+		if (!cl)
+			return -1;
+		if (cl != own && !READ_ONCE(cl->collapsed))
+			return -1;
+		if (c != cpu && per_cpu(pending_ipi, c))
+			return -1;
+		if (next < earliest) {
+			earliest = next;
+			first = c;
+		}
+	}
+
+	if (ktime_us_delta(earliest, now) < system_residency_us)
+		return -1;
+
+	if (!psci_sys_pm_ops->sleep_allowed())
+		return -1;
+
+	return first;
+}
+
 static int psci_enter_idle_state(struct cpuidle_device *dev,
 				struct cpuidle_driver *drv, int idx)
 {
@@ -104,7 +206,7 @@ static int psci_enter_idle_state(struct cpuidle_device *dev,
 	struct psci_cluster *cl = __this_cpu_read(psci_cpu_cluster);
 	ktime_t now;
 	u32 param;
-	int ret;
+	int ret, wake_cpu = -1;
 
 	if (!idx || !cl)
 		return CPU_PM_CPU_IDLE_ENTER_PARAM(psci_cpu_suspend_enter,
@@ -129,16 +231,58 @@ static int psci_enter_idle_state(struct cpuidle_device *dev,
 		idx = psci_core_state(state, idx);
 		param = state[idx - 1];
 	}
+	/*
+	 * With a cluster only in GDHS (L2 retention) the firmware denied
+	 * every system request (4 of 5 failed), so only an L2 power
+	 * collapse counts.
+	 */
+	if (PSCI_STATEID_L2_PC(param)) {
+		cl->collapsed = true;
+		wake_cpu = psci_system_can_collapse(cl, dev->cpu, now);
+	}
 	raw_spin_unlock(&cl->lock);
+
+	if (wake_cpu >= 0) {
+		/* sends the sleep set and arms the MPM (IPC irq to wake_cpu) */
+		if (psci_sys_pm_ops->enter((struct cpumask *)cpumask_of(wake_cpu))) {
+			system_rpm_busy++;
+			wake_cpu = -1;
+		} else {
+			/* the broadcast timer holds the system's next wake-up */
+			if (psci_sys_pm_ops->update_wakeup)
+				psci_sys_pm_ops->update_wakeup(true);
+			param = PSCI_SYSTEM_PARAM(param);
+		}
+	}
 
 	ret = cpu_pm_enter();
 	if (!ret) {
 		ret = psci_cpu_suspend_enter(param);
 		cpu_pm_exit();
+	} else if (wake_cpu >= 0) {
+		system_pm_err++;
+	}
+
+	if (wake_cpu >= 0) {
+		if (psci_sys_pm_ops->exit)
+			psci_sys_pm_ops->exit(!ret);
+		if (ret) {
+			system_failed++;
+			system_last_err = ret;
+			if (ret == -EPERM)
+				system_err_eperm++;
+			else
+				system_err_other++;
+		} else {
+			system_entered++;
+		}
+	} else if (ret == -EPERM && PSCI_STATEID_AFF_LEVEL(param)) {
+		cluster_err_eperm++;
 	}
 
 	raw_spin_lock(&cl->lock);
 	cpumask_clear_cpu(dev->cpu, &cl->idle);
+	cl->collapsed = false;
 	raw_spin_unlock(&cl->lock);
 
 	return ret ? -1 : idx;
