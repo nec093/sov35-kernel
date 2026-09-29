@@ -855,3 +855,4 @@ CONFIG_QMI_ENCDEC=y
 # is not used on msm8996 (and clashes with the techpack's soundwire).
 # CONFIG_SOUNDWIRE is not set
 CONFIG_AUDIO_QGKI=y
+CONFIG_QTI_RPM_STATS_LOG=y
