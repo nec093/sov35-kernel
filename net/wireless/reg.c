@@ -1059,26 +1059,53 @@ static void regdb_fw_cb(const struct firmware *fw, void *context)
 	release_firmware(fw);
 }
 
+/*
+ * With FW_LOADER_USER_HELPER_FALLBACK (needed for the vendor firmware),
+ * request_firmware_nowait() hands a missing regulatory.db to ueventd, which
+ * keeps retrying until /dev/.booting goes away (~17 s into boot on keyaki).
+ * Android has nowhere else to get the file from, so load it directly (no
+ * sysfs fallback) from a work item: a missing file now fails at once.
+ */
+struct regdb_direct_work {
+	struct work_struct work;
+	const char *alpha2;
+};
+
+static void regdb_direct_work_fn(struct work_struct *work)
+{
+	struct regdb_direct_work *w =
+		container_of(work, struct regdb_direct_work, work);
+	const struct firmware *fw;
+
+	if (request_firmware_direct(&fw, "regulatory.db", &reg_pdev->dev))
+		fw = NULL;
+	regdb_fw_cb(fw, (void *)w->alpha2);
+	kfree(w);
+}
+
 static int query_regdb_file(const char *alpha2)
 {
-	int err;
+	struct regdb_direct_work *w;
 
 	ASSERT_RTNL();
 
 	if (regdb)
 		return query_regdb(alpha2);
 
-	alpha2 = kmemdup(alpha2, 2, GFP_KERNEL);
-	if (!alpha2)
+	w = kzalloc(sizeof(*w), GFP_KERNEL);
+	if (!w)
 		return -ENOMEM;
 
-	err = request_firmware_nowait(THIS_MODULE, true, "regulatory.db",
-				      &reg_pdev->dev, GFP_KERNEL,
-				      (void *)alpha2, regdb_fw_cb);
-	if (err)
-		kfree(alpha2);
+	w->alpha2 = kmemdup(alpha2, 2, GFP_KERNEL);
+	if (!w->alpha2) {
+		kfree(w);
+		return -ENOMEM;
+	}
 
-	return err;
+	INIT_WORK(&w->work, regdb_direct_work_fn);
+	schedule_work(&w->work);
+
+	return 0;
 }
 
 int reg_reload_regdb(void)

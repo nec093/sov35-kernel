@@ -140,7 +140,12 @@ static int brcmf_c_process_clm_blob(struct brcmf_if *ifp)
 		return err;
 	}
 
-	err = firmware_request_nowarn(&clm, clm_name, bus->dev);
+	/*
+	 * No sysfs fallback: the clm_blob is optional and not shipped on keyaki,
+	 * and ueventd retries a missing file until /dev/.booting goes away,
+	 * which held up the Wi-Fi bring-up for ~12 s.
+	 */
+	err = request_firmware_direct(&clm, clm_name, bus->dev);
 	if (err) {
 		brcmf_info("no clm_blob available (err=%d), device may have limited channels available\n",
 			   err);
