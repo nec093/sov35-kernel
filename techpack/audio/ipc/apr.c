@@ -68,6 +68,8 @@ struct apr_private {
 
 static struct apr_private *apr_priv;
 static bool apr_cf_debug;
+static bool xzs_apr_dump;
+module_param(xzs_apr_dump, bool, 0644);
 static struct work_struct apr_cb_work;
 static void state_notify_cb(struct work_struct *work);
 
@@ -413,6 +415,13 @@ int apr_send_pkt(void *handle, uint32_t *buf)
 	hdr->dest_domain = svc->dest_domain;
 	hdr->dest_svc = svc->id;
 
+	if (unlikely(xzs_apr_dump)) {
+		pr_info("xzs_apr tx: svc 0x%x op 0x%08x tok 0x%x port 0x%x size %u\n",
+			hdr->dest_svc, hdr->opcode, hdr->token, hdr->dest_port,
+			hdr->pkt_size);
+		print_hex_dump(KERN_INFO, "xzs_apr tx ", DUMP_PREFIX_OFFSET,
+			16, 4, buf, min_t(u32, hdr->pkt_size, 384), false);
+	}
 	if (unlikely(apr_cf_debug)) {
 		APR_PKT_INFO(
 		"Tx: src_addr[0x%X] dest_addr[0x%X] opcode[0x%X] token[0x%X]",
@@ -750,6 +759,11 @@ void apr_cb_func(void *buf, int len, void *priv)
 	if (data.payload_size > 0)
 		data.payload = (char *)hdr + hdr_size;
 
+	if (unlikely(xzs_apr_dump))
+		pr_info("xzs_apr rx: svc 0x%x op 0x%08x tok 0x%x port 0x%x p0 0x%x p1 0x%x\n",
+			hdr->src_svc, hdr->opcode, hdr->token, hdr->src_port,
+			data.payload_size >= 4 ? ((u32 *)data.payload)[0] : 0,
+			data.payload_size >= 8 ? ((u32 *)data.payload)[1] : 0);
 	if (unlikely(apr_cf_debug)) {
 		if (hdr->opcode == APR_BASIC_RSP_RESULT && data.payload) {
 			uint32_t *ptr = data.payload;

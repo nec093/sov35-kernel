@@ -21,6 +21,29 @@
 #include <dsp/msm-audio-event-notify.h>
 #include "swrm_registers.h"
 #include "swr-wcd-ctrl.h"
+#include <linux/moduleparam.h>
+
+/* XZS_SWR_DBG (temporary) */
+static bool xzs_swr_dump;
+module_param(xzs_swr_dump, bool, 0644);
+
+static int xzs_swrm_wr(struct swr_mstr_ctrl *swrm, int reg, int val)
+{
+	if (unlikely(xzs_swr_dump))
+		pr_info("xzs_swr w %04x %08x\n", reg, (u32)val);
+	return swrm->write(swrm->handle, reg, val);
+}
+
+static int xzs_swrm_bulk(struct swr_mstr_ctrl *swrm, u32 *reg, u32 *val,
+			 size_t len)
+{
+	size_t i;
+
+	if (unlikely(xzs_swr_dump))
+		for (i = 0; i < len; i++)
+			pr_info("xzs_swr w %04x %08x\n", reg[i], val[i]);
+	return swrm->bulk_write(swrm->handle, reg, val, len);
+}
 
 #define SWR_BROADCAST_CMD_ID            0x0F
 #define SWR_AUTO_SUSPEND_DELAY          3 /* delay in sec */
@@ -424,6 +447,15 @@ static int swrm_get_port_config(struct swr_master *master)
 			portcount++;
 		}
 	}
+	/* XZS_SWR_DBG (temporary) */
+	for (i = 0; i < SWR_MSTR_PORT_LEN; i++)
+		if (master->port[i].port_en)
+			dev_info(&master->dev, "xzs_swr: slot %d slv %d num_ch %d rate %d ch_en 0x%x\n",
+				 i, master->port[i].slave_port_id,
+				 master->port[i].num_ch, master->port[i].ch_rate,
+				 master->port[i].ch_en);
+	dev_info(&master->dev, "xzs_swr: portcount %d num_ch %d ch_rate %d\n",
+		 portcount, num_ch, ch_rate);
 	for (i = 0; i < ARRAY_SIZE(uc); i++) {
 		if ((uc[i].num_port == portcount) &&
 		    (uc[i].num_ch == num_ch) &&
@@ -488,7 +520,7 @@ static int swrm_cmd_fifo_rd_cmd(struct swr_mstr_ctrl *swrm, int *cmd_data,
 	int ret = 0;
 
 	val = swrm_get_packed_reg_val(&swrm->rcmd_id, len, dev_addr, reg_addr);
-	ret = swrm->write(swrm->handle, SWRM_CMD_FIFO_RD_CMD, val);
+	ret = xzs_swrm_wr(swrm, SWRM_CMD_FIFO_RD_CMD, val);
 	if (ret < 0) {
 		dev_err(swrm->dev, "%s: reg 0x%x write failed, err:%d\n",
 			__func__, val, ret);
@@ -518,7 +550,7 @@ static int swrm_cmd_fifo_wr_cmd(struct swr_mstr_ctrl *swrm, u8 cmd_data,
 	dev_dbg(swrm->dev,
 		"%s: reg: 0x%x, cmd_id: 0x%x, dev_id: 0x%x, cmd_data: 0x%x\n",
 		__func__, reg_addr, cmd_id, dev_addr, cmd_data);
-	ret = swrm->write(swrm->handle, SWRM_CMD_FIFO_WR_CMD, val);
+	ret = xzs_swrm_wr(swrm, SWRM_CMD_FIFO_WR_CMD, val);
 	if (ret < 0) {
 		dev_err(swrm->dev, "%s: reg 0x%x write failed, err:%d\n",
 			__func__, val, ret);
@@ -581,7 +613,7 @@ static int swrm_write(struct swr_master *master, u8 dev_num, u16 reg_addr,
 	if (dev_num)
 		ret = swrm_cmd_fifo_wr_cmd(swrm, reg_val, dev_num, 0, reg_addr);
 	else
-		ret = swrm->write(swrm->handle, reg_addr, reg_val);
+		ret = xzs_swrm_wr(swrm, reg_addr, reg_val);
 
 	pm_runtime_mark_last_busy(&swrm->pdev->dev);
 
@@ -623,7 +655,7 @@ static int swrm_bulk_write(struct swr_master *master, u8 dev_num, void *reg,
 							 ((u16 *)reg)[i]);
 			swr_fifo_reg[i] = SWRM_CMD_FIFO_WR_CMD;
 		}
-		ret = swrm->bulk_write(swrm->handle, swr_fifo_reg, val, len);
+		ret = xzs_swrm_bulk(swrm, swr_fifo_reg, val, len);
 		if (ret) {
 			dev_err(&master->dev, "%s: bulk write failed\n",
 				__func__);
@@ -653,10 +685,6 @@ static u8 get_inactive_bank_num(struct swr_mstr_ctrl *swrm)
 static void enable_bank_switch(struct swr_mstr_ctrl *swrm, u8 bank,
 				u8 row, u8 col)
 {
-	/* apply div2 setting for inactive bank before bank switch */
-	swrm_cmd_fifo_wr_cmd(swrm, 0x01, 0xF, 0x00,
-			SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(bank));
-
 	swrm_cmd_fifo_wr_cmd(swrm, ((row << 3) | col), 0xF, 0xF,
 			SWRS_SCP_FRAME_CTRL_BANK(bank));
 }
@@ -780,7 +808,7 @@ static void swrm_cleanup_disabled_data_ports(struct swr_master *master,
 				<< SWRM_DP_PORT_CTRL_OFFSET1_SHFT);
 		value |= port->sinterval;
 
-		swrm->write(swrm->handle,
+		xzs_swrm_wr(swrm,
 			    SWRM_DP_PORT_CTRL_BANK((mport->id+1), bank),
 			    value);
 		swrm_cmd_fifo_wr_cmd(swrm, 0x00, port->dev_num, 0x00,
@@ -858,7 +886,7 @@ static int swrm_slvdev_datapath_control(struct swr_master *master,
 	value |= ((0 << SWRM_MCP_FRAME_CTRL_BANK_ROW_CTRL_SHFT) |
 		  (n_col << SWRM_MCP_FRAME_CTRL_BANK_COL_CTRL_SHFT) |
 		  (0 << SWRM_MCP_FRAME_CTRL_BANK_SSP_PERIOD_SHFT));
-	swrm->write(swrm->handle, SWRM_MCP_FRAME_CTRL_BANK_ADDR(bank), value);
+	xzs_swrm_wr(swrm, SWRM_MCP_FRAME_CTRL_BANK_ADDR(bank), value);
 
 	dev_dbg(swrm->dev, "%s: regaddr: 0x%x, value: 0x%x\n", __func__,
 		SWRM_MCP_FRAME_CTRL_BANK_ADDR(bank), value);
@@ -894,6 +922,13 @@ static void swrm_apply_port_config(struct swr_master *master)
 	bank = get_inactive_bank_num(swrm);
 	dev_dbg(swrm->dev, "%s: enter bank: %d master_ports: %d\n",
 		__func__, bank, master->num_port);
+
+	/*
+	 * msm8996 (tasha): program HOST_CLK_DIV2 only together with the port
+	 * config, as the msm-4.9 driver does, instead of on every bank switch.
+	 */
+	swrm_cmd_fifo_wr_cmd(swrm, 0x01, 0xF, 0x00,
+			SWRS_SCP_HOST_CLK_DIV2_CTL_BANK(bank));
 
 	swrm_copy_data_port_config(master, bank);
 }
@@ -978,7 +1013,7 @@ static void swrm_copy_data_port_config(struct swr_master *master, u8 bank)
 			break;
 		}
 	}
-	swrm->bulk_write(swrm->handle, reg, val, len);
+	xzs_swrm_bulk(swrm, reg, val, len);
 }
 
 static int swrm_connect_port(struct swr_master *master,
@@ -1033,7 +1068,7 @@ static int swrm_connect_port(struct swr_master *master,
 		port->ch_rate = portinfo->ch_rate[i];
 		port->ch_en = portinfo->ch_en[i];
 		port->port_en = true;
-		dev_dbg(&master->dev,
+		dev_info(&master->dev,
 			"%s: mstr port %d, slv port %d ch_rate %d num_ch %d\n",
 			__func__, mport->id, port->slave_port_id, port->ch_rate,
 			port->num_ch);
@@ -1128,7 +1163,7 @@ static int swrm_disconnect_port(struct swr_master *master,
 		value |= port->sinterval;
 
 
-		swrm->write(swrm->handle,
+		xzs_swrm_wr(swrm,
 			    SWRM_DP_PORT_CTRL_BANK((mport_id+1), bank),
 			    value);
 		swrm_cmd_fifo_wr_cmd(swrm, 0x00, port->dev_num, 0x00,
@@ -1187,7 +1222,7 @@ static irqreturn_t swr_mstr_interrupt(int irq, void *dev)
 		if (!value)
 			continue;
 
-		swrm->write(swrm->handle, SWRM_INTERRUPT_CLEAR, value);
+		xzs_swrm_wr(swrm, SWRM_INTERRUPT_CLEAR, value);
 		switch (value) {
 		case SWRM_INTERRUPT_STATUS_SLAVE_PEND_IRQ:
 			dev_dbg(swrm->dev, "SWR slave pend irq\n");
@@ -1238,7 +1273,7 @@ static irqreturn_t swr_mstr_interrupt(int irq, void *dev)
 			dev_err_ratelimited(swrm->dev,
 			"SWR CMD error, fifo status 0x%x, flushing fifo\n",
 					    value);
-			swrm->write(swrm->handle, SWRM_CMD_FIFO_CMD, 0x1);
+			xzs_swrm_wr(swrm, SWRM_CMD_FIFO_CMD, 0x1);
 			break;
 		case SWRM_INTERRUPT_STATUS_DOUT_PORT_COLLISION:
 			dev_dbg(swrm->dev, "SWR Port collision detected\n");
@@ -1388,7 +1423,7 @@ static int swrm_master_init(struct swr_mstr_ctrl *swrm)
 	reg[len] = SWRM_INTERRUPT_CLEAR;
 	value[len++] = 0x08;
 
-	swrm->bulk_write(swrm->handle, reg, value, len);
+	xzs_swrm_bulk(swrm, reg, value, len);
 
 	return ret;
 }
@@ -1626,10 +1661,10 @@ static int swrm_clk_pause(struct swr_mstr_ctrl *swrm)
 	u32 val;
 
 	dev_dbg(swrm->dev, "%s: state: %d\n", __func__, swrm->state);
-	swrm->write(swrm->handle, SWRM_INTERRUPT_MASK_ADDR, 0x1FDFD);
+	xzs_swrm_wr(swrm, SWRM_INTERRUPT_MASK_ADDR, 0x1FDFD);
 	val = swrm->read(swrm->handle, SWRM_MCP_CFG_ADDR);
 	val |= SWRM_MCP_CFG_BUS_CLK_PAUSE_BMSK;
-	swrm->write(swrm->handle, SWRM_MCP_CFG_ADDR, val);
+	xzs_swrm_wr(swrm, SWRM_MCP_CFG_ADDR, val);
 	swrm->state = SWR_MSTR_PAUSE;
 
 	return 0;
@@ -1663,8 +1698,8 @@ static int swrm_runtime_resume(struct device *dev)
 				goto exit;
 			}
 		}
-		swrm->write(swrm->handle, SWRM_COMP_SW_RESET, 0x01);
-		swrm->write(swrm->handle, SWRM_COMP_SW_RESET, 0x01);
+		xzs_swrm_wr(swrm, SWRM_COMP_SW_RESET, 0x01);
+		xzs_swrm_wr(swrm, SWRM_COMP_SW_RESET, 0x01);
 		swrm_master_init(swrm);
 	}
 exit:
@@ -1699,7 +1734,7 @@ static int swrm_runtime_suspend(struct device *dev)
 			goto exit;
 		}
 		swrm_clk_pause(swrm);
-		swrm->write(swrm->handle, SWRM_COMP_CFG_ADDR, 0x00);
+		xzs_swrm_wr(swrm, SWRM_COMP_CFG_ADDR, 0x00);
 		list_for_each_entry(swr_dev, &mstr->devices, dev_list) {
 			ret = swr_device_down(swr_dev);
 			if (ret) {

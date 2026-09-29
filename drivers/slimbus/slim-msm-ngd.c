@@ -412,6 +412,9 @@ static int ngd_check_hw_status(struct msm_slim_ctrl *dev)
 	return ret;
 }
 
+static bool xzs_ngd_dump;
+module_param(xzs_ngd_dump, bool, 0644);
+
 static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
@@ -689,6 +692,12 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	 */
 	txn_mc = txn->mc;
 	txn_mt = txn->mt;
+	if (unlikely(xzs_ngd_dump)) {
+		pr_info("xzs_ngd tx: mt %u mc 0x%x rl %u la 0x%x\n",
+			txn_mt, txn_mc, txn->rl, txn->la);
+		print_hex_dump(KERN_INFO, "xzs_ngd tx ", DUMP_PREFIX_NONE,
+			16, 4, pbuf, min_t(u32, txn->rl, 40), false);
+	}
 	ret = msm_send_msg_buf(dev, pbuf, txn->rl,
 			NGD_BASE(dev->ctrl.nr, dev->ver) + NGD_TX_MSG);
 	if (!ret && sync_wr) {

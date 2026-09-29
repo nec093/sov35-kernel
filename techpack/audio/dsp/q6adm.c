@@ -3378,6 +3378,12 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 }
 EXPORT_SYMBOL(adm_open);
 
+/* XZS_ADM_DBG (temporary): replace a COPP topology at open time */
+static int xzs_topo_from;
+module_param(xzs_topo_from, int, 0644);
+static int xzs_topo_to;
+module_param(xzs_topo_to, int, 0644);
+
 static bool q6adm_legacy_soc(void)
 {
 	return of_machine_is_compatible("qcom,msm8996");
@@ -3491,6 +3497,14 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 		else
 			flags = ADM_LEGACY_DEVICE_SESSION;
 	}
+
+	if (xzs_topo_from && topology == xzs_topo_from) {
+		pr_info("xzs_adm: override topology 0x%x -> 0x%x (path %d)\n",
+			topology, xzs_topo_to, path);
+		topology = xzs_topo_to;
+	}
+	pr_info("xzs_adm: open port 0x%x path %d topology 0x%x rate %d ch %d\n",
+		port_id, path, topology, rate, channel_mode);
 
 	/*
 	 * The msm8996 ADSP only implements the original single-mic ECNS

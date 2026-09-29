@@ -16,6 +16,7 @@
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/clk.h>
+#include <linux/clk-provider.h>
 #include <linux/delay.h>
 #include <linux/pm_runtime.h>
 #include <linux/kernel.h>
@@ -167,6 +168,8 @@ enum tasha_sido_voltage {
 };
 
 static enum codec_variant codec_ver;
+
+static struct snd_soc_component *xzs_cdc_comp;	/* XZS_CDC_REG_DBG */
 
 static int dig_core_collapse_enable = 1;
 module_param(dig_core_collapse_enable, int, 0664);
@@ -13981,6 +13984,7 @@ static int tasha_codec_probe(struct snd_soc_component *component)
 	tasha->hph_mode = CLS_H_HIFI;
 
 	tasha->component = component;
+	xzs_cdc_comp = component;
 	for (i = 0; i < COMPANDER_MAX; i++)
 		tasha->comp_enabled[i] = 0;
 
@@ -14655,6 +14659,82 @@ ret:
 }
 EXPORT_SYMBOL(tasha_get_codec_ver);
 
+/* XZS_CDC_REG_DBG (temporary): write "reg val [mask]" or read "reg" */
+static unsigned int xzs_cdc_last;
+
+static int xzs_cdc_reg_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int reg, v, mask = 0xff, rb = 0xff;
+	int n;
+
+	if (!xzs_cdc_comp)
+		return -ENODEV;
+	n = sscanf(val, "%x %x %x", &reg, &v, &mask);
+	if (n < 1)
+		return -EINVAL;
+	if (n >= 2)
+		snd_soc_component_update_bits(xzs_cdc_comp, reg, mask, v);
+	regcache_cache_bypass(xzs_cdc_comp->regmap, true);
+	regmap_read(xzs_cdc_comp->regmap, reg, &rb);
+	regcache_cache_bypass(xzs_cdc_comp->regmap, false);
+	xzs_cdc_last = (reg << 8) | (rb & 0xff);
+	pr_info("xzs_cdc_reg: %04x %s hw %02x\n", reg, n >= 2 ? "written," : "", rb);
+	return 0;
+}
+
+static int xzs_cdc_reg_get(char *buf, const struct kernel_param *kp)
+{
+	return sprintf(buf, "%04x %02x\n", xzs_cdc_last >> 8, xzs_cdc_last & 0xff);
+}
+
+static const struct kernel_param_ops xzs_cdc_reg_ops = {
+	.set = xzs_cdc_reg_set,
+	.get = xzs_cdc_reg_get,
+};
+module_param_cb(xzs_cdc_reg, &xzs_cdc_reg_ops, NULL, 0644);
+
+/* XZS_MCLK_DBG (temporary): drop/restore the codec MCLK while audio runs */
+static struct clk *xzs_ext_clk;
+static int xzs_mclk_dropped;
+
+static int xzs_mclk_set(const char *val, const struct kernel_param *kp)
+{
+	struct clk *p;
+	int on, ret;
+
+	ret = kstrtoint(val, 0, &on);
+	if (ret || !xzs_ext_clk)
+		return -EINVAL;
+	if (!on) {
+		while (__clk_is_enabled(xzs_ext_clk) && xzs_mclk_dropped < 16) {
+			clk_disable_unprepare(xzs_ext_clk);
+			xzs_mclk_dropped++;
+		}
+	} else {
+		while (xzs_mclk_dropped > 0) {
+			if (clk_prepare_enable(xzs_ext_clk))
+				break;
+			xzs_mclk_dropped--;
+		}
+	}
+	p = clk_get_parent(xzs_ext_clk);
+	pr_info("xzs_mclk: on=%d dropped=%d ext=%d parent %s=%d\n", on,
+		xzs_mclk_dropped, __clk_is_enabled(xzs_ext_clk),
+		p ? __clk_get_name(p) : "-", p ? __clk_is_enabled(p) : -1);
+	return 0;
+}
+
+static int xzs_mclk_get(char *buf, const struct kernel_param *kp)
+{
+	return sprintf(buf, "%d\n", xzs_mclk_dropped);
+}
+
+static const struct kernel_param_ops xzs_mclk_ops = {
+	.set = xzs_mclk_set,
+	.get = xzs_mclk_get,
+};
+module_param_cb(xzs_mclk, &xzs_mclk_ops, NULL, 0644);
+
 static int tasha_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -14732,6 +14812,7 @@ static int tasha_probe(struct platform_device *pdev)
 		goto err_clk;
 	}
 	tasha->wcd_ext_clk = wcd_ext_clk;
+	xzs_ext_clk = wcd_ext_clk;
 	tasha->sido_voltage = SIDO_VOLTAGE_NOMINAL_MV;
 	set_bit(AUDIO_NOMINAL, &tasha->status_mask);
 	tasha->sido_ccl_cnt = 0;

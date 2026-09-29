@@ -3,6 +3,7 @@
  * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/debugfs.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
@@ -3303,6 +3304,10 @@ done:
 	return ret;
 }
 
+/* XZS_AFE_DBG (temporary): 1 = skip the AFE topology on RX ports, 2 = all */
+static int xzs_afe_skip_topo;
+module_param(xzs_afe_skip_topo, int, 0644);
+
 static int afe_send_port_topology_id(u16 port_id)
 {
 	struct afe_param_id_set_topology_cfg topology;
@@ -3329,6 +3334,12 @@ static int afe_send_port_topology_id(u16 port_id)
 	if (ret || !topology_id) {
 		pr_debug("%s: AFE port[%d] get_cal_topology[%d] invalid!\n",
 				__func__, port_id, topology_id);
+		goto done;
+	}
+	if (xzs_afe_skip_topo == 2 ||
+	    (xzs_afe_skip_topo == 1 && !(port_id & 0x1))) {
+		pr_info("xzs_afe: skip topology 0x%x on port 0x%x\n",
+			topology_id, port_id);
 		goto done;
 	}
 

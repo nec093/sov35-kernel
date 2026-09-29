@@ -115,6 +115,7 @@ struct wsa881x_priv {
 	int state;
 	struct delayed_work ocp_ctl_work;
 	struct device_node *wsa_rst_np;
+	bool pd_gpio_shared;
 	int pa_mute;
 	struct device_node *bolero_np;
 	struct platform_device* bolero_dev;
@@ -1334,6 +1335,34 @@ static int32_t wsa881x_temp_reg_read(struct snd_soc_component *component,
 	return 0;
 }
 
+/* XZS_WSA_REG_DBG (temporary): "reg val [mask]" -> all WSA881x components */
+static struct snd_soc_component *xzs_wsa_comp[4];
+
+static int xzs_wsa_reg_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int reg, v, mask = 0xff, rb;
+	int i, n;
+
+	n = sscanf(val, "%x %x %x", &reg, &v, &mask);
+	if (n < 2)
+		return -EINVAL;
+	for (i = 0; i < ARRAY_SIZE(xzs_wsa_comp); i++) {
+		if (!xzs_wsa_comp[i])
+			continue;
+		snd_soc_component_update_bits(xzs_wsa_comp[i], reg, mask, v);
+		rb = 0xff;
+		regmap_read(xzs_wsa_comp[i]->regmap, reg, &rb);
+		pr_info("xzs_wsa_reg: %s %04x <- %02x/%02x rb %02x\n",
+			xzs_wsa_comp[i]->name, reg, v, mask, rb);
+	}
+	return 0;
+}
+
+static const struct kernel_param_ops xzs_wsa_reg_ops = {
+	.set = xzs_wsa_reg_set,
+};
+module_param_cb(xzs_wsa_reg, &xzs_wsa_reg_ops, NULL, 0200);
+
 static int wsa881x_probe(struct snd_soc_component *component)
 {
 	struct wsa881x_priv *wsa881x = snd_soc_component_get_drvdata(component);
@@ -1345,6 +1374,15 @@ static int wsa881x_probe(struct snd_soc_component *component)
 
 	dev = wsa881x->swr_slave;
 	wsa881x->component = component;
+	{
+		int i;
+
+		for (i = 0; i < ARRAY_SIZE(xzs_wsa_comp); i++)
+			if (!xzs_wsa_comp[i]) {
+				xzs_wsa_comp[i] = component;
+				break;
+			}
+	}
 	mutex_init(&wsa881x->bg_lock);
 	wsa881x_init(component);
 	snprintf(wsa881x->tz_pdata.name, sizeof(wsa881x->tz_pdata.name),
@@ -1420,6 +1458,12 @@ static int wsa881x_gpio_ctrl(struct wsa881x_priv *wsa881x, bool enable)
 				"%s: Failed to turn state %d; ret=%d\n",
 				__func__, enable, ret);
 	} else {
+		/* XZS_WSA_DBG (temporary) */
+		pr_info("xzs_wsa: %s sd_n gpio %d -> %d shared %d\n",
+			dev_name(&wsa881x->swr_slave->dev), wsa881x->pd_gpio,
+			enable, wsa881x->pd_gpio_shared);
+		if (!enable)
+			dump_stack();
 		if (gpio_is_valid(wsa881x->pd_gpio))
 			gpio_direction_output(wsa881x->pd_gpio, enable);
 	}
@@ -1446,6 +1490,7 @@ static int wsa881x_gpio_init(struct swr_device *pdev)
 			dev_dbg(&pdev->dev,
 				 "%s: gpio %d is already set to high\n",
 				 __func__, wsa881x->pd_gpio);
+			wsa881x->pd_gpio_shared = true;
 			ret = 0;
 		} else {
 			dev_err(&pdev->dev, "%s: Failed to request gpio %d, err: %d\n",
@@ -1703,7 +1748,13 @@ err_mem:
 		devm_kfree(&pdev->dev, wsa881x->driver);
 	}
 dev_err:
-	if (pin_state_current == false)
+	/*
+	 * The DT lists both WSA881x revisions on the same shutdown GPIO
+	 * (msm8996 tone: 2017021x and 2117021x); the absent pair fails to
+	 * enumerate. Leave a GPIO that another instance owns alone, or a
+	 * failing probe after the real amps' powers them down again.
+	 */
+	if (pin_state_current == false && !wsa881x->pd_gpio_shared)
 		wsa881x_gpio_ctrl(wsa881x, false);
 	swr_remove_device(pdev);
 err:

@@ -202,6 +202,14 @@ int wcd9xxx_cfg_slim_sch_rx(struct wcd9xxx *wcd9xxx,
 			    unsigned int rate, unsigned int bit_width,
 			    u16 *grph)
 {
+	/* XZS_SLIM_DBG (temporary) */
+	{
+		struct wcd9xxx_ch *c;
+
+		list_for_each_entry(c, wcd9xxx_ch_list, list)
+			pr_info("xzs_slim: rx ch_num %d port %d ch_h %u rate %u bw %u\n",
+				c->ch_num, c->port, c->ch_h, rate, bit_width);
+	}
 	u8 ch_cnt = 0;
 	u16 ch_h[SLIM_MAX_RX_PORTS] = {0};
 	u8  payload = 0;
