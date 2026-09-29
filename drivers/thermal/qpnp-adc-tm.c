@@ -178,6 +178,7 @@
 #define QPNP_MIN_TIME			2000
 #define QPNP_MAX_TIME			2100
 #define QPNP_RETRY			1000
+#define QPNP_RETRY_INTERVAL_STS		25
 
 /* QPNP ADC TM HC start */
 #define QPNP_BTM_HC_STATUS1				0x08
@@ -634,6 +635,21 @@ static int32_t qpnp_adc_tm_req_sts_check(struct qpnp_adc_tm_chip *chip)
 
 	/* Disable the bank if a conversion is occurring */
 	while (status1 & QPNP_STATUS1_REQ_STS) {
+		/*
+		 * Once the cpufreq cooling devices re-trigger set_trips at
+		 * boot, the status left by the stopped interval measurement
+		 * (MEAS_INTERVAL_EN_STS | REQ_STS with no channel enabled in
+		 * MULTI_MEAS_EN) never clears, and this loop burnt its full
+		 * 2 s budget in deferred probe. A real conversion finishes in
+		 * a few ms, so stop waiting on that state after ~50 ms; the
+		 * caller then goes on exactly as after the full timeout.
+		 */
+		if ((status1 & QPNP_STATUS1_MEAS_INTERVAL_EN_STS) &&
+		    count > QPNP_RETRY_INTERVAL_STS) {
+			pr_debug("stale interval status 0x%x, not waiting\n",
+				 status1);
+			break;
+		}
 		if (count > QPNP_RETRY) {
 			pr_err("retry error=%d with 0x%x\n", count, status1);
 			break;
