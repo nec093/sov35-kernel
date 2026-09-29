@@ -3704,6 +3704,8 @@ put_clk:
 deregister_bus_client:
 	msm_bus_scale_unregister_client(msm_uport->bus_perf_client);
 unmap_memory:
+	/* created before the first failure point; a retry would collide */
+	sysfs_remove_file(&pdev->dev.kobj, &dev_attr_debug_mask.attr);
 	iounmap(uport->membase);
 	iounmap(msm_uport->bam_base);
 
@@ -3717,7 +3719,17 @@ unmap_memory:
  */
 static int msm_hs_probe(struct platform_device *pdev)
 {
-	int ret = __msm_hs_probe(pdev);
+	int ret;
+
+	/*
+	 * msm_bus only registers at ~2.9 s; before that the bus client comes
+	 * back as 0 ("Bus driver not ready") and the BLSP bandwidth votes of
+	 * the BT UART are silently dropped.
+	 */
+	if (!msm_bus_scale_driver_ready())
+		return -EPROBE_DEFER;
+
+	ret = __msm_hs_probe(pdev);
 
 	if (ret && pdev->dev.of_node && pdev->id >= 0 && pdev->id < UARTDM_NR) {
 		mutex_lock(&mutex_next_device_id);
