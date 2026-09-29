@@ -752,6 +752,10 @@ qcom_cpu_clk_msm8996_configure_clk_state(struct device *dev,
 	return 0;
 }
 
+static struct clk_alpha_pll *boot_plls[] = {
+	&pwrcl_alt_pll, &perfcl_alt_pll, &pwrcl_pll, &perfcl_pll,
+};
+
 static int
 qcom_cpu_clk_msm8996_register_clks(struct device *dev, struct clk_hw_clks *hws,
 				   struct regmap *regmap)
@@ -787,11 +791,23 @@ qcom_cpu_clk_msm8996_register_clks(struct device *dev, struct clk_hw_clks *hws,
 		}
 	}
 
-	/* Enable all PLLs and alt PLLs */
-	clk_prepare_enable(pwrcl_alt_pll.clkr.hw.clk);
-	clk_prepare_enable(perfcl_alt_pll.clkr.hw.clk);
-	clk_prepare_enable(pwrcl_pll.clkr.hw.clk);
-	clk_prepare_enable(perfcl_pll.clkr.hw.clk);
+	/*
+	 * Enable all PLLs and alt PLLs. The CPU muxes switch to the alt PLL
+	 * on every rate change without going through the clk framework, so a
+	 * PLL whose enable timed out must not be left with enable_count 0:
+	 * clk_disable_unused() would then turn it off under the muxes.
+	 */
+	for (i = 0; i < ARRAY_SIZE(boot_plls); i++) {
+		int try;
+
+		for (try = 0; try < 3; try++) {
+			ret = clk_prepare_enable(boot_plls[i]->clkr.hw.clk);
+			if (!ret)
+				break;
+			dev_warn(dev, "%s: enable failed (%d), retrying\n",
+				 clk_hw_get_name(&boot_plls[i]->clkr.hw), ret);
+		}
+	}
 
 	/* Set initial boot frequencies for power/perf PLLs */
 	clk_set_rate(pwrcl_alt_pll.clkr.hw.clk, 307200000);
