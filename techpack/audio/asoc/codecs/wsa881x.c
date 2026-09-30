@@ -5,6 +5,9 @@
  */
 
 #include <linux/module.h>
+/* XZS_WSA_DBG: stack of every SD_N power-down (temporary, off by default) */
+static bool xzs_wsa_stack;
+module_param(xzs_wsa_stack, bool, 0644);
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
@@ -1363,6 +1366,40 @@ static const struct kernel_param_ops xzs_wsa_reg_ops = {
 };
 module_param_cb(xzs_wsa_reg, &xzs_wsa_reg_ops, NULL, 0200);
 
+/* XZS_WSA_RAW_DBG (temporary): raw dump of 0x3000-0x31ff via swr_read */
+static int xzs_wsa_raw_set(const char *val, const struct kernel_param *kp)
+{
+	struct wsa881x_priv *w;
+	u8 buf[16];
+	char line[64];
+	int i, r, j;
+
+	for (i = 0; i < ARRAY_SIZE(xzs_wsa_comp); i++) {
+		if (!xzs_wsa_comp[i])
+			continue;
+		w = snd_soc_component_get_drvdata(xzs_wsa_comp[i]);
+		if (!w || !w->swr_slave)
+			continue;
+		for (r = 0x3000; r < 0x3200; r += 16) {
+			for (j = 0; j < 16; j++) {
+				buf[j] = 0xee;
+				swr_read(w->swr_slave, w->swr_slave->dev_num,
+					 r + j, &buf[j], 1);
+			}
+			for (j = 0; j < 16; j++)
+				snprintf(line + j * 3, 4, " %02x", buf[j]);
+			pr_info("xzs_wsaraw %s %04x:%s\n",
+				dev_name(&w->swr_slave->dev), r, line);
+		}
+	}
+	return 0;
+}
+
+static const struct kernel_param_ops xzs_wsa_raw_ops = {
+	.set = xzs_wsa_raw_set,
+};
+module_param_cb(xzs_wsa_raw, &xzs_wsa_raw_ops, NULL, 0200);
+
 static int wsa881x_probe(struct snd_soc_component *component)
 {
 	struct wsa881x_priv *wsa881x = snd_soc_component_get_drvdata(component);
@@ -1462,7 +1499,7 @@ static int wsa881x_gpio_ctrl(struct wsa881x_priv *wsa881x, bool enable)
 		pr_info("xzs_wsa: %s sd_n gpio %d -> %d shared %d\n",
 			dev_name(&wsa881x->swr_slave->dev), wsa881x->pd_gpio,
 			enable, wsa881x->pd_gpio_shared);
-		if (!enable)
+		if (!enable && xzs_wsa_stack)
 			dump_stack();
 		if (gpio_is_valid(wsa881x->pd_gpio))
 			gpio_direction_output(wsa881x->pd_gpio, enable);
