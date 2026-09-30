@@ -3038,10 +3038,15 @@
 		};
 	};
 
+	/*
+	 * "touch_int_n" is no msm8996 TLMM function: pinctrl rejected the
+	 * whole mdss_dsi0 pinctrl set, so none of these states (nor
+	 * mdss_default/mdss_sleep) was ever applied. gpio125 is a plain GPIO.
+	 */
 	mdss_touch_active: mdss_touch_active {
 		mux {
 			pins = "gpio125";
-			function = "touch_int_n";
+			function = "gpio";
 		};
 		config {
 			pins = "gpio125";
@@ -3054,7 +3059,7 @@
 	mdss_touch_suspend: mdss_touch_suspend {
 		mux {
 			pins = "gpio125";
-			function = "touch_int_n";
+			function = "gpio";
 		};
 		config {
 			pins = "gpio125";

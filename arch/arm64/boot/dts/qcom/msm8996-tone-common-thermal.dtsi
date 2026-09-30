@@ -99,18 +99,24 @@
 						(THERMAL_MAX_LIMIT-14)>;
 			};
 
-			/* Throttle from FMAX to 1420.8MHz */
+			/*
+			 * "Throttle from FMAX to 1420.8MHz": written for a longer
+			 * frequency table. The keyaki power cluster has 16 levels
+			 * (max state 15), so MAX-16 was out of range and the
+			 * binding failed (-EINVAL); MAX-15 keeps what that meant
+			 * in practice (no cap) and stays below trip1's cap.
+			 */
 			cpu0_cdev2 {
 				trip = <&c0_trip2>;
 				cooling-device =
 					<&CPU0 THERMAL_NO_LIMIT
-						(THERMAL_MAX_LIMIT-16)>;
+						(THERMAL_MAX_LIMIT-15)>;
 			};
 			cpu1_cdev2 {
 				trip = <&c0_trip2>;
 				cooling-device =
 					<&CPU1 THERMAL_NO_LIMIT
-						(THERMAL_MAX_LIMIT-16)>;
+						(THERMAL_MAX_LIMIT-15)>;
 			};
 
 		};
@@ -238,7 +244,15 @@
 		};
 	};
 
+	/*
+	 * Can't work as written: the sensor (pm8994_vadc 0x74, emmc_therm,
+	 * SoMC scale function 0x1a) reports tenths of a degree while the trips
+	 * are in millidegrees, and qpnp_smbcharger is no cooling device (no
+	 * #cooling-cells), which made of-thermal drop the zone with
+	 * "failed to build thermal zone case-therm-step: -22" anyway.
+	 */
 	case-therm-step {
+		status = "disabled";
 		polling-delay-passive = <2000>;
 		polling-delay = <0>;
 		thermal-sensors = <&pm8994_vadc 0x74>;
