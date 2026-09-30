@@ -392,6 +392,12 @@ int apr_tal_start_rx_rt(struct apr_svc_ch_dev *apr_ch)
 	mutex_lock(&apr_ch->m_lock);
 	rc = glink_start_rx_rt(apr_ch->handle);
 	mutex_unlock(&apr_ch->m_lock);
+	/*
+	 * The SMD transport (all the msm8996 ADSP firmware speaks) has no
+	 * RX realtime thread to boost; nothing to vote for, not an error.
+	 */
+	if (rc == -EOPNOTSUPP)
+		rc = 0;
 exit:
 	return rc;
 }
@@ -408,6 +414,8 @@ int apr_tal_end_rx_rt(struct apr_svc_ch_dev *apr_ch)
 	mutex_lock(&apr_ch->m_lock);
 	rc = glink_end_rx_rt(apr_ch->handle);
 	mutex_unlock(&apr_ch->m_lock);
+	if (rc == -EOPNOTSUPP)	/* see apr_tal_start_rx_rt() */
+		rc = 0;
 exit:
 	return rc;
 }

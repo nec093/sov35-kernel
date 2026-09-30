@@ -2036,6 +2036,13 @@ struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
 	}
 
 	arch_setup_dma_ops(core->dev, 0, 0, NULL, 0);
+	/*
+	 * The codec device never had a coherent DMA mask; 5.4 warns about
+	 * that in dma_alloc_attrs() (4.9 did not check).
+	 */
+	if (!core->dev->coherent_dma_mask &&
+	    dma_coerce_mask_and_coherent(core->dev, DMA_BIT_MASK(32)))
+		dev_warn(core->dev, "%s: cannot set the DMA mask\n", __func__);
 	core->cpe_dump_v_addr = dma_alloc_coherent(core->dev,
 						   core->hw_info.dram_size,
 						   &core->cpe_dump_addr,
