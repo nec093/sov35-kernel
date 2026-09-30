@@ -599,6 +599,15 @@ static int qpnp_rtc_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, rtc_dd);
 
 	/*
+	 * Must be wakeup capable before the RTC is registered: the RTC core
+	 * decides on the "wakealarm" attribute, and alarmtimer on whether
+	 * this RTC can wake the system (CLOCK_*_ALARM, Android's alarms),
+	 * when the class device is added. Done after registration, neither
+	 * happened and alarms could not wake the phone from suspend.
+	 */
+	device_init_wakeup(&pdev->dev, 1);
+
+	/*
 	 * rtc_device_register()/rtc_device_unregister() were removed
 	 * upstream in favor of the devm_ variant (which self-unregisters
 	 * on device teardown, making the explicit rtc_device_unregister()
@@ -623,7 +632,6 @@ static int qpnp_rtc_probe(struct platform_device *pdev)
 		goto fail_req_irq;
 	}
 
-	device_init_wakeup(&pdev->dev, 1);
 	enable_irq_wake(rtc_dd->rtc_alarm_irq);
 
 	dev_dbg(&pdev->dev, "Probe success !!\n");
@@ -632,6 +640,7 @@ static int qpnp_rtc_probe(struct platform_device *pdev)
 
 fail_req_irq:
 fail_rtc_enable:
+	device_init_wakeup(&pdev->dev, 0);
 	dev_set_drvdata(&pdev->dev, NULL);
 
 	return rc;
