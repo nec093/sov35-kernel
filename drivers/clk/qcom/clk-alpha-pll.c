@@ -170,8 +170,8 @@ EXPORT_SYMBOL_GPL(clk_alpha_pll_regs);
 #define to_clk_alpha_pll_postdiv(_hw) container_of(to_clk_regmap(_hw), \
 					   struct clk_alpha_pll_postdiv, clkr)
 
-static int wait_for_pll(struct clk_alpha_pll *pll, u32 mask, bool inverse,
-			const char *action)
+static int __wait_for_pll(struct clk_alpha_pll *pll, u32 mask, bool inverse,
+			  const char *action, int timeout_us)
 {
 	u32 val;
 	int count;
@@ -186,7 +186,7 @@ static int wait_for_pll(struct clk_alpha_pll *pll, u32 mask, bool inverse,
 	 * 100 us was sometimes too short for the msm8996 CPU alt PLLs at boot
 	 * ("perfcl_alt_pll failed to enable!"); upstream polls for 200 us.
 	 */
-	for (count = 200; count > 0; count--) {
+	for (count = timeout_us; count > 0; count--) {
 		ret = regmap_read(pll->clkr.regmap, PLL_MODE(pll), &val);
 		if (ret)
 			return ret;
@@ -202,8 +202,17 @@ static int wait_for_pll(struct clk_alpha_pll *pll, u32 mask, bool inverse,
 	return -ETIMEDOUT;
 }
 
+#define wait_for_pll(pll, mask, inverse, action) \
+	__wait_for_pll(pll, mask, inverse, action, 200)
+
+/*
+ * An enable through the hardware FSM runs the PLL's power-up and
+ * calibration sequence first: the msm8996 CPU alt PLLs, when not already
+ * running at boot, took ~2.6 ms to report ACTIVE, far beyond the 200 us
+ * lock poll ("perfcl_alt_pll failed to enable!" on every other boot).
+ */
 #define wait_for_pll_enable_active(pll) \
-	wait_for_pll(pll, PLL_ACTIVE_FLAG, 0, "enable")
+	__wait_for_pll(pll, PLL_ACTIVE_FLAG, 0, "enable", 5000)
 
 #define wait_for_pll_enable_lock(pll) \
 	wait_for_pll(pll, PLL_LOCK_DET, 0, "enable")
