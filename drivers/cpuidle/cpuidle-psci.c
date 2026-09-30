@@ -18,6 +18,7 @@
 #include <linux/pm_qos.h>
 #include <linux/psci.h>
 #include <linux/slab.h>
+#include <linux/suspend.h>
 #include <linux/tick.h>
 #include <linux/topology.h>
 
@@ -86,7 +87,10 @@ module_param(cluster_idle, bool, 0644);
  * StateID: the cluster state with affinity level 2 and 0x34 in bits [15:8],
  * as the CAF msm8996-pm.dtsi "system-fpc" level (psci-mode 0x34, shift 8).
  *
- * Off until proven stable: /sys/module/cpuidle_psci/parameters/system_idle.
+ * /sys/module/cpuidle_psci/parameters/system_idle: 0 = off (default until
+ * verified on battery), 1 = only while suspended to idle (s2idle; the stock
+ * kernel's lpm-levels effectively only used system-fpc in suspend: 0 idle
+ * entries with USB plugged, only system-ret), 2 = also in runtime idle.
  */
 #define PSCI_SYSTEM_MODE		0x34
 /* L2 mode in StateID[7:4]; the system state needs both L2s collapsed (4) */
@@ -95,8 +99,8 @@ module_param(cluster_idle, bool, 0644);
 #define PSCI_SYSTEM_PARAM(p)	(((p) & ~((0x3 << 24) | (0xff << 8))) | \
 				 (2 << 24) | (PSCI_SYSTEM_MODE << 8))
 
-static bool system_idle;
-module_param(system_idle, bool, 0644);
+static unsigned int system_idle;
+module_param(system_idle, uint, 0644);
 static unsigned int system_residency_us = 20000;
 module_param(system_residency_us, uint, 0644);
 static unsigned int system_latency_us = 11000;
@@ -166,8 +170,19 @@ static int psci_system_can_collapse(struct psci_cluster *own, int cpu,
 	ktime_t earliest = KTIME_MAX;
 	int c, first = cpu;
 
-	if (!READ_ONCE(system_idle) || !psci_sys_pm_ops ||
-	    !psci_sys_pm_ops->enter || !psci_sys_pm_ops->sleep_allowed)
+	switch (READ_ONCE(system_idle)) {
+	case 0:
+		return -1;
+	case 1:
+		if (!idle_should_enter_s2idle())
+			return -1;
+		break;
+	default:
+		break;
+	}
+
+	if (!psci_sys_pm_ops || !psci_sys_pm_ops->enter ||
+	    !psci_sys_pm_ops->sleep_allowed)
 		return -1;
 
 	if ((s64)cpuidle_governor_latency_req(cpu) <
