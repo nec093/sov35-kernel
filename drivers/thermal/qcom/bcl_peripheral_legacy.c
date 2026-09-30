@@ -15,6 +15,7 @@
 
 #include <linux/module.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/workqueue.h>
 #include <linux/kernel.h>
 #include <linux/regmap.h>
@@ -663,8 +664,16 @@ static void bcl_fetch_trip(struct platform_device *pdev, const char *int_name,
 	}
 
 	irq_num = platform_get_irq_byname(pdev, int_name);
-	if (irq_num) {
+	if (irq_num > 0) {
 		mutex_lock(&data->state_trans_lock);
+		/*
+		 * Keep it disabled until a trip is set. Requesting it enabled
+		 * and disabling it afterwards let a pending interrupt run the
+		 * handler in between, which WARNed and disabled it a second
+		 * time: the single enable_irq() of a later trip then left it
+		 * disabled for good.
+		 */
+		irq_set_status_flags(irq_num, IRQ_NOAUTOEN);
 		ret = devm_request_threaded_irq(&pdev->dev,
 				irq_num, NULL, handle,
 				IRQF_TRIGGER_RISING | IRQF_ONESHOT,
@@ -676,7 +685,6 @@ static void bcl_fetch_trip(struct platform_device *pdev, const char *int_name,
 			mutex_unlock(&data->state_trans_lock);
 			return;
 		}
-		disable_irq_nosync(irq_num);
 		data->irq_num = irq_num;
 		data->irq_enabled = false;
 		mutex_unlock(&data->state_trans_lock);
