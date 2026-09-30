@@ -2491,7 +2491,8 @@ static int qpnp_flash_led_probe(struct platform_device *pdev)
 
 	rc = qpnp_flash_led_init_settings(led);
 	if (rc) {
-		dev_err(&pdev->dev, "Failed to initialize flash LED\n");
+		if (rc != -EPROBE_DEFER)
+			dev_err(&pdev->dev, "Failed to initialize flash LED\n");
 		return rc;
 	}
 

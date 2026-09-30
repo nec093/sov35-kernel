@@ -1914,10 +1914,10 @@ static long qfprom_read(struct device *dev, const char *name)
 	cell = nvmem_cell_get(dev, name);
 	if (IS_ERR(cell)) {
 		err = PTR_ERR(cell);
-		dev_err(dev, "failed opening nvmem cell err : %ld\n", err);
 		/* If entry does not exist, then that is not an error */
 		if (err == -ENOENT)
-			err = 0;
+			return 0;
+		dev_err(dev, "failed opening nvmem cell err : %ld\n", err);
 		return err;
 	}
 

@@ -3803,8 +3803,9 @@ static int fastrpc_cb_probe(struct device *dev)
 	sess->smmu.dev = dev;
 	sess->smmu.enabled = 1;
 	chan->sesscount++;
-	debugfs_global_file = debugfs_create_file("global", 0644, debugfs_root,
-							NULL, &debugfs_fops);
+	if (IS_ERR_OR_NULL(debugfs_global_file))
+		debugfs_global_file = debugfs_create_file("global", 0644,
+					debugfs_root, NULL, &debugfs_fops);
 bail:
 	return err;
 }
@@ -3882,8 +3883,9 @@ static int fastrpc_cb_subsids_probe(struct device *dev)
 		sess->smmu.enabled = 1;
 		chan->sesscount++;
 	}
-	debugfs_global_file = debugfs_create_file("global", 0644, debugfs_root,
-							NULL, &debugfs_fops);
+	if (IS_ERR_OR_NULL(debugfs_global_file))
+		debugfs_global_file = debugfs_create_file("global", 0644,
+					debugfs_root, NULL, &debugfs_fops);
 bail:
 	kfree(sids);
 	kfree(range);
