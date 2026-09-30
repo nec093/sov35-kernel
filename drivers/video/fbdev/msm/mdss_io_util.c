@@ -154,9 +154,11 @@ int msm_dss_config_vreg(struct device *dev, struct dss_vreg *in_vreg,
 				curr_vreg->vreg_name);
 			rc = PTR_RET(curr_vreg->vreg);
 			if (rc) {
-				DEV_ERR("%pS->%s: %s get failed. rc=%d\n",
-					 __builtin_return_address(0), __func__,
-					 curr_vreg->vreg_name, rc);
+				if (rc != -EPROBE_DEFER)
+					DEV_ERR("%pS->%s: %s get failed. rc=%d\n",
+						__builtin_return_address(0),
+						__func__, curr_vreg->vreg_name,
+						rc);
 				curr_vreg->vreg = NULL;
 				goto vreg_get_fail;
 			}

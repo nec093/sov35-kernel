@@ -32,7 +32,8 @@ int mdss_pll_util_resource_init(struct platform_device *pdev,
 	rc = msm_dss_config_vreg(&pdev->dev,
 				mp->vreg_config, mp->num_vreg, 1);
 	if (rc) {
-		pr_err("Vreg config failed rc=%d\n", rc);
+		if (rc != -EPROBE_DEFER)
+			pr_err("Vreg config failed rc=%d\n", rc);
 		goto vreg_err;
 	}
 

@@ -2118,8 +2118,9 @@ static int _get_clocks(struct kgsl_device *device)
 			if (IS_ERR(pwr->grp_clks[i])) {
 				int ret = PTR_ERR(pwr->grp_clks[i]);
 
-				KGSL_CORE_ERR("Couldn't get clock: %s (%d)\n",
-					name, ret);
+				if (ret != -EPROBE_DEFER)
+					KGSL_CORE_ERR("Couldn't get clock: %s (%d)\n",
+						name, ret);
 				pwr->grp_clks[i] = NULL;
 				return ret;
 			}

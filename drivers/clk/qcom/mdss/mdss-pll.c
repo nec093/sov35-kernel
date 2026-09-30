@@ -354,8 +354,9 @@ static int mdss_pll_probe(struct platform_device *pdev)
 
 	rc = mdss_pll_resource_init(pdev, pll_res);
 	if (rc) {
-		pr_err("Pll ndx=%d resource init failed rc=%d\n",
-				pll_res->index, rc);
+		if (rc != -EPROBE_DEFER)
+			pr_err("Pll ndx=%d resource init failed rc=%d\n",
+					pll_res->index, rc);
 		goto res_init_error;
 	}
 

@@ -3118,7 +3118,8 @@ int sde_rotator_core_init(struct sde_rot_mgr **pmgr,
 
 	ret = sde_rotator_res_init(pdev, mgr);
 	if (ret) {
-		SDEROT_ERR("res_init failed %d\n", ret);
+		if (ret != -EPROBE_DEFER)
+			SDEROT_ERR("res_init failed %d\n", ret);
 		goto error_res_init;
 	}
 
