@@ -1427,11 +1427,24 @@ static long msm_flash_subdev_fops_ioctl(struct file *file,
 	return video_usercopy(file, cmd, arg, msm_flash_subdev_do_ioctl);
 }
 #endif
+static void msm_flash_unregister_triggers(struct msm_flash_ctrl_t *fctrl)
+{
+	int32_t i;
+
+	for (i = 0; i < fctrl->flash_num_sources; i++)
+		led_trigger_unregister_simple(fctrl->flash_trigger[i]);
+	for (i = 0; i < fctrl->torch_num_sources; i++)
+		led_trigger_unregister_simple(fctrl->torch_trigger[i]);
+	led_trigger_unregister_simple(fctrl->switch_trigger);
+}
+
 static int32_t msm_flash_platform_probe(struct platform_device *pdev)
 {
 	int32_t rc = 0;
 	struct msm_flash_ctrl_t *flash_ctrl = NULL;
 	struct msm_camera_cci_client *cci_client = NULL;
+	/* the LED class devices exist only if the DT describes them */
+	bool cdevs_registered = false;
 
 	CDBG("Enter");
 	if (!pdev->dev.of_node) {
@@ -1473,6 +1486,7 @@ static int32_t msm_flash_platform_probe(struct platform_device *pdev)
 			rc = 0;
 			goto error_register;
 		}
+		cdevs_registered = true;
 	}
 	else
 		rc = 0;
@@ -1509,8 +1523,22 @@ error_register:
 
 	rc = msm_sd_register(&flash_ctrl->msm_sd);
 	if (rc) {
-		led_classdev_unregister(&flash_ctrl->torch_cdev);
-		led_classdev_unregister(&flash_ctrl->flash_cdev);
+		/*
+		 * Typically -EPROBE_DEFER before the msm camera core is up;
+		 * unregistering class devices that were never registered
+		 * oopses in device_del().
+		 */
+		if (cdevs_registered) {
+			led_classdev_unregister(&flash_ctrl->torch_cdev);
+			led_classdev_unregister(&flash_ctrl->flash_cdev);
+		}
+		/*
+		 * msm_flash_get_dt_data() registered the LED triggers; left
+		 * behind, the next probe fails with -EEXIST on all of them
+		 * and then -EINVAL in msm_torch_create_classdev().
+		 */
+		msm_flash_unregister_triggers(flash_ctrl);
+		kfree(flash_ctrl->flash_i2c_client.cci_client);
 		kfree(flash_ctrl);
 		return rc;
 	}
