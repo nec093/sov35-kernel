@@ -4635,12 +4635,14 @@ static void clk_populate_clock_opp_table(struct device_node *np,
 		return;
 	}
 
+	/* clk_hw_round_rate() must run under the prepare lock on 5.4 */
+	clk_prepare_lock();
 	for (n = 0; ; n++) {
 		ret = clk_hw_round_rate(hw, rate + 1);
 		if (ret < 0) {
 			pr_err("clk_round_rate failed for %s\n",
 							core->name);
-			goto err_derive_device_list;
+			break;
 		}
 
 		/*
@@ -4654,13 +4656,14 @@ static void clk_populate_clock_opp_table(struct device_node *np,
 
 		uv = clk_get_voltage(core, rate, n);
 		if (uv < 0)
-			goto err_derive_device_list;
+			break;
 
 		ret = clk_add_and_print_opp(hw, device_list, count,
 							rate, uv, n);
 		if (ret)
-			goto err_derive_device_list;
+			break;
 	}
+	clk_prepare_unlock();
 
 err_derive_device_list:
 	kfree(device_list);
