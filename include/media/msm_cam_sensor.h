@@ -5,57 +5,8 @@
 #include <uapi/media/msm_camsensor_sdk.h>
 
 #include <linux/compat.h>
-#include <linux/string.h>
 
 #ifdef CONFIG_COMPAT
-
-/*
- * The 32-bit camera userspace this kernel serves (the SODP 4.4 mm-camera
- * blobs) was built against the LA.UM.5.7 camera uapi: no
- * SUB_MODULE_LASER_LED (so 14 subdev slots in msm_sensor_info_t), no
- * data_rate in msm_camera_csiphy_params and no bypass_video_node_creation
- * in the sensor slave info. It is all 32-bit, so the compat structures
- * below follow that layout.
- */
-#define SUB_MODULE_MAX32 SUB_MODULE_LASER_LED
-
-struct msm_sensor_info_t32 {
-	char     sensor_name[MAX_SENSOR_NAME];
-	uint32_t session_id;
-	int32_t  subdev_id[SUB_MODULE_MAX32];
-	int32_t  subdev_intf[SUB_MODULE_MAX32];
-	uint8_t  is_mount_angle_valid;
-	uint32_t sensor_mount_angle;
-	int modes_supported;
-	enum camb_position_t position;
-};
-
-static inline void msm_sensor_info_to_32(struct msm_sensor_info_t32 *d,
-					 const struct msm_sensor_info_t *s)
-{
-	int i;
-
-	memcpy(d->sensor_name, s->sensor_name, sizeof(d->sensor_name));
-	d->session_id = s->session_id;
-	for (i = 0; i < SUB_MODULE_MAX32; i++) {
-		d->subdev_id[i] = s->subdev_id[i];
-		d->subdev_intf[i] = s->subdev_intf[i];
-	}
-	d->is_mount_angle_valid = s->is_mount_angle_valid;
-	d->sensor_mount_angle = s->sensor_mount_angle;
-	d->modes_supported = s->modes_supported;
-	d->position = s->position;
-}
-
-struct msm_camera_csiphy_params32 {
-	unsigned char lane_cnt;
-	unsigned char settle_cnt;
-	unsigned short lane_mask;
-	unsigned char combo_mode;
-	unsigned char csid_core;
-	unsigned int csiphy_clk;
-	unsigned char csi_3phase;
-};
 
 struct msm_sensor_power_setting32 {
 	enum msm_sensor_power_seq_type_t seq_type;
@@ -90,6 +41,7 @@ struct msm_camera_sensor_slave_info32 {
 	uint8_t  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	enum msm_sensor_output_format_t output_format;
+	uint8_t bypass_video_node_creation;
 };
 
 struct msm_camera_csid_lut_params32 {
@@ -109,7 +61,7 @@ struct msm_camera_csid_params32 {
 
 struct msm_camera_csi2_params32 {
 	struct msm_camera_csid_params32 csid_params;
-	struct msm_camera_csiphy_params32 csiphy_params;
+	struct msm_camera_csiphy_params csiphy_params;
 	uint8_t csi_clk_scale_enable;
 };
 
@@ -218,7 +170,7 @@ struct msm_actuator_set_info_t32 {
 
 struct sensor_init_cfg_data32 {
 	enum msm_sensor_init_cfg_type_t cfgtype;
-	struct msm_sensor_info_t32      probed_info;
+	struct msm_sensor_info_t        probed_info;
 	char                            entity_name[MAX_SENSOR_NAME];
 	union {
 		compat_uptr_t setting;
@@ -257,7 +209,7 @@ struct csiphy_cfg_data32 {
 struct sensorb_cfg_data32 {
 	int cfgtype;
 	union {
-		struct msm_sensor_info_t32    sensor_info;
+		struct msm_sensor_info_t      sensor_info;
 		struct msm_sensor_init_params sensor_init_params;
 		compat_uptr_t                 setting;
 		struct msm_sensor_i2c_sync_params sensor_i2c_sync_params;

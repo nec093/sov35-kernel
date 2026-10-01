@@ -398,7 +398,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			sizeof(cdata->cfg.sensor_info.sensor_name));
 		cdata->cfg.sensor_info.session_id =
 			s_ctrl->sensordata->sensor_info->session_id;
-		for (i = 0; i < SUB_MODULE_MAX32; i++) {
+		for (i = 0; i < SUB_MODULE_MAX; i++) {
 			cdata->cfg.sensor_info.subdev_id[i] =
 				s_ctrl->sensordata->sensor_info->subdev_id[i];
 			cdata->cfg.sensor_info.subdev_intf[i] =
@@ -416,7 +416,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			cdata->cfg.sensor_info.sensor_name);
 		CDBG("%s:%d session id %d\n", __func__, __LINE__,
 			cdata->cfg.sensor_info.session_id);
-		for (i = 0; i < SUB_MODULE_MAX32; i++) {
+		for (i = 0; i < SUB_MODULE_MAX; i++) {
 			CDBG("%s:%d subdev_id[%d] %d\n", __func__, __LINE__, i,
 				cdata->cfg.sensor_info.subdev_id[i]);
 			CDBG("%s:%d subdev_intf[%d] %d\n", __func__, __LINE__,

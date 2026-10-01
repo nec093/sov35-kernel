@@ -240,14 +240,7 @@ static long msm_ispif_cmd_ext(struct v4l2_subdev *sd,
 		pcdata.size = pcdata64->size;
 		pcdata.data = pcdata64->data;
 	}
-	/*
-	 * LA.UM.5.7 userspace passes the structure without the stereo
-	 * entries, stereo_enable and line_width; the zeroed tail keeps
-	 * those off.
-	 */
-	if (pcdata.size != sizeof(struct msm_ispif_param_data_ext) &&
-	    pcdata.size != offsetof(struct msm_ispif_param_data_ext,
-				    right_entries)) {
+	if (pcdata.size != sizeof(struct msm_ispif_param_data_ext)) {
 		pr_err("%s: payload size mismatch\n", __func__);
 		return -EINVAL;
 	}
