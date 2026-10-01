@@ -3225,7 +3225,6 @@ static int fastrpc_channel_open(struct fastrpc_file *fl)
 		}
 	}
 	fl->ssrcount = me->channel[cid].ssrcount;
-	fl->refcount = 1;
 	if ((kref_get_unless_zero(&me->channel[cid].kref) == 0) ||
 	    (me->channel[cid].chan == NULL)) {
 		if (me->glink) {
@@ -3276,6 +3275,14 @@ static int fastrpc_channel_open(struct fastrpc_file *fl)
 	}
 
 bail:
+	/*
+	 * Only a successful open holds a channel reference for
+	 * fastrpc_file_free() to drop. Setting refcount before the open
+	 * left it set when the DSP never answered, and the release then
+	 * put a kref it never took (refcount_t underflow, use-after-free).
+	 */
+	if (!err)
+		fl->refcount = 1;
 	mutex_unlock(&me->smd_mutex);
 	return err;
 }
