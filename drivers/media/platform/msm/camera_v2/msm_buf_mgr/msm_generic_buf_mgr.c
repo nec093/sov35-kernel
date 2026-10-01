@@ -945,7 +945,14 @@ static void __exit msm_buf_mngr_exit(void)
 	kfree(msm_buf_mngr_dev);
 }
 
-module_init(msm_buf_mngr_init);
+/*
+ * msm_sd_register() returns -EPROBE_DEFER until msm_probe() has run, and
+ * msm_probe() waits for the msm_bus driver, which on this kernel only
+ * comes up through deferred probing. A plain module_init would try once
+ * and give up; by late_initcall_sync the deferred probes have been
+ * flushed (deferred_probe_initcall is a late_initcall).
+ */
+late_initcall_sync(msm_buf_mngr_init);
 module_exit(msm_buf_mngr_exit);
 MODULE_DESCRIPTION("MSM Buffer Manager");
 MODULE_LICENSE("GPL v2");

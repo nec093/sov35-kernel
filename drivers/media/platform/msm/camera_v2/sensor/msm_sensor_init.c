@@ -219,7 +219,14 @@ static void __exit msm_sensor_exit_module(void)
 	kfree(s_init);
 }
 
-module_init(msm_sensor_init_module);
+/*
+ * msm_sd_register() returns -EPROBE_DEFER until msm_probe() has run, and
+ * msm_probe() waits for the msm_bus driver, which on this kernel only
+ * comes up through deferred probing. A plain module_init would try once
+ * and give up; by late_initcall_sync the deferred probes have been
+ * flushed (deferred_probe_initcall is a late_initcall).
+ */
+late_initcall_sync(msm_sensor_init_module);
 module_exit(msm_sensor_exit_module);
 MODULE_DESCRIPTION("msm_sensor_init");
 MODULE_LICENSE("GPL v2");
