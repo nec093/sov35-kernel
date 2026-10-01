@@ -761,7 +761,7 @@ static int drms_uA_update(struct regulator_dev *rdev)
 	int current_uA = 0, output_uV, input_uV, err;
 	unsigned int regulator_curr_mode, mode;
 
-	lockdep_assert_held_once(&rdev->mutex);
+	lockdep_assert_held_once(&rdev->mutex.base);
 
 	/*
 	 * first check to see if we can set modes at all, otherwise just
@@ -2275,7 +2275,7 @@ static int _regulator_enable(struct regulator_dev *rdev)
 {
 	int ret;
 
-	lockdep_assert_held_once(&rdev->mutex);
+	lockdep_assert_held_once(&rdev->mutex.base);
 
 	/* check voltage and requested load before enabling */
 	if (regulator_ops_is_valid(rdev, REGULATOR_CHANGE_DRMS))
@@ -2383,7 +2383,7 @@ static int _regulator_disable(struct regulator_dev *rdev)
 {
 	int ret = 0;
 
-	lockdep_assert_held_once(&rdev->mutex);
+	lockdep_assert_held_once(&rdev->mutex.base);
 
 	if (WARN(rdev->use_count <= 0,
 		 "unbalanced disables for %s\n", rdev_get_name(rdev)))
@@ -2462,7 +2462,7 @@ static int _regulator_force_disable(struct regulator_dev *rdev)
 {
 	int ret = 0;
 
-	lockdep_assert_held_once(&rdev->mutex);
+	lockdep_assert_held_once(&rdev->mutex.base);
 
 	ret = _notifier_call_chain(rdev, REGULATOR_EVENT_FORCE_DISABLE |
 			REGULATOR_EVENT_PRE_DISABLE, NULL);
@@ -3959,7 +3959,7 @@ EXPORT_SYMBOL_GPL(regulator_bulk_free);
 int regulator_notifier_call_chain(struct regulator_dev *rdev,
 				  unsigned long event, void *data)
 {
-	lockdep_assert_held_once(&rdev->mutex);
+	lockdep_assert_held_once(&rdev->mutex.base);
 
 	_notifier_call_chain(rdev, event, data);
 	return NOTIFY_DONE;

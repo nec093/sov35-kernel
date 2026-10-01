@@ -13,9 +13,6 @@
 
 #ifdef CONFIG_LOCKUP_DETECTOR
 void lockup_detector_init(void);
-extern void watchdog_enable(unsigned int cpu);
-extern void watchdog_disable(unsigned int cpu);
-extern bool watchdog_configured(unsigned int cpu);
 void lockup_detector_soft_poweroff(void);
 void lockup_detector_cleanup(void);
 bool is_hardlockup(void);
