@@ -5,7 +5,7 @@
 #include <linux/types.h>
 #include <linux/netfilter.h>
 
-struct nf_conncount_data;
+struct xt_connlimit_data;
 
 enum {
 	XT_CONNLIMIT_INVERT = 1 << 0,
