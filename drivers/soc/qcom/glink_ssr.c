@@ -603,6 +603,31 @@ int notify_for_subsystem(struct subsys_info *ss_info)
 		strlcpy(do_cleanup_data->name, ss_info->edge,
 				do_cleanup_data->name_len + 1);
 
+		/*
+		 * Queue the rx intent for the cleanup_done reply before sending
+		 * do_cleanup. The SMD and RPM transports have no remote intents:
+		 * a reply that arrives first is delivered through a dummy intent
+		 * without pkt_priv, dropped as "Missing do_cleanup data", and the
+		 * wait for it then times out (a panic for RPM).
+		 */
+		ret = glink_queue_rx_intent(handle, do_cleanup_data,
+				sizeof(struct cleanup_done_msg));
+		if (ret) {
+			GLINK_SSR_ERR(
+				"%s %s: %s, ret[%d], resp. remaining[%d]\n",
+				"<SSR>", __func__,
+				"queue_rx_intent failed", ret,
+				atomic_read(&responses_remaining));
+			kfree(do_cleanup_data);
+
+			if (!strcmp(ss_leaf_entry->ssr_name, "rpm"))
+				panic("%s: Could not queue intent for RPM!\n",
+						__func__);
+			atomic_dec(&responses_remaining);
+			kref_put(&ss_leaf_entry->cb_data->cb_kref,
+							cb_data_release);
+			continue;
+		}
 		if (strcmp(ss_leaf_entry->ssr_name, "rpm"))
 			ret = glink_tx(handle, do_cleanup_data,
 					do_cleanup_data,
@@ -618,28 +643,12 @@ int notify_for_subsystem(struct subsys_info *ss_info)
 			GLINK_SSR_ERR("<SSR> %s: tx failed, ret[%d], %s[%d]\n",
 					__func__, ret, "resp. remaining",
 					atomic_read(&responses_remaining));
-			kfree(do_cleanup_data);
-
+			/*
+			 * The queued rx intent still points at
+			 * do_cleanup_data, so it is not freed here.
+			 */
 			if (!strcmp(ss_leaf_entry->ssr_name, "rpm"))
 				panic("%s: glink_tx() to RPM failed!\n",
-						__func__);
-			atomic_dec(&responses_remaining);
-			kref_put(&ss_leaf_entry->cb_data->cb_kref,
-							cb_data_release);
-			continue;
-		}
-		ret = glink_queue_rx_intent(handle, do_cleanup_data,
-				sizeof(struct cleanup_done_msg));
-		if (ret) {
-			GLINK_SSR_ERR(
-				"%s %s: %s, ret[%d], resp. remaining[%d]\n",
-				"<SSR>", __func__,
-				"queue_rx_intent failed", ret,
-				atomic_read(&responses_remaining));
-			kfree(do_cleanup_data);
-
-			if (!strcmp(ss_leaf_entry->ssr_name, "rpm"))
-				panic("%s: Could not queue intent for RPM!\n",
 						__func__);
 			atomic_dec(&responses_remaining);
 			kref_put(&ss_leaf_entry->cb_data->cb_kref,
