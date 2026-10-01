@@ -1893,10 +1893,18 @@ static struct clk_branch gpu_gx_gfx3d_clk = {
 			.parent_names = (const char *[]){ "gfx3d_clk_src" },
 			.num_parents = 1,
 			.flags = CLK_SET_RATE_PARENT,
+			/*
+			 * MX tops out at TURBO on every MSM8996 variant
+			 * (vdd_gpu_mx.num_levels = VDD_MX_TURBO + 1, and
+			 * pm8994_s2_corner's max corner is 7 == VDD_MX_TURBO).
+			 * A TURBO_L1 entry made every 560/624 MHz vote fail
+			 * with -EINVAL after gfx3d_clk_src had already moved
+			 * to the new rate, leaving MX under-volted.
+			 */
 			VDD_GPU_MX_FMAX_MAP3(
 					  SVS, 133000000,
 					  NOMINAL, 510000000,
-					  TURBO_L1, 624000000),
+					  TURBO, 624000000),
 			.ops = &clk_branch2_ops,
 		},
 	},
