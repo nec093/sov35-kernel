@@ -770,6 +770,9 @@ CONFIG_QTI_MPM=y
 CONFIG_PHY_QCOM_QMP=y
 CONFIG_ANDROID=y
 CONFIG_ANDROID_BINDER_IPC=y
+# Android 12's framework compatibility matrix (kernel FCM level 5) requires
+# binderfs; init mounts it on /dev/binderfs and links /dev/{,hw,vnd}binder.
+CONFIG_ANDROID_BINDERFS=y
 CONFIG_SENSORS_SSC=y
 # CONFIG_CPU_QUIET is not set
 # cpuquiet's rqbalance governor calls device_offline()->cpu_down() from a
