@@ -1068,6 +1068,22 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 		goto err_detach;
 	}
 
+	/*
+	 * The msm-4.9 LA.UM.7.1 ION maps the attachment into the device's
+	 * IOMMU domain itself; this kernel's ION only hands back a copy of
+	 * the buffer's sg_table, whose dma_address is not an IOVA of this
+	 * context bank (the CPP then faulted on every frame and the output
+	 * stayed all zero, i.e. green). Map it here, as the 4.9 driver this
+	 * port started from did.
+	 */
+	rc = msm_dma_map_sg_lazy(iommu_cb_set.cb_info[idx].dev, table->sgl,
+			table->nents, dma_dir, buf);
+	if (rc != table->nents) {
+		pr_err("Error: msm_dma_map_sg_lazy failed\n");
+		rc = -ENOMEM;
+		goto err_unmap_sg;
+	}
+
 	if (table->sgl) {
 		CDBG("DMA buf: %pK, device: %pK, attach: %pK, table: %pK\n",
 				(void *)buf,
@@ -1079,14 +1095,14 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 	} else {
 		rc = -EINVAL;
 		pr_err("Error: table sgl is null\n");
-		goto err_unmap_sg;
+		goto err_map_addr;
 	}
 
 	/* fill up mapping_info */
 	mapping_info = kzalloc(sizeof(struct cam_dma_buff_info), GFP_KERNEL);
 	if (!mapping_info) {
 		rc = -ENOSPC;
-		goto err_unmap_sg;
+		goto err_map_addr;
 	}
 	mapping_info->ion_fd = ion_fd;
 	mapping_info->buf = buf;
@@ -1118,6 +1134,10 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 
 err_mapping_info:
 	kfree(mapping_info);
+err_map_addr:
+	msm_dma_unmap_sg(iommu_cb_set.cb_info[idx].dev,
+		table->sgl, table->nents,
+		dma_dir, buf);
 err_unmap_sg:
 	dma_buf_unmap_attachment(attach, table, dma_dir);
 err_detach:
@@ -1144,6 +1164,9 @@ static int cam_smmu_unmap_buf_and_remove_from_list(
 	}
 
 	/* iommu buffer clean up */
+	msm_dma_unmap_sg(iommu_cb_set.cb_info[idx].dev,
+		mapping_info->table->sgl, mapping_info->table->nents,
+		mapping_info->dir, mapping_info->buf);
 	dma_buf_unmap_attachment(mapping_info->attach,
 		mapping_info->table, mapping_info->dir);
 	dma_buf_detach(mapping_info->buf, mapping_info->attach);
