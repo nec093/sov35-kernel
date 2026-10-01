@@ -95,110 +95,18 @@ static struct media_entity *find_entity(struct media_device *mdev, u32 id)
 	return NULL;
 }
 
-#if IS_ENABLED(CONFIG_MSMB_CAMERA)
-#include <media/msmb_camera.h>
-
-/*
- * The msm camera userspace (mm-camera blobs from the 4.4 era) still finds
- * its nodes by the pre-4.6 (type, group_id) pair: the config and session
- * video nodes as (MEDIA_ENT_T_DEVNODE_V4L, 2), the subdevices as
- * (MEDIA_ENT_T_V4L2_SUBDEV, n) with n the old MSM_CAMERA_SUBDEV_* index.
- * The camera drivers keep that ID in entity->function instead
- * (MSM_CAMERA_SUBDEV_BASE + n, with CSID and BUF_MNGR swapped), so hand
- * the old encoding back to userspace.
- *
- * It also walks the entities with entity.id = 1, 2, 3, ... and stops at
- * the first id that fails, while entity ids now come from the id space
- * shared with interfaces, pads and links and have gaps. On the msm camera
- * media devices, ENUM_ENTITIES therefore takes and returns the 1-based
- * position of the entity (nothing there uses links).
- */
-static bool msm_camera_legacy_mdev(struct media_device *mdev)
-{
-	return !strcmp(mdev->model, MSM_CONFIGURATION_NAME) ||
-	       !strcmp(mdev->model, MSM_CAMERA_NAME);
-}
-
-static struct media_entity *msm_camera_find_entity(struct media_device *mdev,
-						   u32 id, u32 *pos)
-{
-	struct media_entity *entity;
-	u32 want = id & ~MEDIA_ENT_ID_FLAG_NEXT;
-	u32 i = 0;
-
-	if (id & MEDIA_ENT_ID_FLAG_NEXT)
-		want++;
-
-	media_device_for_each_entity(entity, mdev) {
-		if (++i == want) {
-			*pos = i;
-			return entity;
-		}
-	}
-
-	return NULL;
-}
-
-static void msm_camera_legacy_entity_desc(struct media_entity *ent,
-					  struct media_entity_desc *entd)
-{
-	u32 n;
-
-	if (is_media_entity_v4l2_video_device(ent)) {
-		if (ent->function == QCAMERA_VNODE_GROUP_ID)
-			entd->group_id = 2;
-		return;
-	}
-
-	if (!is_media_entity_v4l2_subdev(ent) ||
-	    ent->function < MSM_CAMERA_SUBDEV_BASE ||
-	    ent->function > MSM_CAMERA_SUBDEV_LASER_LED)
-		return;
-
-	if (ent->function == MSM_CAMERA_SUBDEV_CSID)
-		n = 1;
-	else if (ent->function == MSM_CAMERA_SUBDEV_BUF_MNGR)
-		n = 13;
-	else
-		n = ent->function - MSM_CAMERA_SUBDEV_BASE;
-
-	entd->type = MEDIA_ENT_F_V4L2_SUBDEV_UNKNOWN;	/* == MEDIA_ENT_T_V4L2_SUBDEV */
-	entd->group_id = n;
-}
-#else
-static inline bool msm_camera_legacy_mdev(struct media_device *mdev)
-{
-	return false;
-}
-
-static inline struct media_entity *
-msm_camera_find_entity(struct media_device *mdev, u32 id, u32 *pos)
-{
-	return NULL;
-}
-
-static inline void msm_camera_legacy_entity_desc(struct media_entity *ent,
-						 struct media_entity_desc *entd)
-{
-}
-#endif
-
 static long media_device_enum_entities(struct media_device *mdev, void *arg)
 {
 	struct media_entity_desc *entd = arg;
 	struct media_entity *ent;
-	u32 legacy_pos = 0;
 
-	if (msm_camera_legacy_mdev(mdev))
-		ent = msm_camera_find_entity(mdev, entd->id, &legacy_pos);
-	else
-		ent = find_entity(mdev, entd->id);
+	ent = find_entity(mdev, entd->id);
 	if (ent == NULL)
 		return -EINVAL;
 
 	memset(entd, 0, sizeof(*entd));
 
-	entd->id = legacy_pos ? legacy_pos : media_entity_id(ent);
+	entd->id = media_entity_id(ent);
 	if (ent->name)
 		strscpy(entd->name, ent->name, sizeof(entd->name));
 	entd->type = ent->function;
@@ -226,8 +134,6 @@ static long media_device_enum_entities(struct media_device *mdev, void *arg)
 		else if (ent->function != MEDIA_ENT_F_IO_V4L)
 			entd->type = MEDIA_ENT_T_DEVNODE_UNKNOWN;
 	}
-
-	msm_camera_legacy_entity_desc(ent, entd);
 
 	memcpy(&entd->raw, &ent->info, sizeof(ent->info));
 
