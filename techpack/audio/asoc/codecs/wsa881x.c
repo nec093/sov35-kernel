@@ -995,6 +995,40 @@ static int wsa881x_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+/*
+ * Make sure the amplifier is powered, enumerated and has its register
+ * cache restored before a power-up sequence writes to it.
+ *
+ * The SWR master powers the WSA881x (sd_n) only from its runtime resume
+ * and drops it again on autosuspend, which resets the amp. On 5.4 the
+ * RDAC PRE_PMU runs before the codec's SWR_DEVICE_UP. Its clock/bandgap
+ * enable writes woke the master and raised sd_n ~2 ms later, so they
+ * went to an amp that was still off. The ~225 ms later re-enumeration
+ * only restored the cached values in one go, losing the timed bandgap
+ * sequence (bit 3, 400 us, bit 2), and the speaker stayed silent.
+ * swr_get_logical_dev_num() resumes the master itself, which powers the
+ * amp, and returns once it has enumerated.
+ */
+static void wsa881x_wait_ready(struct wsa881x_priv *wsa881x)
+{
+	struct swr_device *pdev = wsa881x->swr_slave;
+	int retry = 100;
+	u8 devnum = 0;
+
+	if (!pdev || wsa881x->state == WSA881X_DEV_READY)
+		return;
+
+	while (swr_get_logical_dev_num(pdev, pdev->addr, &devnum) && --retry)
+		usleep_range(1000, 1100);
+	if (!retry) {
+		dev_err(&pdev->dev, "%s: amp did not enumerate\n", __func__);
+		return;
+	}
+	pdev->dev_num = devnum;
+	wsa881x_regcache_sync(wsa881x);
+	dev_dbg(&pdev->dev, "%s: ready, devnum %d\n", __func__, devnum);
+}
+
 static int wsa881x_rdac_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
@@ -1008,6 +1042,7 @@ static int wsa881x_rdac_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		wsa881x_wait_ready(wsa881x);
 		mutex_lock(&wsa881x->temp_lock);
 		wsa881x_resource_acquire(component, ENABLE);
 		mutex_unlock(&wsa881x->temp_lock);
@@ -1886,8 +1921,17 @@ static int wsa881x_swr_reset(struct swr_device *pdev)
 		return 0;
 	}
 
-	wsa881x->bg_cnt = 0;
-	wsa881x->clk_cnt = 0;
+	/*
+	 * Do not zero bg_cnt/clk_cnt here. On 5.4 the amp is powered (sd_n)
+	 * from the SWR master's runtime resume and enumerates only after
+	 * the RDAC PRE_PMU has already taken the clock and bandgap. Zeroing
+	 * the counts then let the next resource release (the thermal
+	 * zone's temperature read) switch the clock and bandgap off in the
+	 * middle of playback. The speaker played for ~100 ms and went
+	 * silent, and the stream's own release later hit WARN_ON(cnt < 0).
+	 * The register state itself is restored from the cache by
+	 * wsa881x_regcache_sync() below.
+	 */
 	while (swr_get_logical_dev_num(pdev, pdev->addr, &devnum) && retry--) {
 		/* Retry after 1 msec delay */
 		usleep_range(1000, 1100);
