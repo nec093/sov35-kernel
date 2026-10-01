@@ -6498,6 +6498,8 @@ int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 		return -ENOMEM;
 	}
 
+	/* The head lives in kzalloc'd memory; its rwsem needs initializing. */
+	BLOCKING_INIT_NOTIFIER_HEAD(&mdp5_data->cwb.notifier_head);
 	blocking_notifier_chain_register(&mdp5_data->cwb.notifier_head,
 			&mdp5_data->cwb.cwb_sync_pt_data.notifier);
 	mdp5_data->cwb.cwb_work_queue = alloc_ordered_workqueue("%s",
