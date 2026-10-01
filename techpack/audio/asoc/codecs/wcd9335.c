@@ -732,6 +732,9 @@ struct tasha_priv {
 
 	/* num of slim ports required */
 	struct wcd9xxx_codec_dai_data  dai[NUM_CODEC_DAIS];
+	/* see tasha_slim_rx_seq_event() */
+	bool dapm_stream_start;
+	unsigned long slim_rx_pending;
 
 	/* SoundWire data structure */
 	struct tasha_swr_ctrl_data *swr_ctrl_data;
@@ -3014,6 +3017,62 @@ static int tasha_codec_enable_slim_chmask(struct wcd9xxx_codec_dai_data *dai,
 	return ret;
 }
 
+static int tasha_slim_rx_activate(struct snd_soc_component *component,
+				  struct wcd9xxx_codec_dai_data *dai)
+{
+	struct wcd9xxx *core = dev_get_drvdata(component->dev->parent);
+
+	dai->bus_down_in_recovery = false;
+	tasha_codec_enable_int_port(dai, component);
+	(void) tasha_codec_enable_slim_chmask(dai, true);
+	return wcd9xxx_cfg_slim_sch_rx(core, &dai->wcd9xxx_ch_list,
+				       dai->rate, dai->bit_width, &dai->grph);
+}
+
+/*
+ * A SLIMbus RX port receives samples as soon as its channel is active. If
+ * the interpolator it feeds is not running yet, the port overflows, and an
+ * overflowed port delivers only zeros for the rest of the stream. In a
+ * multi-channel group it also silences the other ports of the group.
+ *
+ * DAPM powers the AIF (aif_in) before the RX mixers and interpolators. A
+ * stream start powers the whole path in one run, so the channels were
+ * activated ~20 ms before the interpolators. Speaker playback through the
+ * HAL (two channel SLIM_0_RX) was silent apart from the amplifier pop.
+ *
+ * During a stream start run, the AIF event only marks the DAI. The channels
+ * are activated from the POST widget, after everything else is powered.
+ * Outside a stream start (a route change on a running stream) the AIF event
+ * activates them directly, as before.
+ */
+static int tasha_slim_rx_seq_event(struct snd_soc_dapm_widget *w,
+				   struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_component *component =
+			snd_soc_dapm_to_component(w->dapm);
+	struct tasha_priv *tasha_p = snd_soc_component_get_drvdata(component);
+	int i, ret;
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		tasha_p->dapm_stream_start = true;
+		break;
+	case SND_SOC_DAPM_POST_PMU:
+		tasha_p->dapm_stream_start = false;
+		for_each_set_bit(i, &tasha_p->slim_rx_pending, NUM_CODEC_DAIS) {
+			clear_bit(i, &tasha_p->slim_rx_pending);
+			ret = tasha_slim_rx_activate(component,
+						     &tasha_p->dai[i]);
+			if (ret)
+				dev_err(component->dev,
+					"%s: dai %d slim rx config failed %d\n",
+					__func__, i, ret);
+		}
+		break;
+	}
+	return 0;
+}
+
 static int tasha_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 				     struct snd_kcontrol *kcontrol,
 				     int event)
@@ -3042,17 +3101,18 @@ static int tasha_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
-		dai->bus_down_in_recovery = false;
-		tasha_codec_enable_int_port(dai, component);
-		(void) tasha_codec_enable_slim_chmask(dai, true);
-		ret = wcd9xxx_cfg_slim_sch_rx(core, &dai->wcd9xxx_ch_list,
-					      dai->rate, dai->bit_width,
-					      &dai->grph);
+		if (tasha_p->dapm_stream_start)
+			set_bit(w->shift, &tasha_p->slim_rx_pending);
+		else
+			ret = tasha_slim_rx_activate(component, dai);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
 		tasha_codec_vote_max_bw(component, true);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+		/* powered down again before the POST widget activated it */
+		if (test_and_clear_bit(w->shift, &tasha_p->slim_rx_pending))
+			break;
 		ret = wcd9xxx_disconnect_port(core, &dai->wcd9xxx_ch_list,
 					      dai->grph);
 		dev_dbg(component->dev, "%s: Disconnect RX port, ret = %d\n",
@@ -10728,6 +10788,8 @@ static const struct snd_kcontrol_new ec_buf_mux =
 	SOC_DAPM_ENUM("EC BUF Mux", ec_buf_mux_enum);
 
 static const struct snd_soc_dapm_widget tasha_dapm_widgets[] = {
+	SND_SOC_DAPM_PRE("SLIM RX SEQ PRE", tasha_slim_rx_seq_event),
+	SND_SOC_DAPM_POST("SLIM RX SEQ POST", tasha_slim_rx_seq_event),
 	SND_SOC_DAPM_OUTPUT("EAR"),
 	SND_SOC_DAPM_OUTPUT("ANC EAR"),
 	SND_SOC_DAPM_AIF_IN_E("AIF1 PB", "AIF1 Playback", 0, SND_SOC_NOPM,
