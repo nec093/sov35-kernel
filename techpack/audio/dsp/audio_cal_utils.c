@@ -883,6 +883,18 @@ int cal_utils_alloc_cal(size_t data_size, void *data,
 		ret = unmap_memory(cal_type, cal_block);
 		if (ret < 0)
 			goto err;
+		/*
+		 * Re-registering a buffer number brings a new buffer (fd):
+		 * import that one. realloc_memory() re-imports
+		 * map_data.ion_map_handle, which still held the fd of the
+		 * first registration, so the block kept pointing at the old
+		 * buffer while the client wrote its calibration into the new
+		 * one. With the audio HAL running its ACDB init twice, every
+		 * ADM/ASM/AFE calibration the ADSP saw was all-zero and HAL
+		 * playback came out as digital silence.
+		 */
+		cal_block->map_data.ion_map_handle =
+			alloc_data->cal_data.mem_handle;
 		ret = realloc_memory(cal_block);
 		if (ret < 0)
 			goto err;
