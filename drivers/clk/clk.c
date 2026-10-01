@@ -4546,6 +4546,22 @@ static int clk_get_voltage(struct clk_core *core, unsigned long rate, int n)
 		return -EINVAL;
 	}
 
+	/*
+	 * vdd_uv[] holds regulator corners, not microvolts. The OPP consumer
+	 * (the A5xx GPMU limits-management voltage table built by kgsl) wants
+	 * real voltages: with raw corners every level reached the GPMU as
+	 * 0 mV and LM hung the GPU ("MISC: GPU hang detected", status
+	 * C00401C3) at its first start and under heavy 3D load. Translate
+	 * through the corner regulator, as the legacy msm clock driver did.
+	 */
+	if (vdd->regulator[0]) {
+		int uv = regulator_list_corner_voltage(vdd->regulator[0],
+						       corner);
+
+		if (uv > 0)
+			return uv;
+	}
+
 	return corner;
 }
 
