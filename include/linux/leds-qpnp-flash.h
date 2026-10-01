@@ -18,6 +18,11 @@
 #define ENABLE_REGULATOR	BIT(0)
 #define DISABLE_REGULATOR	BIT(1)
 #define QUERY_MAX_CURRENT	BIT(2)
+/*
+ * msm_flash (msm-4.9 LA.UM.7.1) asks for the available current; the v1
+ * driver reports exactly that for QUERY_MAX_CURRENT.
+ */
+#define QUERY_MAX_AVAIL_CURRENT	QUERY_MAX_CURRENT
 
 #define FLASH_LED_PREPARE_OPTIONS_MASK	GENMASK(3, 0)
 

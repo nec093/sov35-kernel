@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,6 +26,7 @@
 #include "include/msm_csiphy_3_1_hwreg.h"
 #include "include/msm_csiphy_3_2_hwreg.h"
 #include "include/msm_csiphy_3_4_2_hwreg.h"
+#include "include/msm_csiphy_3_4_2_1_hwreg.h"
 #include "include/msm_csiphy_3_5_hwreg.h"
 #include "include/msm_csiphy_5_0_hwreg.h"
 #include "include/msm_csiphy_5_0_1_hwreg.h"
@@ -43,6 +44,7 @@
 #define CSIPHY_VERSION_V31                        0x31
 #define CSIPHY_VERSION_V32                        0x32
 #define CSIPHY_VERSION_V342                       0x342
+#define CSIPHY_VERSION_V342_1                     0x3421
 #define CSIPHY_VERSION_V35                        0x35
 #define CSIPHY_VERSION_V50                        0x500
 #define CSIPHY_VERSION_V501                       0x501
@@ -59,6 +61,8 @@
 #define MBPS                                      1000000
 #define SNPS_INTERPHY_OFFSET                      0x800
 #define SET_THE_BIT(x)                            (0x1 << x)
+#define SNPS_MAX_DATA_RATE_PER_LANE               2500000000ULL
+#define GBPS                                      1000000000
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
@@ -186,6 +190,13 @@ static int msm_csiphy_snps_2_lane_config(
 	void __iomem *csiphybase;
 
 	csiphybase = csiphy_dev->base;
+
+	if (csiphy_params->data_rate >
+		SNPS_MAX_DATA_RATE_PER_LANE * num_lanes) {
+		pr_err("unsupported data rate\n");
+		return -EINVAL;
+	}
+
 	local_data_rate = csiphy_params->data_rate;
 	if (mode == TWO_LANE_PHY_A)
 		offset = 0x0;
@@ -682,8 +693,10 @@ static int msm_csiphy_3phase_lane_config(
 	uint8_t i = 0;
 	uint16_t lane_mask = 0, lane_enable = 0, temp;
 	void __iomem *csiphybase;
+	uint64_t two_gbps = 0;
 
 	csiphybase = csiphy_dev->base;
+	two_gbps = 2 * (uint64_t)csiphy_params->lane_cnt * GBPS;
 	lane_mask = csiphy_params->lane_mask & 0x7;
 	while (lane_mask != 0) {
 		temp = (i << 1)+1;
@@ -829,10 +842,20 @@ static int msm_csiphy_3phase_lane_config(
 				csiphy_3ph_reg.mipi_csiphy_3ph_lnn_ctrl51.addr +
 				0x200*i);
 		}
-		msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
-			mipi_csiphy_3ph_lnn_ctrl25.data,
-			csiphybase + csiphy_dev->ctrl_reg->csiphy_3ph_reg.
-			mipi_csiphy_3ph_lnn_ctrl25.addr + 0x200*i);
+		if ((csiphy_dev->hw_version == CSIPHY_VERSION_V35) &&
+			(csiphy_params->data_rate > two_gbps)) {
+
+			msm_camera_io_w(0x40,
+				csiphybase +
+				csiphy_dev->ctrl_reg->csiphy_3ph_reg
+				.mipi_csiphy_3ph_lnn_ctrl25.addr + 0x200*i);
+		} else {
+			msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg
+				.mipi_csiphy_3ph_lnn_ctrl25.data,
+				csiphybase +
+				csiphy_dev->ctrl_reg->csiphy_3ph_reg
+				.mipi_csiphy_3ph_lnn_ctrl25.addr + 0x200*i);
+		}
 
 		lane_mask >>= 1;
 		i++;
@@ -985,6 +1008,13 @@ static int msm_csiphy_2phase_lane_config(
 
 	csiphybase = csiphy_dev->base;
 	lane_mask = csiphy_params->lane_mask & 0x1f;
+
+	if (csiphy_dev->hw_version == CSIPHY_VERSION_V342_1) {
+		lane_enable = msm_camera_io_r(csiphybase +
+			csiphy_dev->ctrl_reg->csiphy_3ph_reg
+				.mipi_csiphy_3ph_cmn_ctrl5.addr);
+	}
+
 	for (i = 0; i < MAX_DPHY_DATA_LN; i++) {
 		if (mask == 0x2) {
 			if (lane_mask & mask)
@@ -1075,7 +1105,8 @@ static int msm_csiphy_2phase_lane_config(
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg1.addr + offset);
 		}
-		if (csiphy_dev->hw_version == CSIPHY_VERSION_V342 &&
+		if ((csiphy_dev->hw_version == CSIPHY_VERSION_V342 ||
+		    csiphy_dev->hw_version == CSIPHY_VERSION_V342_1) &&
 			csiphy_params->combo_mode == 1) {
 			msm_camera_io_w(0x52,
 				csiphybase +
@@ -1088,8 +1119,9 @@ static int msm_csiphy_2phase_lane_config(
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 				mipi_csiphy_2ph_lnn_cfg5.addr + offset);
 		}
-		if (clk_lane == 1 &&
-			csiphy_dev->hw_version == CSIPHY_VERSION_V342) {
+		if (clk_lane == 1  &&
+			(csiphy_dev->hw_version == CSIPHY_VERSION_V342 ||
+			csiphy_dev->hw_version == CSIPHY_VERSION_V342_1)) {
 			msm_camera_io_w(0x1f,
 				csiphybase +
 				csiphy_dev->ctrl_reg->csiphy_3ph_reg.
@@ -1114,7 +1146,8 @@ static int msm_csiphy_2phase_lane_config(
 		}
 		mask <<= 1;
 	}
-	if (csiphy_dev->hw_version == CSIPHY_VERSION_V342 &&
+	if ((csiphy_dev->hw_version == CSIPHY_VERSION_V342 ||
+		csiphy_dev->hw_version == CSIPHY_VERSION_V342_1) &&
 		csiphy_params->combo_mode != 1) {
 		msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_3ph_reg.
 			mipi_csiphy_3ph_cmn_ctrl0.data,
@@ -1353,7 +1386,8 @@ static int msm_csiphy_lane_config(struct csiphy_device *csiphy_dev,
 
 	if (csiphy_dev->hw_version >= CSIPHY_VERSION_V30 &&
 		csiphy_dev->clk_mux_base != NULL &&
-		csiphy_dev->hw_version < CSIPHY_VERSION_V50) {
+		(csiphy_dev->hw_version == CSIPHY_VERSION_V342_1 ||
+		csiphy_dev->hw_version < CSIPHY_VERSION_V50)) {
 		val = msm_camera_io_r(csiphy_dev->clk_mux_base);
 		if (csiphy_params->combo_mode &&
 			(csiphy_params->lane_mask & 0x18) == 0x18) {
@@ -1384,7 +1418,11 @@ static int msm_csiphy_lane_config(struct csiphy_device *csiphy_dev,
 					csiphy_params);
 			csiphy_dev->num_irq_registers = 20;
 		} else {
-			if (csiphy_dev->hw_dts_version >= CSIPHY_VERSION_V50)
+			if (csiphy_dev->hw_dts_version == CSIPHY_VERSION_V342_1)
+				rc = msm_csiphy_2phase_lane_config(csiphy_dev,
+					csiphy_params);
+			else if (csiphy_dev->hw_dts_version >=
+					CSIPHY_VERSION_V50)
 				rc = msm_csiphy_2phase_lane_config_v50(
 					csiphy_dev, csiphy_params);
 			else
@@ -2370,8 +2408,11 @@ static int csiphy_probe(struct platform_device *pdev)
 	new_csiphy_dev->ctrl_reg = NULL;
 	new_csiphy_dev->ctrl_reg = kzalloc(sizeof(struct csiphy_ctrl_t),
 		GFP_KERNEL);
-	if (!new_csiphy_dev->ctrl_reg)
+	if (!new_csiphy_dev->ctrl_reg) {
+		kfree(new_csiphy_dev);
 		return -ENOMEM;
+	}
+
 	v4l2_subdev_init(&new_csiphy_dev->msm_sd.sd, &msm_csiphy_subdev_ops);
 	v4l2_set_subdevdata(&new_csiphy_dev->msm_sd.sd, new_csiphy_dev);
 	platform_set_drvdata(pdev, &new_csiphy_dev->msm_sd.sd);
@@ -2392,7 +2433,10 @@ static int csiphy_probe(struct platform_device *pdev)
 	media_entity_pads_init(&new_csiphy_dev->msm_sd.sd.entity, 0, NULL);
 	new_csiphy_dev->msm_sd.sd.entity.function = MSM_CAMERA_SUBDEV_CSIPHY;
 	new_csiphy_dev->msm_sd.close_seq = MSM_SD_CLOSE_2ND_CATEGORY | 0x4;
-	msm_sd_register(&new_csiphy_dev->msm_sd);
+
+	rc = msm_sd_register(&new_csiphy_dev->msm_sd);
+	if (rc)
+		goto csiphy_no_resource;
 
 	new_csiphy_dev->csiphy_3phase = 0;
 	new_csiphy_dev->num_irq_registers = 0x8;
@@ -2427,6 +2471,12 @@ static int csiphy_probe(struct platform_device *pdev)
 		new_csiphy_dev->ctrl_reg->csiphy_3ph_reg = csiphy_v3_4_2_3ph;
 		new_csiphy_dev->ctrl_reg->csiphy_reg = csiphy_v3_4_2;
 		new_csiphy_dev->hw_dts_version = CSIPHY_VERSION_V342;
+		new_csiphy_dev->csiphy_3phase = CSI_3PHASE_HW;
+	} else if (of_device_is_compatible(new_csiphy_dev->pdev->dev.of_node,
+		"qcom,csiphy-v3.4.2.1")) {
+		new_csiphy_dev->ctrl_reg->csiphy_3ph_reg = csiphy_v3_4_2_1_3ph;
+		new_csiphy_dev->ctrl_reg->csiphy_reg = csiphy_v3_4_2_1;
+		new_csiphy_dev->hw_dts_version = CSIPHY_VERSION_V342_1;
 		new_csiphy_dev->csiphy_3phase = CSI_3PHASE_HW;
 	} else if (of_device_is_compatible(new_csiphy_dev->pdev->dev.of_node,
 		"qcom,csiphy-v3.5")) {
@@ -2483,7 +2533,7 @@ static int csiphy_probe(struct platform_device *pdev)
 	rc = msm_csiphy_get_clk_info(new_csiphy_dev, pdev);
 	if (rc < 0) {
 		pr_err("%s: msm_csiphy_get_clk_info() failed", __func__);
-		rc =  -EFAULT;
+		//rc =  -EFAULT;
 		goto csiphy_no_resource;
 	}
 

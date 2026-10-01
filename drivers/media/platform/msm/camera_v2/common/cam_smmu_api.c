@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,10 +25,41 @@
 #include <linux/sizes.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/secure_buffer.h>
-#include "msm_camera_tz_util.h"
+#include <linux/dma-buf.h>
+#include <linux/msm_ion.h>
 #include "cam_smmu_api.h"
+#include "msm_camera_tz_util.h"
 
 #define SCRATCH_ALLOC_START SZ_128K
+
+/*
+ * The SODP (msm-4.9 LA.UM.7.1) driver allocates through the dma-buf ION
+ * API of <linux/ion_kernel.h>. This kernel has the ion_client API, so
+ * allocate with a short-lived client and return the shared dma-buf, which
+ * holds its own reference to the buffer.
+ */
+static struct dma_buf *cam_smmu_ion_alloc(size_t len, unsigned int heap_mask,
+					  unsigned int flags)
+{
+	struct ion_client *client;
+	struct ion_handle *ion_hdl;
+	struct dma_buf *dmabuf;
+
+	client = msm_ion_client_create("cam_smmu");
+	if (IS_ERR_OR_NULL(client))
+		return ERR_PTR(-ENOMEM);
+
+	ion_hdl = ion_alloc(client, len, len, heap_mask, flags);
+	if (IS_ERR_OR_NULL(ion_hdl)) {
+		dmabuf = ERR_PTR(-ENOMEM);
+		goto out;
+	}
+	dmabuf = ion_share_dma_buf(client, ion_hdl);
+	ion_free(client, ion_hdl);
+out:
+	ion_client_destroy(client);
+	return dmabuf;
+}
 #define SCRATCH_ALLOC_END   SZ_256M
 #define VA_SPACE_END	    SZ_2G
 #define IOMMU_INVALID_DIR -1
@@ -120,6 +151,7 @@ struct cam_iommu_cb_set {
 	struct cam_context_bank_info *cb_info;
 	u32 cb_num;
 	u32 cb_init_count;
+	bool camera_secure_sid;
 	struct work_struct smmu_work;
 	struct mutex payload_list_lock;
 	struct list_head payload_list;
@@ -146,8 +178,9 @@ struct cam_dma_buff_info {
 };
 
 struct cam_sec_buff_info {
-	struct ion_handle *i_hdl;
-	struct ion_client *i_client;
+	struct dma_buf *dmabuf;
+	struct dma_buf_attachment *attach;
+	struct sg_table *table;
 	enum dma_data_direction dir;
 	int ref_count;
 	dma_addr_t paddr;
@@ -782,29 +815,34 @@ static int cam_smmu_send_syscall_cpp_intf(int vmid, int idx)
 	struct scm_desc desc = {0};
 	struct cam_context_bank_info *cb = &iommu_cb_set.cb_info[idx];
 	/*
-	 * Handed to the hypervisor by physical address: must not live on
+	 * Handed to the hypervisor by physical address, so heap rather than
 	 * the (vmalloc'ed, CONFIG_VMAP_STACK) stack.
 	 */
-	static uint32_t sid_info;
+	uint32_t *sid_info = NULL;
 
+	sid_info = kzalloc(sizeof(uint32_t) * 1, GFP_KERNEL);
+	if (!sid_info)
+		return -ENOMEM;
 
-	sid_info = cb->sids[0]; /* CPP SID */
+	sid_info[0] = cb->sids[0]; /* CPP SID */
 
 	desc.arginfo = SCM_ARGS(4, SCM_VAL, SCM_RW, SCM_VAL, SCM_VAL);
 	desc.args[0] = CAMERA_DEVICE_ID;
-	desc.args[1] = SCM_BUFFER_PHYS(&sid_info);
+	desc.args[1] = SCM_BUFFER_PHYS(sid_info);
 	desc.args[2] = sizeof(uint32_t);
 	desc.args[3] = vmid;
 	/*
 	 * Syscall to hypervisor to switch CPP SID's
 	 * between secure and non-secure contexts
 	 */
-	dmac_flush_range(&sid_info, &sid_info + 1);
+	dmac_flush_range(sid_info, sid_info + 1);
 	if (scm_call2(SCM_SIP_FNID(SCM_SVC_MP, SECURE_SYSCALL_ID),
 			&desc)){
 		pr_err("call to hypervisor failed\n");
+		kfree(sid_info);
 		return -EINVAL;
 	}
+	kfree(sid_info);
 	return rc;
 }
 
@@ -886,9 +924,7 @@ static int cam_smmu_attach_sec_cpp(int idx)
 		 * entered the secure mode.
 		 */
 	}
-
 	iommu_cb_set.cb_info[idx].state = CAM_SMMU_ATTACH;
-
 	return 0;
 }
 
@@ -925,34 +961,35 @@ static int cam_smmu_attach_sec_vfe_ns_stats(int idx)
 {
 	int32_t rc = 0;
 
-	/*
-	 *When switching to secure, for secure pix and non-secure stats
-	 *localizing scm/attach of non-secure SID's in attach secure
-	 */
-	if (cam_smmu_send_syscall_pix_intf(VMID_CP_CAMERA, idx)) {
-		pr_err("error: syscall failed\n");
-		return -EINVAL;
+	if (iommu_cb_set.camera_secure_sid == false) {
+		/*
+		 *When switching to secure, for secure pix and non-secure stats
+		 *localizing scm/attach of non-secure SID's in attach secure
+		 */
+		if (cam_smmu_send_syscall_pix_intf(VMID_CP_CAMERA, idx)) {
+			pr_err("error: syscall failed\n");
+			return -EINVAL;
+		}
 	}
-
 	if (iommu_cb_set.cb_info[idx].state != CAM_SMMU_ATTACH) {
 		if (cam_smmu_attach(idx)) {
 			pr_err("error: failed to attach\n");
 			return -EINVAL;
 		}
 	}
-
-	rc = msm_camera_tz_set_mode(MSM_CAMERA_TZ_MODE_SECURE,
-		MSM_CAMERA_TZ_HW_BLOCK_ISP);
-	if (rc != 0) {
-		pr_err("secure mode TA notification for vfe unsuccessful, rc %d\n",
-			rc);
-		/*
-		 * Although the TA notification failed, the flow should proceed
-		 * without returning an error as at this point vfe had already
-		 * entered the secure mode
-		 */
+	if (iommu_cb_set.camera_secure_sid == false) {
+		rc = msm_camera_tz_set_mode(MSM_CAMERA_TZ_MODE_SECURE,
+			MSM_CAMERA_TZ_HW_BLOCK_ISP);
+		if (rc != 0) {
+			pr_err("secure mode TA notify vfe unsuccessful rc %d\n",
+				rc);
+			/*
+			 * Although the TA notification failed, the flow should
+			 * proceed without returning an error as at this point
+			 * vfe had already entered the secure mode
+			 */
+		}
 	}
-
 	return 0;
 }
 
@@ -960,18 +997,20 @@ static int cam_smmu_detach_sec_vfe_ns_stats(int idx)
 {
 	int32_t rc = 0;
 
-	rc = msm_camera_tz_set_mode(MSM_CAMERA_TZ_MODE_NON_SECURE,
-		MSM_CAMERA_TZ_HW_BLOCK_ISP);
-	if (rc != 0) {
-		pr_err("secure mode TA notification for vfe unsuccessful, rc %d\n",
-			rc);
-		/*
-		 * Although the TA notification failed, the flow should proceed
-		 * without returning an error, as at this point vfe is in secure
-		 * mode and should be switched to non-secure regardless
-		 */
+	if (iommu_cb_set.camera_secure_sid == false) {
+		rc = msm_camera_tz_set_mode(MSM_CAMERA_TZ_MODE_NON_SECURE,
+			MSM_CAMERA_TZ_HW_BLOCK_ISP);
+		if (rc != 0) {
+			pr_err("secure mode TA notify vfe unsuccessful rc %d\n",
+				rc);
+			/*
+			 * Although the TA notification failed, the flow should
+			 * proceed without returning an error, as at this point
+			 * vfe is in secure mode and should be switched to
+			 * non-secure regardless
+			 */
+		}
 	}
-
 	/*
 	 *While exiting from secure mode for secure pix and non-secure stats,
 	 *localizing detach/scm of non-secure SID's to detach secure
@@ -982,10 +1021,11 @@ static int cam_smmu_detach_sec_vfe_ns_stats(int idx)
 			return -ENODEV;
 		}
 	}
-
-	if (cam_smmu_send_syscall_pix_intf(VMID_HLOS, idx)) {
-		pr_err("error: syscall failed\n");
-		return -EINVAL;
+	if (iommu_cb_set.camera_secure_sid == false) {
+		if (cam_smmu_send_syscall_pix_intf(VMID_HLOS, idx)) {
+			pr_err("error: syscall failed\n");
+			return -EINVAL;
+		}
 	}
 	return 0;
 }
@@ -1028,14 +1068,6 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 		goto err_detach;
 	}
 
-	rc = msm_dma_map_sg_lazy(iommu_cb_set.cb_info[idx].dev, table->sgl,
-			table->nents, dma_dir, buf);
-	if (rc != table->nents) {
-		pr_err("Error: msm_dma_map_sg_lazy failed\n");
-		rc = -ENOMEM;
-		goto err_unmap_sg;
-	}
-
 	if (table->sgl) {
 		CDBG("DMA buf: %pK, device: %pK, attach: %pK, table: %pK\n",
 				(void *)buf,
@@ -1047,27 +1079,27 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 	} else {
 		rc = -EINVAL;
 		pr_err("Error: table sgl is null\n");
-		goto err_map_addr;
+		goto err_unmap_sg;
 	}
 
 	/* fill up mapping_info */
 	mapping_info = kzalloc(sizeof(struct cam_dma_buff_info), GFP_KERNEL);
 	if (!mapping_info) {
 		rc = -ENOSPC;
-		goto err_map_addr;
+		goto err_unmap_sg;
 	}
 	mapping_info->ion_fd = ion_fd;
 	mapping_info->buf = buf;
 	mapping_info->attach = attach;
 	mapping_info->table = table;
 	mapping_info->paddr = sg_dma_address(table->sgl);
-	mapping_info->len = (size_t)sg_dma_len(table->sgl);
+	mapping_info->len = (size_t)buf->size;
 	mapping_info->dir = dma_dir;
 	mapping_info->ref_count = 1;
 
 	/* return paddr and len to client */
 	*paddr_ptr = sg_dma_address(table->sgl);
-	*len_ptr = (size_t)sg_dma_len(table->sgl);
+	*len_ptr = (size_t)buf->size;
 
 	if (!*paddr_ptr || !*len_ptr) {
 		pr_err("Error: Space Allocation failed!\n");
@@ -1085,11 +1117,7 @@ static int cam_smmu_map_buffer_and_add_to_list(int idx, int ion_fd,
 	return 0;
 
 err_mapping_info:
-	kzfree(mapping_info);
-err_map_addr:
-	msm_dma_unmap_sg(iommu_cb_set.cb_info[idx].dev,
-		table->sgl, table->nents,
-		dma_dir, buf);
+	kfree(mapping_info);
 err_unmap_sg:
 	dma_buf_unmap_attachment(attach, table, dma_dir);
 err_detach:
@@ -1116,9 +1144,6 @@ static int cam_smmu_unmap_buf_and_remove_from_list(
 	}
 
 	/* iommu buffer clean up */
-	msm_dma_unmap_sg(iommu_cb_set.cb_info[idx].dev,
-		mapping_info->table->sgl, mapping_info->table->nents,
-		mapping_info->dir, mapping_info->buf);
 	dma_buf_unmap_attachment(mapping_info->attach,
 		mapping_info->table, mapping_info->dir);
 	dma_buf_detach(mapping_info->buf, mapping_info->attach);
@@ -1241,6 +1266,9 @@ int cam_smmu_ops(int handle, enum cam_smmu_ops_param ops)
 	int ret = 0, idx;
 
 	CDBG("E: ops = %d\n", ops);
+	if (iommu_cb_set.camera_secure_sid)
+		return ret;
+
 	idx = GET_SMMU_TABLE_IDX(handle);
 	if (handle == HANDLE_INIT || idx < 0 || idx >= iommu_cb_set.cb_num) {
 		pr_err("Error: handle or index invalid. idx = %d hdl = %x\n",
@@ -1583,12 +1611,13 @@ handle_err:
 }
 
 int cam_smmu_alloc_get_stage2_scratch_mem(int handle,
-		enum cam_smmu_map_dir dir, struct ion_client *client,
-		struct ion_handle **sc_handle, ion_phys_addr_t *addr,
-		size_t *len_ptr)
+		enum cam_smmu_map_dir dir, struct dma_buf **dmabuf,
+		dma_addr_t *addr, size_t *len_ptr)
 {
 	int idx, rc = 0;
 	enum dma_data_direction dma_dir;
+	struct dma_buf_attachment *attach = NULL;
+	struct sg_table *table = NULL;
 
 	dma_dir = cam_smmu_translate_dir(dir);
 	if (dma_dir == DMA_NONE) {
@@ -1612,38 +1641,48 @@ int cam_smmu_alloc_get_stage2_scratch_mem(int handle,
 				iommu_cb_set.cb_info[idx].name);
 		return -EINVAL;
 	}
-	*sc_handle = ion_alloc(client, SZ_2M, SZ_2M,
-				ION_HEAP(ION_SECURE_DISPLAY_HEAP_ID),
+	*dmabuf = cam_smmu_ion_alloc(SZ_2M, ION_HEAP(ION_SECURE_DISPLAY_HEAP_ID),
 				ION_FLAG_SECURE | ION_FLAG_CP_CAMERA);
-	if (IS_ERR_OR_NULL((void *) (*sc_handle))) {
-		rc = -ENOMEM;
-		goto err_ion_handle;
+	if (IS_ERR_OR_NULL(*dmabuf))
+		return -ENOMEM;
+
+	attach = dma_buf_attach(*dmabuf, iommu_cb_set.cb_info[idx].dev);
+	if (IS_ERR_OR_NULL(attach)) {
+		pr_err("Error: dma buf attach failed");
+		rc = PTR_ERR(attach);
+		goto err_put;
+	}
+
+	/*
+	 * No dma_map_attrs in this kernel's dma_buf_attachment, so no
+	 * DMA_ATTR_SKIP_CPU_SYNC: the ION map only syncs pages the CPU
+	 * dirtied through a mapping, which secure buffers never have.
+	 */
+	table = dma_buf_map_attachment(attach, dma_dir);
+	if (IS_ERR_OR_NULL(table)) {
+		pr_err("Error: dma buf map attachment failed");
+		rc = PTR_ERR(table);
+		goto err_detach;
 	}
 
 	/* return addr and len to client */
-	rc = ion_phys(client, *sc_handle, addr, len_ptr);
-	if (rc) {
-		pr_err("%s: ION Get Physical failed, rc = %d\n",
-					__func__, rc);
-		rc = -EINVAL;
-		goto err_ion_phys;
-	}
+	*addr = sg_phys(table->sgl);
+	*len_ptr = (size_t)sg_dma_len(table->sgl);
 
 	CDBG("dev = %pK, paddr= %pK, len = %u\n",
 		(void *)iommu_cb_set.cb_info[idx].dev,
 		(void *)*addr, (unsigned int)*len_ptr);
 	return rc;
 
-err_ion_phys:
-	ion_free(client, *sc_handle);
+err_detach:
+	dma_buf_detach(*dmabuf, attach);
+err_put:
+	dma_buf_put(*dmabuf);
 
-err_ion_handle:
-	*sc_handle = NULL;
 	return rc;
 }
 
-int cam_smmu_free_stage2_scratch_mem(int handle,
-	struct ion_client *client, struct ion_handle *sc_handle)
+int cam_smmu_free_stage2_scratch_mem(int handle, struct dma_buf *dmabuf)
 {
 	int idx = 0;
 	/* find index in the iommu_cb_set.cb_info */
@@ -1653,7 +1692,7 @@ int cam_smmu_free_stage2_scratch_mem(int handle,
 			idx, handle);
 		return -EINVAL;
 	}
-	ion_free(client, sc_handle);
+	dma_buf_put(dmabuf);
 	return 0;
 }
 
@@ -1661,11 +1700,24 @@ static int cam_smmu_secure_unmap_buf_and_remove_from_list(
 		struct cam_sec_buff_info *mapping_info,
 		int idx)
 {
-	if (!mapping_info) {
-		pr_err("Error: List doesn't exist\n");
+	if ((!mapping_info->dmabuf) || (!mapping_info->table) ||
+		(!mapping_info->attach)) {
+		pr_err("Error: Invalid params dev = %pK, table = %pK",
+			(void *)iommu_cb_set.cb_info[idx].dev,
+			(void *)mapping_info->table);
+		pr_err("Error:dma_buf = %pK, attach = %pK\n",
+			(void *)mapping_info->dmabuf,
+			(void *)mapping_info->attach);
 		return -EINVAL;
 	}
-	ion_free(mapping_info->i_client, mapping_info->i_hdl);
+
+	/* iommu buffer clean up */
+	dma_buf_unmap_attachment(mapping_info->attach,
+	mapping_info->table, mapping_info->dir);
+	dma_buf_detach(mapping_info->dmabuf, mapping_info->attach);
+	dma_buf_put(mapping_info->dmabuf);
+	mapping_info->dmabuf = NULL;
+
 	list_del_init(&mapping_info->list);
 
 	/* free one buffer */
@@ -1725,12 +1777,13 @@ put_addr_end:
 EXPORT_SYMBOL(cam_smmu_put_stage2_phy_addr);
 
 static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
-		 enum dma_data_direction dma_dir, struct ion_client *client,
-		 dma_addr_t *paddr_ptr,
+		 enum dma_data_direction dma_dir, dma_addr_t *paddr_ptr,
 		 size_t *len_ptr)
 {
 	int rc = 0;
-	struct ion_handle *i_handle = NULL;
+	struct dma_buf *dmabuf = NULL;
+	struct dma_buf_attachment *attach = NULL;
+	struct sg_table *table = NULL;
 	struct cam_sec_buff_info *mapping_info;
 
 
@@ -1744,19 +1797,32 @@ static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 		return -EINVAL;
 	}
 
-	i_handle = ion_import_dma_buf_fd(client, ion_fd);
-	if (IS_ERR_OR_NULL((void *)(i_handle))) {
-		pr_err("%s: ion import dma buffer failed\n", __func__);
+	dmabuf = dma_buf_get(ion_fd);
+	if (IS_ERR_OR_NULL((void *)(dmabuf))) {
+		pr_err("Error: dma buf get failed");
+		return -EINVAL;
+	}
+
+	/*
+	 * ion_phys() is deprecated. call dma_buf_attach() and
+	 * dma_buf_map_attachment() to get the buffer's physical
+	 * address.
+	 */
+	attach = dma_buf_attach(dmabuf, iommu_cb_set.cb_info[idx].dev);
+	if (IS_ERR_OR_NULL(attach)) {
+		pr_err("Error: dma buf attach failed");
+		return -EINVAL;
+	}
+
+	table = dma_buf_map_attachment(attach, dma_dir);
+	if (IS_ERR_OR_NULL(table)) {
+		pr_err("Error: dma buf map attachment failed");
 		return -EINVAL;
 	}
 
 	/* return addr and len to client */
-	rc = ion_phys(client, i_handle, paddr_ptr, len_ptr);
-	if (rc) {
-		pr_err("%s: ION Get Physical failed, rc = %d\n",
-					__func__, rc);
-		return -EINVAL;
-	}
+	*paddr_ptr = sg_phys(table->sgl);
+	*len_ptr = (size_t)sg_dma_len(table->sgl);
 
 	/* fill up mapping_info */
 	mapping_info = kzalloc(sizeof(struct cam_sec_buff_info), GFP_KERNEL);
@@ -1768,8 +1834,9 @@ static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 	mapping_info->len = *len_ptr;
 	mapping_info->dir = dma_dir;
 	mapping_info->ref_count = 1;
-	mapping_info->i_hdl = i_handle;
-	mapping_info->i_client = client;
+	mapping_info->dmabuf = dmabuf;
+	mapping_info->attach = attach;
+	mapping_info->table = table;
 
 	CDBG("ion_fd = %d, dev = %pK, paddr= %pK, len = %u\n", ion_fd,
 			(void *)iommu_cb_set.cb_info[idx].dev,
@@ -1783,7 +1850,7 @@ static int cam_smmu_map_stage2_buffer_and_add_to_list(int idx, int ion_fd,
 
 int cam_smmu_get_stage2_phy_addr(int handle,
 		int ion_fd, enum cam_smmu_map_dir dir,
-		struct ion_client *client, ion_phys_addr_t *paddr_ptr,
+		dma_addr_t *paddr_ptr,
 		size_t *len_ptr)
 {
 	int idx, rc;
@@ -1835,7 +1902,7 @@ int cam_smmu_get_stage2_phy_addr(int handle,
 		goto get_addr_end;
 	}
 	rc = cam_smmu_map_stage2_buffer_and_add_to_list(idx, ion_fd, dma_dir,
-			client, paddr_ptr, len_ptr);
+			paddr_ptr, len_ptr);
 	if (rc < 0) {
 		pr_err("Error: mapping or add list fail\n");
 		goto get_addr_end;
@@ -2196,6 +2263,12 @@ static int cam_populate_smmu_context_banks(struct device *dev,
 			cam_smmu_iommu_fault_handler,
 			(void *)cb->name);
 
+	if (iommu_cb_set.camera_secure_sid) {
+		rc = cam_smmu_attach(iommu_cb_set.cb_init_count);
+		if (rc)
+			pr_err("Error: SMMU attach failed for %s\n", cb->name);
+	}
+
 	/* increment count to next bank */
 	iommu_cb_set.cb_init_count++;
 
@@ -2235,6 +2308,11 @@ static int cam_smmu_probe(struct platform_device *pdev)
 		}
 		return rc;
 	}
+
+	if (of_property_read_bool(dev->of_node, "qcom,camera-secure-sid"))
+		iommu_cb_set.camera_secure_sid = true;
+	else
+		iommu_cb_set.camera_secure_sid = false;
 
 	/* probe thru all the subdevices */
 	rc = of_platform_populate(pdev->dev.of_node, msm_cam_smmu_dt_match,
@@ -2282,4 +2360,3 @@ module_init(cam_smmu_init_module);
 module_exit(cam_smmu_exit_module);
 MODULE_DESCRIPTION("MSM Camera SMMU driver");
 MODULE_LICENSE("GPL v2");
-

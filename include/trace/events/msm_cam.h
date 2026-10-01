@@ -129,6 +129,38 @@ TRACE_EVENT(msm_cam_ping_pong_debug_dump,
 	)
 );
 
+TRACE_EVENT(msm_cam_isp_status_dump,
+	TP_PROTO(char *event, uint32_t vfe_id, uint32_t frame_id,
+		uint32_t irq_status0, uint32_t irq_status1,
+		uint32_t dual_irq_status),
+	TP_ARGS(event, vfe_id, frame_id, irq_status0,
+		irq_status1, dual_irq_status),
+	TP_STRUCT__entry(
+		__field(char *, event)
+		__field(unsigned int, vfe_id)
+		__field(unsigned int, frame_id)
+		__field(unsigned int, irq_status0)
+		__field(unsigned int, irq_status1)
+		__field(unsigned int, dual_irq_status)
+	),
+	TP_fast_assign(
+		__entry->event = event;
+		__entry->vfe_id = vfe_id;
+		__entry->frame_id = frame_id;
+		__entry->irq_status0 = irq_status0;
+		__entry->irq_status1 = irq_status1;
+		__entry->dual_irq_status = dual_irq_status;
+	),
+	TP_printk("%s vfe %d, frame %d, irq_st0 %x, irq_st1 %x dual_irq %x",
+		__entry->event,
+		__entry->vfe_id,
+		__entry->frame_id,
+		__entry->irq_status0,
+		__entry->irq_status1,
+		__entry->dual_irq_status
+	)
+);
+
 #endif /* _MSM_CAM_TRACE_H */
 /* This part must be outside protection */
 #include <trace/define_trace.h>
