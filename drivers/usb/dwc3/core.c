@@ -1151,10 +1151,13 @@ static int dwc3_probe(struct platform_device *pdev)
 
 	irq = platform_get_irq(to_platform_device(dwc->dev), 0);
 
-	/* will be enabled in dwc3_msm_resume() */
+	/*
+	 * Will be enabled in dwc3_msm_resume(). Not IRQF_SHARED: the line
+	 * is dwc3's alone, and a shared handler on an IRQ_NOAUTOEN line
+	 * trips the WARN_ON_ONCE in __setup_irq() on every boot.
+	 */
 	irq_set_status_flags(irq, IRQ_NOAUTOEN);
-	ret = devm_request_irq(dev, irq, dwc3_interrupt, IRQF_SHARED, "dwc3",
-			dwc);
+	ret = devm_request_irq(dev, irq, dwc3_interrupt, 0, "dwc3", dwc);
 	if (ret) {
 		dev_err(dwc->dev, "failed to request irq #%d --> %d\n",
 				irq, ret);
