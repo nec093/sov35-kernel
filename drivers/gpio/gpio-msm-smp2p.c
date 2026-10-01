@@ -52,6 +52,7 @@ struct smp2p_chip_dev {
 
 static struct platform_driver smp2p_gpio_driver;
 static struct lock_class_key smp2p_gpio_lock_class;
+static struct lock_class_key smp2p_gpio_request_class;
 static struct irq_chip smp2p_gpio_irq_chip;
 static DEFINE_SPINLOCK(smp2p_entry_lock_lha1);
 static LIST_HEAD(smp2p_entry_list);
@@ -374,9 +375,12 @@ static int smp2p_irq_map(struct irq_domain *domain_ptr, unsigned int virq,
 	}
 
 	/* map chip structures to device */
-	/* 5.4: separate request-mutex class; reuse the same key */
+	/*
+	 * 5.4 also classes the request mutex. It needs its own key: sharing
+	 * the raw-spinlock key made lockdep warn in look_up_lock_class().
+	 */
 	irq_set_lockdep_class(virq, &smp2p_gpio_lock_class,
-			      &smp2p_gpio_lock_class);
+			      &smp2p_gpio_request_class);
 	irq_set_chip_and_handler(virq, &smp2p_gpio_irq_chip,
 				 handle_level_irq);
 	irq_set_chip_data(virq, chip);
