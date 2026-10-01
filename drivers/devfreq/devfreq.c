@@ -134,18 +134,17 @@ static void devfreq_set_freq_table(struct devfreq *devfreq)
 		return;
 	}
 
-	rcu_read_lock();
+	/* 5.4 OPP lookups sleep and return a counted reference (no RCU) */
 	for (i = 0, freq = 0; i < profile->max_state; i++, freq++) {
 		opp = dev_pm_opp_find_freq_ceil(devfreq->dev.parent, &freq);
 		if (IS_ERR(opp)) {
 			devm_kfree(devfreq->dev.parent, profile->freq_table);
 			profile->max_state = 0;
-			rcu_read_unlock();
 			return;
 		}
+		dev_pm_opp_put(opp);
 		profile->freq_table[i] = freq;
 	}
-	rcu_read_unlock();
 }
 
 /**
@@ -1233,13 +1232,13 @@ static ssize_t available_frequencies_show(struct device *d,
 	ssize_t count = 0;
 	unsigned long freq = 0;
 
-	rcu_read_lock();
 	use_opp = dev_pm_opp_get_opp_count(dev) > 0;
 	while (use_opp || (!use_opp && i < max_state)) {
 		if (use_opp) {
 			opp = dev_pm_opp_find_freq_ceil(dev, &freq);
 			if (IS_ERR(opp))
 				break;
+			dev_pm_opp_put(opp);
 		} else {
 			freq = df->profile->freq_table[i++];
 		}
@@ -1248,7 +1247,6 @@ static ssize_t available_frequencies_show(struct device *d,
 				   "%lu ", freq);
 		freq++;
 	}
-	rcu_read_unlock();
 
 	/* Truncate the trailing space */
 	if (count)

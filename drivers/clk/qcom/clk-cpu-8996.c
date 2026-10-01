@@ -1030,8 +1030,11 @@ static void print_opp_table(int pwr_cpu, int perf_cpu)
 	unsigned long apc0_fmin = pwrcl_pmux.clkr.hw.init->rate_max[1];
 	unsigned long apc1_fmin = perfcl_pmux.clkr.hw.init->rate_max[1];
 
-	rcu_read_lock();
-
+	/*
+	 * 5.4's OPP lookups sleep on the table mutex and return a counted
+	 * reference: no rcu_read_lock() (sleeping inside it is a bug), and
+	 * put every OPP we get back.
+	 */
 	oppfmax = dev_pm_opp_find_freq_exact(get_cpu_device(pwr_cpu), apc0_fmax,
 					     true);
 	oppfmin = dev_pm_opp_find_freq_exact(get_cpu_device(pwr_cpu), apc0_fmin,
@@ -1044,6 +1047,10 @@ static void print_opp_table(int pwr_cpu, int perf_cpu)
 		dev_pm_opp_get_voltage(oppfmin));
 	pr_info("clock_cpu: pwr: OPP voltage for %lu: %ld\n", apc0_fmax,
 		dev_pm_opp_get_voltage(oppfmax));
+	if (!IS_ERR(oppfmax))
+		dev_pm_opp_put(oppfmax);
+	if (!IS_ERR(oppfmin))
+		dev_pm_opp_put(oppfmin);
 
 	oppfmax = dev_pm_opp_find_freq_exact(get_cpu_device(perf_cpu), apc1_fmax,
 					     true);
@@ -1053,8 +1060,10 @@ static void print_opp_table(int pwr_cpu, int perf_cpu)
 		dev_pm_opp_get_voltage(oppfmin));
 	pr_info("clock_cpu: perf: OPP voltage for %lu: %lu\n", apc1_fmax,
 		dev_pm_opp_get_voltage(oppfmax));
-
-	rcu_read_unlock();
+	if (!IS_ERR(oppfmax))
+		dev_pm_opp_put(oppfmax);
+	if (!IS_ERR(oppfmin))
+		dev_pm_opp_put(oppfmin);
 }
 
 static void populate_opp_table(struct platform_device *pdev)
