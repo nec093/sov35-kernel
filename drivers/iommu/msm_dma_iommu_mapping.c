@@ -13,6 +13,7 @@
 
 #include <linux/kernel.h>
 #include <linux/kref.h>
+#include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/rbtree.h>
 #include <linux/mutex.h>
@@ -214,9 +215,13 @@ static inline int __msm_dma_map_sg(struct device *dev, struct scatterlist *sg,
 		 * @nents entries (dma-direct devices always, and the IOMMU
 		 * path when syncing), and a reused dma-direct mapping needs
 		 * each entry's own dma_address, not just the first one.
+		 * A video frame buffer has thousands of entries (32 bytes
+		 * each), and an order-5 kmalloc of the copy failed once
+		 * memory was fragmented: venus then failed to map the buffer
+		 * (-ENOMEM, "Failed to allocate shared memory").
 		 */
-		iommu_map->sgl = kmalloc_array(nents, sizeof(*iommu_map->sgl),
-					       GFP_KERNEL);
+		iommu_map->sgl = kvmalloc_array(nents, sizeof(*iommu_map->sgl),
+						GFP_KERNEL);
 		if (!iommu_map->sgl) {
 			dma_unmap_sg_attrs(dev, sg, nents, dir,
 					   attrs | DMA_ATTR_SKIP_CPU_SYNC);
@@ -367,7 +372,7 @@ static void msm_iommu_map_release(struct kref *kref)
 	 */
 	dma_unmap_sg_attrs(map->dev, map->sgl, map->nents, map->dir,
 			   map->map_attrs | DMA_ATTR_SKIP_CPU_SYNC);
-	kfree(map->sgl);
+	kvfree(map->sgl);
 	kfree(map);
 }
 
