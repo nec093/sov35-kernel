@@ -854,6 +854,21 @@ int kgsl_busmon_target(struct device *dev, unsigned long *freq, u32 flags)
 
 int kgsl_busmon_get_cur_freq(struct device *dev, unsigned long *freq)
 {
+	struct kgsl_device *device = dev_get_drvdata(dev);
+
+	/*
+	 * This used to return success without setting *freq, so devfreq's
+	 * cur_freq sysfs (and its transition notifiers) reported whatever
+	 * was on the stack, typically a kernel pointer. The bus monitor runs
+	 * in GPU frequency units: report the active GPU level. A plain read,
+	 * no device->mutex, since busmon target() runs under it.
+	 */
+	if (device == NULL)
+		return -ENODEV;
+	if (freq == NULL)
+		return -EINVAL;
+
+	*freq = kgsl_pwrctrl_active_freq(&device->pwrctrl);
 	return 0;
 }
 
