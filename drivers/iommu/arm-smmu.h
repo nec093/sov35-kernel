@@ -215,6 +215,11 @@ enum arm_smmu_arch_version {
 	ARM_SMMU_V2,
 };
 
+struct arm_smmu_impl_def_reg {
+	u32 offset;
+	u32 value;
+};
+
 enum arm_smmu_implementation {
 	GENERIC_SMMU,
 	ARM_MMU500,
@@ -285,6 +290,15 @@ struct arm_smmu_device {
 	 * forever (confirmed via binary-patch bisection for smmu-anoc1).
 	 */
 	bool				skip_init;
+
+	/*
+	 * CAF/QCOM QSMMUv2: "attach-impl-defs" (offset, value) pairs that the
+	 * SMMU needs in its implementation-defined register space (micro-TLB,
+	 * prefetch and transaction tuning). Written with the SMMU halted on
+	 * every reset, as msm-4.9 did (see qsmmuv2_device_reset()).
+	 */
+	struct arm_smmu_impl_def_reg	*impl_def_regs;
+	unsigned int			num_impl_def_regs;
 
 	/*
 	 * CAF DTs power multimedia SMMUs from a GDSC given as "vdd-supply"

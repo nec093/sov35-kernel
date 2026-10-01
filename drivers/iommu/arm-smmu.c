@@ -95,6 +95,8 @@ struct arm_smmu_cb {
 	u64				ttbr[2];
 	u32				tcr[2];
 	u32				mair[2];
+	u32				actlr;
+	bool				has_actlr;
 	struct arm_smmu_cfg		*cfg;
 };
 
@@ -615,6 +617,10 @@ static void arm_smmu_write_context_bank(struct arm_smmu_device *smmu, int idx)
 		arm_smmu_cb_write(smmu, idx, ARM_SMMU_CB_S1_MAIR0, cb->mair[0]);
 		arm_smmu_cb_write(smmu, idx, ARM_SMMU_CB_S1_MAIR1, cb->mair[1]);
 	}
+
+	/* ACTLR (implementation defined) */
+	if (cb->has_actlr)
+		arm_smmu_cb_write(smmu, idx, ARM_SMMU_CB_ACTLR, cb->actlr);
 
 	/* SCTLR */
 	reg = SCTLR_CFIE | SCTLR_CFRE | SCTLR_AFE | SCTLR_TRE | SCTLR_M;
@@ -1630,6 +1636,87 @@ static struct iommu_ops arm_smmu_ops = {
 	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
 };
 
+/*
+ * QSMMUv2 (CAF "qcom,smmu-v2") implementation-defined support, from msm-4.9.
+ * IMPL_DEF1 is the 7th 4K/64K page of the SMMU; MICRO_MMU_CTRL is its first
+ * register.
+ */
+#define QSMMUV2_IMPL_DEF1(smmu)		((smmu)->base + (6 << (smmu)->pgshift))
+#define QSMMUV2_MICRO_MMU_CTRL		0x0
+#define MICRO_MMU_CTRL_LOCAL_HALT_REQ	BIT(2)
+#define MICRO_MMU_CTRL_IDLE		BIT(3)
+#define QSMMUV2_ACTLR_OSH		BIT(28)
+#define QSMMUV2_ACTLR_ISH		BIT(29)
+#define QSMMUV2_ACTLR_NSH		BIT(30)
+
+static void qsmmuv2_device_reset(struct arm_smmu_device *smmu)
+{
+	void __iomem *ctrl = QSMMUV2_IMPL_DEF1(smmu) + QSMMUV2_MICRO_MMU_CTRL;
+	u32 reg, tmp;
+	int i;
+
+	/* Takes effect the next time each context bank is written. */
+	for (i = 0; i < smmu->num_context_banks; ++i) {
+		smmu->cbs[i].actlr = QSMMUV2_ACTLR_ISH | QSMMUV2_ACTLR_OSH |
+				     QSMMUV2_ACTLR_NSH;
+		smmu->cbs[i].has_actlr = true;
+	}
+
+	if (!smmu->num_impl_def_regs)
+		return;
+
+	reg = readl_relaxed(ctrl);
+	writel_relaxed(reg | MICRO_MMU_CTRL_LOCAL_HALT_REQ, ctrl);
+	if (readl_poll_timeout_atomic(ctrl, tmp, tmp & MICRO_MMU_CTRL_IDLE,
+				      0, 30000))
+		dev_err(smmu->dev, "Couldn't halt SMMU!\n");
+
+	for (i = 0; i < smmu->num_impl_def_regs; ++i)
+		writel_relaxed(smmu->impl_def_regs[i].value,
+			       smmu->base + smmu->impl_def_regs[i].offset);
+
+	reg = readl_relaxed(ctrl);
+	writel_relaxed(reg & ~MICRO_MMU_CTRL_LOCAL_HALT_REQ, ctrl);
+}
+
+static int qsmmuv2_parse_impl_defs(struct arm_smmu_device *smmu)
+{
+	struct device *dev = smmu->dev;
+	int i, n;
+	u32 *tuples;
+
+	n = of_property_count_u32_elems(dev->of_node, "attach-impl-defs");
+	if (n <= 0)
+		return 0;
+	if (n % 2) {
+		dev_err(dev, "Invalid number of attach-impl-defs registers: %d\n",
+			n);
+		return -EINVAL;
+	}
+
+	tuples = kmalloc_array(n, sizeof(u32), GFP_KERNEL);
+	smmu->impl_def_regs = devm_kmalloc_array(dev, n / 2,
+					sizeof(*smmu->impl_def_regs), GFP_KERNEL);
+	if (!tuples || !smmu->impl_def_regs) {
+		kfree(tuples);
+		return -ENOMEM;
+	}
+
+	if (of_property_read_u32_array(dev->of_node, "attach-impl-defs",
+				       tuples, n)) {
+		kfree(tuples);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < n / 2; i++) {
+		smmu->impl_def_regs[i].offset = tuples[2 * i];
+		smmu->impl_def_regs[i].value = tuples[2 * i + 1];
+	}
+	smmu->num_impl_def_regs = n / 2;
+	kfree(tuples);
+	return 0;
+}
+
 static void arm_smmu_device_reset(struct arm_smmu_device *smmu)
 {
 	int i;
@@ -1697,6 +1784,10 @@ static void arm_smmu_device_reset(struct arm_smmu_device *smmu)
 	/* Push the button */
 	arm_smmu_tlb_sync_global(smmu);
 	arm_smmu_gr0_write(smmu, ARM_SMMU_GR0_sCR0, reg);
+
+	/* Manage implementation defined features, as msm-4.9 did */
+	if (smmu->model == QCOM_SMMUV2)
+		qsmmuv2_device_reset(smmu);
 }
 
 static int arm_smmu_id_size_to_bits(int size)
@@ -2045,7 +2136,7 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 	/* CAF/QCOM extension, see struct arm_smmu_device::skip_init */
 	smmu->skip_init = of_property_read_bool(dev->of_node, "qcom,skip-init");
 
-	return 0;
+	return qsmmuv2_parse_impl_defs(smmu);
 }
 
 static void arm_smmu_bus_init(void)
