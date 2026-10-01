@@ -634,7 +634,11 @@ int sde_smmu_probe(struct platform_device *pdev)
 
 	rc = iommu_domain_set_attr(sde_smmu->mmu_mapping->domain,
 			DOMAIN_ATTR_USE_UPSTREAM_HINT, &mdphtw_llc_enable);
-	if (rc) {
+	if (rc == -ENODEV || rc == -EINVAL || rc == -EOPNOTSUPP) {
+		/* No system cache on this SoC: the hint is meaningless. */
+		SDEROT_DBG("upstream hint unsupported: %d\n", rc);
+		rc = 0;
+	} else if (rc) {
 		SDEROT_ERR("couldn't enable rot pagetable walks: %d\n", rc);
 		goto release_mapping;
 	}
