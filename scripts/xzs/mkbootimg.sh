@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0
 #
 # Pack Image.gz-dtb and a ramdisk into a (header v0) boot image for the
-# Xperia XZs. Meant for `fastboot boot <img>` only -- do not flash it.
+# Xperia XZs. Flash it only together with sov35-vendor on the oem partition
+# (the vendor carries the matching modules); otherwise use `fastboot boot`.
 #
 # usage: mkbootimg.sh <ramdisk> [out.img] [extra kernel cmdline...]
 #
@@ -32,6 +33,8 @@ CMDLINE+=" msm_rtb.filter=0x3F ehci-hcd.park=3 coherent_pool=8M"
 CMDLINE+=" sched_enable_power_aware=1 user_debug=31 cgroup.memory=nokmem"
 CMDLINE+=" printk.devkmsg=on kpti=0 androidboot.hardware=keyaki"
 CMDLINE+=" buildvariant=userdebug log_buf_len=4M"
+# the vendor image keeps the Wi-Fi / Venus firmware in /vendor/firmware
+CMDLINE+=" firmware_class.path=/vendor/firmware"
 
 "$MKBOOTIMG" --kernel "$KERNEL" --ramdisk "$RAMDISK" \
 	--header_version 0 --base 0x80000000 --kernel_offset 0x8000 \

@@ -3,6 +3,7 @@
 #
 # Build the Xperia XZs (tone/keyaki) Linux 5.4 kernel.
 # Output: $OUT/arch/arm64/boot/Image.gz-dtb (kernel + appended keyaki DTBs)
+#         $OUT/techpack/**/*_dlkm.ko       (audio modules for the vendor image)
 #
 # Environment:
 #   OUT            build directory          (default: <kernel>/out)
@@ -18,6 +19,7 @@ export CROSS_COMPILE=${CROSS_COMPILE:-aarch64-linux-gnu-}
 
 make -C "$KDIR" O="$OUT" aosp_tone_keyaki_defconfig
 make -C "$KDIR" O="$OUT" olddefconfig
-make -C "$KDIR" O="$OUT" -j"$JOBS" Image.gz-dtb
+make -C "$KDIR" O="$OUT" -j"$JOBS" Image.gz-dtb modules
 
 echo "kernel: $OUT/arch/arm64/boot/Image.gz-dtb"
+echo "modules: $(find "$OUT/techpack" -name '*_dlkm.ko' | wc -l) in $OUT/techpack"
