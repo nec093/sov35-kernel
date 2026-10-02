@@ -1258,7 +1258,13 @@ static int mmc_select_hs400(struct mmc_card *card)
 
 		/* For Enhance Strobe flow. For non Enhance Strobe, signal
 		 * voltage will not be set.
+		 *
+		 * err starts at 0 in this function, so without resetting it
+		 * the 1.8 V attempt below was skipped whenever the card has
+		 * no 1.2 V mode: HS400ES then ran with the controller still
+		 * in 3.3 V signalling (HOST_CONTROL2 0x3, no VDD_180).
 		 */
+		err = -EINVAL;
 		if (card->mmc_avail_type & EXT_CSD_CARD_TYPE_HS200_1_2V)
 			err = __mmc_set_signal_voltage(host,
 					MMC_SIGNAL_VOLTAGE_120);
@@ -2751,6 +2757,23 @@ static int mmc_partial_init(struct mmc_host *host)
 
 	pr_debug("%s: %s: starting partial init\n",
 		mmc_hostname(host), __func__);
+
+	/*
+	 * mmc_power_up() put the signalling back to its 3.3 V default, and a
+	 * card woken with CMD5 skips the timing selection where the 1.8 V
+	 * switch happens: restore it (and the driver type) from the ios
+	 * cached at suspend, as for the rest of the bus settings.
+	 */
+	if (host->ios.signal_voltage != host->cached_ios.signal_voltage) {
+		err = __mmc_set_signal_voltage(host,
+				host->cached_ios.signal_voltage);
+		if (err) {
+			pr_err("%s: %s: signal voltage restore failed (%d)\n",
+				mmc_hostname(host), __func__, err);
+			return err;	/* caller falls back to a full init */
+		}
+	}
+	mmc_set_driver_type(host, host->cached_ios.drv_type);
 
 	mmc_set_bus_width(host, host->cached_ios.bus_width);
 	mmc_set_timing(host, host->cached_ios.timing);
