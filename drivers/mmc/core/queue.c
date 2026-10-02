@@ -467,6 +467,19 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card)
 	blk_queue_rq_timeout(mq->queue, 60 * HZ);
 
 	mmc_setup_queue(mq, card);
+
+	/*
+	 * CAF: let the host driver set up its per-queue resources, as CAF's
+	 * own block driver (drivers/mmc/card/queue.c) did. sdhci-msm uses it
+	 * to set up its PM QoS requests: without them its pre_req/post_req
+	 * votes do nothing, and the CPUs reach cluster power collapse while
+	 * a request is in flight, which costs every small I/O ~1 ms of wakeup
+	 * latency. It may be called once per partition; the host only acts
+	 * on the first call.
+	 */
+	if (host->ops->init)
+		host->ops->init(host);
+
 	return 0;
 
 free_tag_set:

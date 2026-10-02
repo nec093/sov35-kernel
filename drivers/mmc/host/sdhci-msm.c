@@ -4404,47 +4404,33 @@ void sdhci_msm_pm_qos_cpu_init(struct sdhci_host *host,
 			__func__, ret);
 }
 
+/*
+ * PM QoS around each request. CAF also votes per CPU group, voting
+ * once and unvoting after every request; that pairing assumed CAF's
+ * one-request-at-a-time mmcqd. With the 5.4 blk-mq block driver, the
+ * next request's pre_req can come before the previous one's post_req.
+ * The group counters then go negative, and the vote is never dropped:
+ * the CPUs stay out of power collapse for good. This 5.4 pm_qos also
+ * applies every request to all CPUs (CAF's per-CPU affinity is not
+ * implemented), so the IRQ vote alone, paired per request, has the same
+ * effect: no deep idle while a request is in flight.
+ *
+ * The unvote is delayed by QOS_REMOVE_DELAY_MS, as CAF's cmdq_hci.c
+ * does. Back-to-back requests then keep the vote, instead of letting
+ * the CPUs drop into power collapse in the short gap before the next
+ * one is issued, and of paying for a PM QoS update (which kicks every
+ * CPU) twice per request.
+ */
 static void sdhci_msm_pre_req(struct sdhci_host *host,
 		struct mmc_request *mmc_req)
 {
-	int cpu;
-	int group;
-	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
-	struct sdhci_msm_host *msm_host = pltfm_host->priv;
-	int prev_group = sdhci_msm_get_cpu_group(msm_host,
-			msm_host->pm_qos_prev_cpu);
-
 	sdhci_msm_pm_qos_irq_vote(host);
-
-	cpu = get_cpu();
-	put_cpu();
-	group = sdhci_msm_get_cpu_group(msm_host, cpu);
-	if (group < 0)
-		return;
-
-	if (group != prev_group && prev_group >= 0) {
-		sdhci_msm_pm_qos_cpu_unvote(host,
-				msm_host->pm_qos_prev_cpu, false);
-		prev_group = -1; /* make sure to vote for new group */
-	}
-
-	if (prev_group < 0) {
-		sdhci_msm_pm_qos_cpu_vote(host,
-				msm_host->pdata->pm_qos_data.latency, cpu);
-		msm_host->pm_qos_prev_cpu = cpu;
-	}
 }
 
 static void sdhci_msm_post_req(struct sdhci_host *host,
 				struct mmc_request *mmc_req)
 {
-	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
-	struct sdhci_msm_host *msm_host = pltfm_host->priv;
-
-	sdhci_msm_pm_qos_irq_unvote(host, false);
-
-	if (sdhci_msm_pm_qos_cpu_unvote(host, msm_host->pm_qos_prev_cpu, false))
-			msm_host->pm_qos_prev_cpu = -1;
+	sdhci_msm_pm_qos_irq_unvote(host, true);
 }
 
 static void sdhci_msm_init(struct sdhci_host *host)
